@@ -28,7 +28,8 @@
     "pre-commit": "lefthook run pre-commit",
     "pre-push": "lefthook run pre-push",
     "validate": "bun run lint && bun run test && bun run build",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "cli": "bun run apps/cli/src/index.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.10",

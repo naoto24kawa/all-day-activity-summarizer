@@ -1,0 +1,23 @@
+{
+  "name": "@repo/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "adas": "src/index.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "commander": "^14.0.0",
+    "consola": "^3.4.2",
+    "@repo/types": "workspace:*",
+    "@repo/db": "workspace:*",
+    "@anthropic-ai/sdk": "^0.52.0",
+    "hono": "^4.10.6",
+    "@hono/node-server": "^1.19.6",
+    "drizzle-orm": "^0.44.2"
+  }
+}
