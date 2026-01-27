@@ -1,0 +1,62 @@
+{
+  "name": "hono-react-template",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "cd apps/frontend && bun run dev",
+    "dev:backend": "cd apps/backend && bun run dev",
+    "build": "cd apps/frontend && bun run build",
+    "build:frontend": "cd apps/frontend && bun run build",
+    "build:backend": "echo 'Backend does not require build'",
+    "preview": "cd apps/frontend && bun run preview",
+    "deploy:pages": "bun run build:frontend && wrangler pages deploy apps/frontend/dist --config apps/frontend/wrangler.jsonc",
+    "deploy:workers": "cd apps/backend && bun run deploy",
+    "deploy": "bun run deploy:pages && bun run deploy:workers",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write . --unsafe",
+    "format": "biome format --write .",
+    "storybook": "cd apps/frontend && bun run storybook",
+    "build-storybook": "cd apps/frontend && bun run build-storybook",
+    "test": "cd apps/frontend && bun run test",
+    "test:coverage": "cd apps/frontend && bun run test:coverage",
+    "test:ui": "cd apps/frontend && bun run test:ui",
+    "test:headed": "cd apps/frontend && bun run test:headed",
+    "pre-commit": "lefthook run pre-commit",
+    "pre-push": "lefthook run pre-push",
+    "validate": "bun run lint && bun run test && bun run build",
+    "prepare": "lefthook install"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.10",
+    "typescript": "^5.8.3",
+    "@cloudflare/workers-types": "^4.20251121.0",
+    "@hono/node-server": "^1.19.6",
+    "@playwright/test": "^1.56.1",
+    "@storybook/addon-essentials": "^8.6.14",
+    "@storybook/addon-interactions": "^8.6.14",
+    "@storybook/react": "^8.6.14",
+    "@storybook/react-vite": "^8.6.14",
+    "@storybook/test": "^8.6.14",
+    "@tailwindcss/vite": "^4.1.17",
+    "@types/bun": "latest",
+    "@types/node": "^22.5.4",
+    "@types/react": "^19.2.6",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "lefthook": "^2.0.4",
+    "shadcn": "^3.5.0",
+    "storybook": "^8.6.14",
+    "tailwindcss": "^4.1.17",
+    "tailwindcss-animate": "^1.0.7",
+    "vite": "^7.2.4",
+    "vite-tsconfig-paths": "^5.1.4",
+    "wrangler": "^4.50.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

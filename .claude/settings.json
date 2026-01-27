@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"作業が完了しました！\" with title \"Claude Code\" subtitle \"$CLAUDE_PROJECT_DIR\"'"
+          },
+          {
+            "type": "command",
+            "command": "afplay /System/Library/Sounds/Submarine.aiff"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run format || true"
+          }
+        ]
+      }
+    ]
+  },
+  "extraKnownMarketplaces": {
+    "naoto24kawa": {
+      "source": {
+        "source": "github",
+        "repo": "naoto24kawa/claude-plugins"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "review@naoto24kawa-claude-plugins": true,
+    "claude@naoto24kawa-claude-plugins": true,
+    "notion@naoto24kawa-claude-plugins": false,
+    "github@naoto24kawa-claude-plugins": true
+  }
+}

@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-background: oklch(1 0 0);
+  --color-foreground: oklch(0.145 0.005 285.823);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.145 0.005 285.823);
+  --color-popover: oklch(1 0 0);
+  --color-popover-foreground: oklch(0.145 0.005 285.823);
+  --color-primary: oklch(0.205 0.01 285.883);
+  --color-primary-foreground: oklch(0.985 0 0);
+  --color-secondary: oklch(0.97 0.002 286.375);
+  --color-secondary-foreground: oklch(0.205 0.01 285.883);
+  --color-muted: oklch(0.97 0.002 286.375);
+  --color-muted-foreground: oklch(0.556 0.015 285.938);
+  --color-accent: oklch(0.97 0.002 286.375);
+  --color-accent-foreground: oklch(0.205 0.01 285.883);
+  --color-destructive: oklch(0.577 0.245 27.325);
+  --color-destructive-foreground: oklch(0.985 0 0);
+  --color-border: oklch(0.922 0.003 286.32);
+  --color-input: oklch(0.922 0.003 286.32);
+  --color-ring: oklch(0.145 0.005 285.823);
+  --radius: 0.5rem;
+}
+
+@theme dark {
+  --color-background: oklch(0.141 0.005 285.823);
+  --color-foreground: oklch(0.985 0 0);
+  --color-card: oklch(0.141 0.005 285.823);
+  --color-card-foreground: oklch(0.985 0 0);
+  --color-popover: oklch(0.141 0.005 285.823);
+  --color-popover-foreground: oklch(0.985 0 0);
+  --color-primary: oklch(0.985 0 0);
+  --color-primary-foreground: oklch(0.205 0.01 285.883);
+  --color-secondary: oklch(0.262 0.018 285.843);
+  --color-secondary-foreground: oklch(0.985 0 0);
+  --color-muted: oklch(0.262 0.018 285.843);
+  --color-muted-foreground: oklch(0.702 0.013 286.238);
+  --color-accent: oklch(0.262 0.018 285.843);
+  --color-accent-foreground: oklch(0.985 0 0);
+  --color-destructive: oklch(0.456 0.151 27.325);
+  --color-destructive-foreground: oklch(0.985 0 0);
+  --color-border: oklch(0.262 0.018 285.843);
+  --color-input: oklch(0.262 0.018 285.843);
+  --color-ring: oklch(0.851 0.008 286.371);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

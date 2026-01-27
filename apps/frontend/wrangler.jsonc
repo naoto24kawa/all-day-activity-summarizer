@@ -1,0 +1,10 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  // Cloudflare Pages用設定 - React SPAのデプロイ
+  "name": "hono-react-pages",
+  "pages_build_output_dir": "dist"
+  // Pagesの環境変数（必要に応じて追加）
+  // "vars": {
+  //   "ENVIRONMENT": "production"
+  // }
+}

@@ -1,0 +1,88 @@
+# ============================================
+# Biome Ignore Patterns
+# ============================================
+# Biomeでリント・フォーマットしないファイル/ディレクトリを指定
+
+# ============================================
+# Styles
+# ============================================
+# Tailwind CSS directives (@tailwind, @apply) are not supported by Biome
+**/*.css
+
+# ============================================
+# Dependencies
+# ============================================
+node_modules
+apps/*/node_modules
+packages/*/node_modules
+
+# ============================================
+# Build Outputs
+# ============================================
+# Root level
+dist
+build
+out
+*.tgz
+
+# Workspaces
+apps/*/dist
+packages/*/dist
+
+# ============================================
+# Development & Build Caches
+# ============================================
+# TypeScript
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Vite
+.vite
+**/.vite
+
+# Bun
+.bun
+
+# Tailwind CSS 4
+.tailwindcache
+
+# General caches
+.cache
+.eslintcache
+
+# ============================================
+# Testing
+# ============================================
+# Coverage
+coverage
+
+# Playwright
+playwright-report
+test-results
+**/playwright/.cache
+.playwright-mcp
+
+# ============================================
+# Storybook
+# ============================================
+storybook-static
+**/storybook-static
+
+# ============================================
+# Cloudflare
+# ============================================
+.wrangler
+.dev.vars
+
+# ============================================
+# IDEs & Editors
+# ============================================
+.claude
+.cursor
+.vscode
+.idea
+
+# ============================================
+# Version Control
+# ============================================
+.git

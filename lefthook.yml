@@ -1,0 +1,14 @@
+# Lefthook configuration
+# See: https://github.com/evilmartians/lefthook
+
+# pre-commit: コミット前にBiomeでリント・フォーマットを自動実行
+pre-commit:
+  commands:
+    # Biomeでリント＋フォーマット
+    # - TS/JS/JSX/TSX: リント + フォーマット
+    # - JSON/JSONC: フォーマット
+    # - 自動修正可能なエラーを修正し、変更をステージングに追加
+    biome:
+      glob: "{apps,packages}/**/*.{js,ts,jsx,tsx,json,jsonc}"
+      run: bunx biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      stage_fixed: true

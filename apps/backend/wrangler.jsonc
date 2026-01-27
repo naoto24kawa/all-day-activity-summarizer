@@ -1,0 +1,25 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  // Cloudflare Workers用設定 - Hono APIサーバー
+  "name": "hono-api-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"]
+  // 環境変数（本番環境用）
+  // ローカル開発では .dev.vars を使用してください
+  // "vars": {
+  //   "APP_NAME": "Hono + React Template",
+  //   "APP_VERSION": "1.0.0",
+  //   "API_ENDPOINT": "https://api.yourdomain.com"
+  // },
+  // KV, R2, D1などのバインディング例
+  // "kv_namespaces": [
+  //   { "binding": "MY_KV", "id": "your-kv-id" }
+  // ],
+  // "r2_buckets": [
+  //   { "binding": "MY_BUCKET", "bucket_name": "your-bucket-name" }
+  // ],
+  // "d1_databases": [
+  //   { "binding": "DB", "database_name": "your-db-name", "database_id": "your-db-id" }
+  // ]
+}

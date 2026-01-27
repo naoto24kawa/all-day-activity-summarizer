@@ -1,0 +1,78 @@
+{
+  "schema": "https://github.com/google-gemini/gemini-cli/blob/main/schemas/settings.schema.json",
+  "mcpServers": {
+  },
+  "general": {
+    "vimMode": false,
+    "disableAutoUpdate": false,
+    "disableUpdateNag": false,
+    "checkpointing": {
+      "enabled": false
+    },
+    "enablePromptCompletion": false,
+    "retryFetchErrors": false,
+    "debugKeystrokeLogging": false,
+    "sessionRetention": {
+      "enabled": false,
+      "minRetention": "1d"
+    }
+  },
+  "output": {
+    "format": "text"
+  },
+  "ui": {
+    "customThemes": {},
+    "hideWindowTitle": false,
+    "showStatusInTitle": false,
+    "hideTips": false,
+    "hideBanner": false,
+    "hideContextSummary": false,
+    "footer": {
+      "hideCWD": false,
+      "hideSandboxStatus": false,
+      "hideModelInfo": false,
+      "hideContextPercentage": true
+    },
+    "hideFooter": false,
+    "showMemoryUsage": false,
+    "showLineNumbers": false,
+    "showCitations": false,
+    "useFullWidth": true,
+    "useAlternateBuffer": false,
+    "customWittyPhrases": [],
+    "accessibility": {
+      "disableLoadingPhrases": false,
+      "screenReader": false
+    }
+  },
+  "ide": {
+    "enabled": true,
+    "hasSeenNudge": false
+  },
+  "privacy": {
+    "usageStatisticsEnabled": true
+  },
+  "context": {
+    "loadMemoryFromIncludeDirectories": false,
+    "includedDirs": [],
+    "excludedFiles": [],
+    "excludedDirs": []
+  },
+  "security": {
+    "disableYoloMode": false,
+    "blockGitExtensions": false,
+    "enforceLocalAuth": false,
+    "confirmToolsUsingMessageBus": false,
+    "folderTrusts": {}
+  },
+  "advanced": {
+    "enableExtensions": true,
+    "enableHooks": false,
+    "dns": {
+      "preferIPv4": false
+    },
+    "disableTracer": false,
+    "reloadExtensionsOnStartup": false
+  },
+  "experimental": {}
+}

@@ -1,0 +1,135 @@
+name: 仕様変更
+description: 機能追加・変更・削除・バグ修正の仕様を記録
+labels: ["specification"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        仕様変更のIssueです。将来の仕様書として参照できるよう、判断経緯も含めて記録してください。
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: 種類
+      description: この変更の種類を選択
+      options:
+        - feat(機能追加)
+        - change(機能変更)
+        - remove(機能削除)
+        - fix(バグ修正)
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: 何をするのかを1-2文で簡潔に
+      placeholder: "例: ユーザーがプロフィール画像を設定できるようにする"
+    validations:
+      required: true
+
+  - type: textarea
+    id: as-is
+    attributes:
+      label: 現状 (As-Is)
+      description: 現在の仕様・動作を記述
+      placeholder: |
+        - ユーザープロフィールには名前とメールアドレスのみ表示
+        - 画像設定機能は存在しない
+    validations:
+      required: true
+
+  - type: textarea
+    id: to-be
+    attributes:
+      label: 変更後 (To-Be)
+      description: 変更後の仕様・動作を記述
+      placeholder: |
+        - ユーザーは設定画面からプロフィール画像をアップロードできる
+        - 対応形式: JPEG, PNG (最大5MB)
+        - 画像未設定時はデフォルトアイコンを表示
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 検討した選択肢
+      description: 他に検討した方法やアプローチがあれば記述
+      placeholder: |
+        ### 選択肢A: 画像アップロード (採用)
+        - ユーザーが任意の画像をアップロード
+
+        ### 選択肢B: アバター選択式
+        - 事前に用意したアバターから選択
+        - 却下理由: ユーザーの個性を出しにくい
+
+        ### 選択肢C: 外部サービス連携 (Gravatar等)
+        - 却下理由: 外部依存が増える、設定が複雑
+
+  - type: textarea
+    id: decision-reason
+    attributes:
+      label: 選択理由
+      description: なぜこの仕様を選んだのか
+      placeholder: |
+        - ユーザーが自由にカスタマイズできる体験を重視
+        - 実装コストと効果のバランスが良い
+        - 将来的にSNS連携を追加する際の拡張性も考慮
+
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: トレードオフ・リスク
+      description: この仕様を選ぶことで生じるトレードオフやリスク
+      placeholder: |
+        - ストレージコストが増加する
+        - 不適切な画像のアップロードリスク → 将来的にモデレーション機能を検討
+        - 画像最適化の処理負荷 → CDN経由で配信することで軽減
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: 受け入れ条件
+      description: この仕様が満たされたと判断する条件 (チェックリスト形式推奨)
+      placeholder: |
+        - [ ] 設定画面から画像をアップロードできる
+        - [ ] JPEG/PNG形式に対応している
+        - [ ] 5MBを超えるファイルはエラーになる
+        - [ ] プロフィール画面に画像が表示される
+        - [ ] 画像未設定時はデフォルトアイコンが表示される
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影響範囲
+      description: 影響を受ける領域を選択 (複数選択可)
+      multiple: true
+      options:
+        - frontend
+        - backend
+        - packages/types
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: タスク
+      description: 実装タスクを分解 (チェックリスト形式推奨)
+      placeholder: |
+        - [ ] DB: usersテーブルにavatar_urlカラム追加
+        - [ ] API: 画像アップロードエンドポイント実装
+        - [ ] Frontend: 設定画面UI実装
+        - [ ] Frontend: プロフィール画面の画像表示
+        - [ ] Test: 単体テスト・E2Eテスト追加
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 備考
+      description: その他、参考資料やリンクなど
+      placeholder: |
+        - 参考: 競合サービスAのプロフィール機能
+        - デザインモック: [Figmaリンク]
