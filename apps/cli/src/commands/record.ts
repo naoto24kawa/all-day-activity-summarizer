@@ -4,6 +4,7 @@ import { createDatabase } from "@repo/db";
 import type { Command } from "commander";
 import consola from "consola";
 import { AudioCapture, listAudioSources } from "../audio/capture.js";
+import { AudioLevelMonitor, getMonitor, setMonitor } from "../audio/level-monitor.js";
 import { processChunkComplete } from "../audio/process-chunk.js";
 import { loadConfig } from "../config.js";
 import { createApp } from "../server/app.js";
@@ -114,11 +115,27 @@ export function registerRecordCommand(program: Command): void {
         const stopScheduler = startScheduler(db);
         consola.success("Summarization scheduler started");
 
-        // Start audio captures
+        // Start audio captures and level monitors
         consola.info("Starting audio capture (Ctrl+C to stop)");
         const startPromises: Promise<void>[] = [];
-        if (micCapture) startPromises.push(micCapture.start());
-        if (speakerCapture) startPromises.push(speakerCapture.start());
+        if (micCapture) {
+          startPromises.push(micCapture.start());
+          const micMonitor = new AudioLevelMonitor({
+            source: micSource ?? "default",
+            type: "mic",
+          });
+          setMonitor("mic", micMonitor);
+          startPromises.push(micMonitor.start());
+        }
+        if (speakerCapture) {
+          startPromises.push(speakerCapture.start());
+          const speakerMonitor = new AudioLevelMonitor({
+            source: speakerSource ?? "default",
+            type: "speaker",
+          });
+          setMonitor("speaker", speakerMonitor);
+          startPromises.push(speakerMonitor.start());
+        }
         await Promise.all(startPromises);
 
         // Graceful shutdown
@@ -127,6 +144,10 @@ export function registerRecordCommand(program: Command): void {
           const stopPromises: Promise<void>[] = [];
           if (micCapture) stopPromises.push(micCapture.stop());
           if (speakerCapture) stopPromises.push(speakerCapture.stop());
+          const micMonitor = getMonitor("mic");
+          const speakerMonitor = getMonitor("speaker");
+          if (micMonitor) stopPromises.push(micMonitor.stop());
+          if (speakerMonitor) stopPromises.push(speakerMonitor.stop());
           await Promise.all(stopPromises);
           stopScheduler();
           consola.success("All recording services stopped");
