@@ -69,16 +69,19 @@ export function registerRecordCommand(program: Command): void {
         }
 
         // Resolve mic source (--source is alias for --mic-source)
+        // If nothing specified, default to mic with "default" source for backward compat
         const micSourceName = options.micSource ?? options.source;
         const speakerSourceName = options.speakerSource;
+        const useDefaultMic = micSourceName === undefined && speakerSourceName === undefined;
 
         // Create audio capture instances
         let micCapture: AudioCapture | undefined;
         let speakerCapture: AudioCapture | undefined;
 
-        if (micSourceName !== undefined) {
+        if (micSourceName !== undefined || useDefaultMic) {
+          const source = micSourceName ?? undefined;
           micCapture = new AudioCapture({
-            source: micSourceName,
+            source,
             config,
             onChunkComplete: async (filePath) => {
               try {
@@ -88,7 +91,7 @@ export function registerRecordCommand(program: Command): void {
               }
             },
           });
-          consola.info(`Mic capture configured (source: ${micSourceName})`);
+          consola.info(`Mic capture configured (source: ${source ?? "default"})`);
         }
 
         if (speakerSourceName !== undefined) {
@@ -104,13 +107,6 @@ export function registerRecordCommand(program: Command): void {
             },
           });
           consola.info(`Speaker capture configured (source: ${speakerSourceName})`);
-        }
-
-        if (!micCapture && !speakerCapture) {
-          consola.fatal(
-            "No audio source specified. Use --mic-source and/or --speaker-source (or -s as alias for --mic-source)",
-          );
-          process.exit(1);
         }
 
         // Start API server
