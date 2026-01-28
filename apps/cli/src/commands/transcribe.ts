@@ -1,5 +1,5 @@
 import { existsSync, readdirSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, join } from "node:path";
 import { createDatabase, schema } from "@repo/db";
 import type { Command } from "commander";
 import consola from "consola";
@@ -7,43 +7,11 @@ import { eq } from "drizzle-orm";
 import { loadConfig } from "../config.js";
 import { interpretSegments } from "../interpreter/run.js";
 import { checkAndAutoImprove } from "../prompts/auto-trigger.js";
+import { runAsyncEvaluation } from "../transcription/evaluation-pipeline.js";
 import { getDateString, getTodayDateString } from "../utils/date.js";
 import { transcribeAudio } from "../whisper/client.js";
-import { applyNewPattern, evaluateTranscription } from "../whisper/evaluator.js";
+import { isHallucination } from "../whisper/hallucination-filter.js";
 import { accumulateSpeakerEmbeddings, loadRegisteredEmbeddings } from "../whisper/speaker-store.js";
-
-/**
- * Whisper が無音区間で出力するハルシネーションパターン。
- * 同一フレーズの繰り返しや定型文を検出して除外する。
- */
-const HALLUCINATION_PATTERNS = [
-  /^(ご視聴ありがとうございました[\s。]*)+$/,
-  /^(ありがとうございました[\s。]*)+$/,
-  /^(チャンネル登録お願いします[\s。]*)+$/,
-  /^(お疲れ様でした[\s。]*)+$/,
-  /^(おやすみなさい[\s。]*)+$/,
-  /^(ティムマクローはこう言ってた[ティムマクローはこう言ってた]+[\s.]*)+$/,
-  /^(レベルは死んだ囮のようです[\s.]*)+$/,
-  /^(Thank you for watching[\s.]*)+$/i,
-  /^(Thanks for watching[\s.]*)+$/i,
-  /^(Subscribe[\s.]*)+$/i,
-  /^(\.+\s*)+$/,
-  /^(自分の.*?自分の.*?自分の.*?自分の.*?自分の.*?自分の[\s.]*)+$/,
-  /^(子がいる(子がいる){4,}|ご視聴ありがとうございました|やめて(やめて){2,}[\s.]*)+$/,
-  /^(あ{5,}|お店(お店){5,}[\s.]*)+$/,
-  /^(いったんぽい!\s*)+$/,
-  /^((ブーブー|でこれもっかり|仕組み立っているとも信頼なもあだれ|本気がいい)[\s.]*)+$/,
-  /^((?:スパイク成功|応援が必要|北に向かっている|ニカラ活躍業員者|サージェンのシェルドン|オンラインカジノ)[\s.]*)+$/,
-  // 汎用繰り返しノイズパターン: 同じ文字/音節が5回以上連続
-  /(.)\1{4,}/, // 同じ1文字が5回以上連続 (例: あああああ)
-  /(.{2,4})\1{4,}/, // 同じ2-4文字が5回以上連続 (例: 込み込み込み込み込み)
-];
-
-function isHallucination(text: string): boolean {
-  const trimmed = text.trim();
-  if (!trimmed) return true;
-  return HALLUCINATION_PATTERNS.some((pattern) => pattern.test(trimmed));
-}
 
 export function registerTranscribeCommand(program: Command): void {
   program
@@ -129,16 +97,20 @@ async function transcribeFile(
     return;
   }
 
-  // Extract date, time, and source type from filename (chunk_HH-MM-SS_mic.wav or chunk_HH-MM-SS_speaker.wav)
+  // ファイル名から録音情報を抽出
+  // 例: "2025-01-29/chunk_14-30-00_mic.wav"
+  //   -> datePart: "2025-01-29", startTime: "14:30:00", sourceType: "mic"
   const fileName = basename(filePath, ".wav");
+  // 親ディレクトリ名が日付 (例: "2025-01-29")
   const datePart = filePath.split("/").at(-2) ?? getTodayDateString();
-  // Remove chunk_ prefix and _mic/_speaker suffix to extract time
+  // ファイル名から時刻を抽出: "chunk_14-30-00_mic" -> "14-30-00" -> "14:30:00"
   const timeStr = fileName.replace("chunk_", "").replace(/_(?:mic|speaker)$/, "");
   const timeParts = timeStr.split("-");
   const startTimeStr = `${datePart}T${timeParts.join(":")}`;
+  // チャンクの開始・終了時刻を計算
   const startTime = new Date(startTimeStr);
   const endTime = new Date(startTime.getTime() + config.audio.chunkDurationMinutes * 60 * 1000);
-  // Determine source type from filename
+  // 音声ソースタイプを判定 (マイク or スピーカー)
   const isMicSource = fileName.endsWith("_mic");
 
   // 話者 embedding を処理し、ラベルを登録名に差替え(DB 挿入前に実行)
@@ -219,7 +191,7 @@ async function transcribeFile(
 }
 
 /**
- * evaluator → interpret の直列パイプライン。
+ * evaluator -> interpret の直列パイプライン。
  * ハルシネーション判定で削除されたセグメントは interpret をスキップ。
  */
 async function runAsyncEvaluationAndInterpret(
@@ -246,112 +218,6 @@ async function runAsyncEvaluationAndInterpret(
       `[interpret] Interpretation complete for ${basename(filePath)} (${success} succeeded, ${fail} failed)`,
     );
   }
-}
-
-/**
- * @returns ハルシネーションと判定されたセグメントの index 配列 (削除済み)
- */
-async function runAsyncEvaluation(
-  text: string,
-  segments: { text: string; start: number; end: number; speaker?: string }[],
-  filePath: string,
-  config: ReturnType<typeof loadConfig>,
-  db: ReturnType<typeof createDatabase>,
-): Promise<number[]> {
-  // evaluator が無効の場合は空配列を返す
-  if (config.evaluator?.enabled === false) {
-    return [];
-  }
-
-  const datePart = filePath.split("/").at(-2) ?? "";
-  const evaluation = await evaluateTranscription(text, segments, {
-    db,
-    date: datePart,
-    audioFilePath: filePath,
-  });
-
-  // legitimate の場合は何も削除しない
-  if (evaluation.judgment === "legitimate") {
-    consola.info(
-      `[evaluator] Passed: ${basename(filePath)} (${evaluation.judgment}, confidence: ${evaluation.confidence})`,
-    );
-    return [];
-  }
-
-  // DB からセグメントを取得 (id 順)
-  const dbSegments = db
-    .select()
-    .from(schema.transcriptionSegments)
-    .where(eq(schema.transcriptionSegments.audioFilePath, filePath))
-    .all();
-
-  // segmentEvaluations がない場合は旧ロジック (全削除)
-  if (!evaluation.segmentEvaluations || evaluation.segmentEvaluations.length === 0) {
-    if (evaluation.judgment === "hallucination" && evaluation.confidence >= 0.7) {
-      consola.warn(
-        `Hallucination detected by evaluator: ${basename(filePath)} - ${evaluation.reason}`,
-      );
-      db.delete(schema.transcriptionSegments)
-        .where(eq(schema.transcriptionSegments.audioFilePath, filePath))
-        .run();
-      consola.info(`Removed all segments for ${basename(filePath)}`);
-
-      if (config.evaluator?.autoApplyPatterns !== false && evaluation.suggestedPattern) {
-        const projectRoot = resolve(import.meta.dirname, "../../../../");
-        await applyNewPattern(evaluation.suggestedPattern, evaluation.reason, projectRoot, {
-          db,
-          audioFilePath: filePath,
-        });
-        consola.success(`New hallucination pattern applied: ${evaluation.suggestedPattern}`);
-      }
-      return segments.map((_, i) => i);
-    }
-    return [];
-  }
-
-  // セグメント単位で削除
-  const hallucinatedIndices: number[] = [];
-  const patternsToApply: { pattern: string; reason: string }[] = [];
-
-  for (const segEval of evaluation.segmentEvaluations) {
-    if (segEval.judgment === "hallucination" && segEval.confidence >= 0.7) {
-      hallucinatedIndices.push(segEval.index);
-      const dbSeg = dbSegments[segEval.index];
-      if (dbSeg) {
-        db.delete(schema.transcriptionSegments)
-          .where(eq(schema.transcriptionSegments.id, dbSeg.id))
-          .run();
-        consola.warn(
-          `[evaluator] Removed segment #${segEval.index}: "${dbSeg.transcription?.slice(0, 30)}..." - ${segEval.reason}`,
-        );
-      }
-      if (segEval.suggestedPattern) {
-        patternsToApply.push({ pattern: segEval.suggestedPattern, reason: segEval.reason });
-      }
-    }
-  }
-
-  if (hallucinatedIndices.length > 0) {
-    consola.info(
-      `[evaluator] Removed ${hallucinatedIndices.length}/${segments.length} hallucinated segments for ${basename(filePath)}`,
-    );
-  } else {
-    consola.info(
-      `[evaluator] Passed: ${basename(filePath)} (${evaluation.judgment}, no high-confidence hallucinations)`,
-    );
-  }
-
-  // 新しいパターンを自動適用 (重複排除)
-  if (config.evaluator?.autoApplyPatterns !== false && patternsToApply.length > 0) {
-    const uniquePatterns = [...new Map(patternsToApply.map((p) => [p.pattern, p])).values()];
-    const projectRoot = resolve(import.meta.dirname, "../../../../");
-    for (const { pattern, reason } of uniquePatterns) {
-      await applyNewPattern(pattern, reason, projectRoot, { db, audioFilePath: filePath });
-      consola.success(`New hallucination pattern applied: ${pattern}`);
-    }
-  }
-
-  return hallucinatedIndices;
 }
 
 async function watchAndTranscribe(

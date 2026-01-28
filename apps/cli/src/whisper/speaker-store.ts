@@ -28,62 +28,73 @@ export type UnknownSpeakersStore = Record<string, UnknownSpeaker>;
 export type RegisteredEmbeddingsStore = Record<string, number[]>;
 export type SpeakerMetadataStore = Record<string, SpeakerMetadata>;
 
-function getUnknownSpeakersPath(): string {
-  return join(getAdasHome(), UNKNOWN_SPEAKERS_FILENAME);
+// ---------------------------------------------------------------------------
+// JSON Store Helper
+// ---------------------------------------------------------------------------
+
+/**
+ * JSON ファイルベースのストアを作成するヘルパー。
+ * load/save の重複コードを統合する。
+ */
+function createJsonStore<T extends Record<string, unknown>>(filename: string) {
+  const getPath = () => join(getAdasHome(), filename);
+
+  return {
+    load(): T {
+      const path = getPath();
+      if (!existsSync(path)) {
+        return {} as T;
+      }
+      const raw = readFileSync(path, "utf-8");
+      return JSON.parse(raw) as T;
+    },
+    save(data: T): void {
+      ensureAdasHome();
+      const path = getPath();
+      writeFileSync(path, JSON.stringify(data, null, 2));
+    },
+  };
 }
 
+// ---------------------------------------------------------------------------
+// Store Instances
+// ---------------------------------------------------------------------------
+
+const unknownSpeakersStore = createJsonStore<UnknownSpeakersStore>(UNKNOWN_SPEAKERS_FILENAME);
+const registeredEmbeddingsStore = createJsonStore<RegisteredEmbeddingsStore>(EMBEDDINGS_FILENAME);
+const speakerMetadataStore = createJsonStore<SpeakerMetadataStore>(METADATA_FILENAME);
+
+// ---------------------------------------------------------------------------
+// Public API (後方互換性を保持)
+// ---------------------------------------------------------------------------
+
 export function loadUnknownSpeakers(): UnknownSpeakersStore {
-  const path = getUnknownSpeakersPath();
-  if (!existsSync(path)) {
-    return {};
-  }
-  const raw = readFileSync(path, "utf-8");
-  return JSON.parse(raw) as UnknownSpeakersStore;
+  return unknownSpeakersStore.load();
 }
 
 export function saveUnknownSpeakers(store: UnknownSpeakersStore): void {
-  ensureAdasHome();
-  const path = getUnknownSpeakersPath();
-  writeFileSync(path, JSON.stringify(store, null, 2));
-}
-
-function getRegisteredEmbeddingsPath(): string {
-  return join(getAdasHome(), EMBEDDINGS_FILENAME);
+  unknownSpeakersStore.save(store);
 }
 
 export function loadRegisteredEmbeddings(): RegisteredEmbeddingsStore {
-  const path = getRegisteredEmbeddingsPath();
-  if (!existsSync(path)) {
-    return {};
-  }
-  const raw = readFileSync(path, "utf-8");
-  return JSON.parse(raw) as RegisteredEmbeddingsStore;
+  return registeredEmbeddingsStore.load();
 }
 
 export function saveRegisteredEmbeddings(store: RegisteredEmbeddingsStore): void {
-  ensureAdasHome();
-  const path = getRegisteredEmbeddingsPath();
-  writeFileSync(path, JSON.stringify(store, null, 2));
-}
-
-function getMetadataPath(): string {
-  return join(getAdasHome(), METADATA_FILENAME);
+  registeredEmbeddingsStore.save(store);
 }
 
 export function loadSpeakerMetadata(): SpeakerMetadataStore {
-  const path = getMetadataPath();
-  if (!existsSync(path)) {
-    return {};
-  }
-  const raw = readFileSync(path, "utf-8");
-  return JSON.parse(raw) as SpeakerMetadataStore;
+  return speakerMetadataStore.load();
 }
 
 export function saveSpeakerMetadata(store: SpeakerMetadataStore): void {
-  ensureAdasHome();
-  const path = getMetadataPath();
-  writeFileSync(path, JSON.stringify(store, null, 2));
+  speakerMetadataStore.save(store);
 }
+
+// ---------------------------------------------------------------------------
+// Utility Functions
+// ---------------------------------------------------------------------------
 
 function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length || a.length === 0) return 0;
@@ -138,12 +149,12 @@ function findMatchingSpeaker(
 }
 
 /**
- * 話者 embedding を処理し、元ラベル → 登録名のマッピングを返す。
+ * 話者 embedding を処理し、元ラベル -> 登録名のマッピングを返す。
  *
- * - 登録済み話者にマッチ → そのまま登録名を返す(メタデータ更新)
- * - 未知話者 → Speaker N で即座に speaker_embeddings.json に登録し、メタデータも保存
+ * - 登録済み話者にマッチ -> そのまま登録名を返す(メタデータ更新)
+ * - 未知話者 -> Speaker N で即座に speaker_embeddings.json に登録し、メタデータも保存
  *
- * @returns Record<string, string> - 元ラベル → 登録名のマッピング
+ * @returns Record<string, string> - 元ラベル -> 登録名のマッピング
  */
 export function accumulateSpeakerEmbeddings(
   embeddings: Record<string, number[]>,
@@ -188,7 +199,7 @@ export function accumulateSpeakerEmbeddings(
       embeddingsUpdated = true;
       consola.debug(`Matched speaker ${label} to ${matchedName}`);
     } else {
-      // 未知話者 → 仮名で即登録
+      // 未知話者 -> 仮名で即登録
       const newName = `Speaker ${nextNum}`;
       nextNum++;
       registeredEmbeddings[newName] = emb;
