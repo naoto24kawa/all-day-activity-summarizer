@@ -35,7 +35,9 @@ export async function runClaude(prompt: string, options?: RunClaudeOptions): Pro
   }
 
   const model = options?.model ?? "default";
-  consola.info(`[claude-runner] Starting claude (model: ${model})...`);
+  consola.info(
+    `[claude-runner] Starting claude (model: ${model}), args: ${JSON.stringify(args.slice(0, 4))}...`,
+  );
 
   const startTime = Date.now();
 
@@ -61,8 +63,9 @@ export async function runClaude(prompt: string, options?: RunClaudeOptions): Pro
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       if (code !== 0) {
         consola.warn(`[claude-runner] Failed (${elapsed}s, exit ${code})`);
-        consola.debug(`[claude-runner] stderr: ${stderr}`);
-        reject(new Error(`claude exited with code ${code}: ${stderr}`));
+        consola.warn(`[claude-runner] stderr: ${stderr || "(empty)"}`);
+        consola.warn(`[claude-runner] stdout: ${stdout.slice(0, 500) || "(empty)"}`);
+        reject(new Error(`claude exited with code ${code}: ${stderr || stdout.slice(0, 200)}`));
         return;
       }
       consola.success(`[claude-runner] Done (${elapsed}s, ${stdout.length} chars)`);
