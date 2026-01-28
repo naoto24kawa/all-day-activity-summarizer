@@ -12,6 +12,7 @@ export type {
   Memo,
   PromptImprovement,
   PromptTarget,
+  RecordingStatusResponse,
   RpcEvaluateRequest,
   RpcEvaluateResponse,
   RpcHealthResponse,

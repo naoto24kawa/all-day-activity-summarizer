@@ -59,16 +59,7 @@ export function registerRecordCommand(program: Command): void {
         process.exit(1);
       }
 
-      // Start API server
-      const app = createApp(db);
-      serve({ fetch: app.fetch, port });
-      consola.success(`API server running on http://localhost:${port}`);
-
-      // Start summarization scheduler
-      const stopScheduler = startScheduler(db);
-      consola.success("Summarization scheduler started");
-
-      // Start audio capture with auto-transcription
+      // Create audio capture instance
       const audioSource = options.source ?? "default";
       const capture = new AudioCapture({
         source: options.source,
@@ -82,6 +73,16 @@ export function registerRecordCommand(program: Command): void {
         },
       });
 
+      // Start API server
+      const app = createApp(db, { capture });
+      serve({ fetch: app.fetch, port });
+      consola.success(`API server running on http://localhost:${port}`);
+
+      // Start summarization scheduler
+      const stopScheduler = startScheduler(db);
+      consola.success("Summarization scheduler started");
+
+      // Start audio capture
       consola.info("Starting audio capture (Ctrl+C to stop)");
       await capture.start();
 

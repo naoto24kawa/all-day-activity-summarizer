@@ -81,6 +81,10 @@ export class AudioCapture {
     this.onChunkComplete = options.onChunkComplete;
   }
 
+  isRunning(): boolean {
+    return this.running;
+  }
+
   async start(): Promise<void> {
     if (this.running) {
       consola.warn("Audio capture is already running");

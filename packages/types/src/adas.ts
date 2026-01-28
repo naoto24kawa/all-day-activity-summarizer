@@ -35,6 +35,11 @@ export interface Memo {
   createdAt: string;
 }
 
+/** 録音状態レスポンス */
+export interface RecordingStatusResponse {
+  recording: boolean;
+}
+
 /** ステータスレスポンス */
 export interface StatusResponse {
   date: string;
