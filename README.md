@@ -107,6 +107,67 @@ export HF_TOKEN=hf_...
 # ~/.adas/config.json の whisper.hfToken にも設定可能
 ```
 
+### macOS スピーカー録音のセットアップ
+
+システム音声(スピーカー出力)をキャプチャするには、仮想オーディオデバイス **BlackHole** を使用します。
+
+#### 1. BlackHole のインストール
+
+```bash
+brew install blackhole-2ch
+```
+
+または [公式サイト](https://existential.audio/blackhole/) からダウンロード。
+
+#### 2. Multi-Output Device の作成
+
+システム音声を聞きながら録音するために、複数出力装置を作成します。
+
+1. **Audio MIDI Setup** を開く
+   - Spotlight で "Audio MIDI Setup" を検索、または `/Applications/Utilities/Audio MIDI Setup.app`
+2. 左下の **「+」** ボタン → **「複数出力装置を作成」**
+3. 以下のデバイスにチェックを入れる:
+   - ✅ 通常使用するスピーカー/ヘッドフォン(例: MacBook Pro のスピーカー、外部スピーカー)
+   - ✅ BlackHole 2ch
+4. **マスターデバイス** を通常のスピーカーに設定(ドリフト補正の基準)
+5. 作成された「複数出力装置」を右クリック → 名前を変更(例: "Speaker + BlackHole")
+
+#### 3. システム出力の変更
+
+1. **システム設定** → **サウンド** → **出力**
+2. 作成した **「複数出力装置」** を選択
+
+> **注意**: 複数出力装置を選択中はメニューバーの音量調整が効きません。音量調整が必要な場合は、マスターデバイスに設定したスピーカーの音量を Audio MIDI Setup で調整してください。
+
+#### 4. 録音の実行
+
+```bash
+# 音声デバイス一覧を確認
+bun run cli -- record --list-sources
+
+# 出力例:
+#   0: USB PnP Audio Device
+#   1: Unknown USB Audio Device
+#   2: BlackHole 2ch          ← これを使用
+#   3: MacBook Proのマイク
+
+# マイク + スピーカー(BlackHole)で録音
+bun run cli -- record --speaker-source 2
+
+# または all コマンドで
+bun run cli -- all --speaker-source 2
+```
+
+#### トラブルシューティング
+
+**音が聞こえない場合:**
+- システム設定のサウンド出力が「複数出力装置」になっているか確認
+- Audio MIDI Setup で複数出力装置に正しいスピーカーが含まれているか確認
+
+**録音ファイルが空/無音の場合:**
+- BlackHole のデバイス番号が正しいか `--list-sources` で確認
+- 何か音声を再生しながらテストする
+
 ## CLIコマンド
 
 ```bash
@@ -115,7 +176,8 @@ bun run cli -- setup
 
 # 全機能一括起動(Worker + 録音 + 文字起こし + 要約 + APIサーバー)
 bun run cli -- all
-bun run cli -- all -s <source> -p 8080 --worker-port 3100
+bun run cli -- all -s <mic-source> --speaker-source <speaker-source>
+bun run cli -- all -p 8080 --worker-port 3100
 
 # Worker のみ起動(別マシンで実行可能)
 bun run cli -- worker
@@ -123,8 +185,9 @@ bun run cli -- worker -p 3100
 
 # 録音(Worker が起動済みである必要あり)
 bun run cli -- record
-bun run cli -- record --list-sources       # 音声ソース一覧
-bun run cli -- record -s <source>          # ソース指定
+bun run cli -- record --list-sources              # 音声ソース一覧
+bun run cli -- record -s <source>                 # マイクソース指定
+bun run cli -- record --speaker-source <source>   # スピーカー録音(BlackHole等)
 
 # 文字起こし
 bun run cli -- transcribe                  # 今日の録音を文字起こし
