@@ -37,12 +37,12 @@ export class AudioLevelMonitor {
     const ffmpegArgs = this.buildFfmpegArgs();
 
     this.process = Bun.spawn(ffmpegArgs, {
-      stdout: "ignore",
-      stderr: "pipe",
+      stdout: "pipe",
+      stderr: "ignore",
     });
 
-    // Parse stderr for audio levels
-    this.parseStderr();
+    // Parse stdout for audio levels (ametadata outputs to stdout via file=-)
+    this.parseStdout();
   }
 
   async stop(): Promise<void> {
@@ -87,11 +87,11 @@ export class AudioLevelMonitor {
     ];
   }
 
-  private async parseStderr(): Promise<void> {
-    const stderr = this.process?.stderr;
-    if (!stderr || typeof stderr === "number") return;
+  private async parseStdout(): Promise<void> {
+    const stdout = this.process?.stdout;
+    if (!stdout || typeof stdout === "number") return;
 
-    const reader = stderr.getReader();
+    const reader = stdout.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
 
