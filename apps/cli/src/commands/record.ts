@@ -101,7 +101,12 @@ export function registerRecordCommand(program: Command): void {
         consola.info(`Speaker capture configured (source: ${speakerSource ?? "default"})`);
 
         // Start API server
-        const app = createApp(db, { micCapture, speakerCapture });
+        const app = createApp(db, {
+          micCapture,
+          speakerCapture,
+          micSource: micSource ?? "default",
+          speakerSource: speakerSource ?? "default",
+        });
         serve({ fetch: app.fetch, port });
         consola.success(`API server running on http://localhost:${port}`);
 

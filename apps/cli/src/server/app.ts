@@ -14,6 +14,8 @@ import { createTranscriptionsRouter } from "./routes/transcriptions.js";
 interface CreateAppOptions {
   micCapture?: AudioCapture;
   speakerCapture?: AudioCapture;
+  micSource?: string;
+  speakerSource?: string;
 }
 
 export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
@@ -33,10 +35,16 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   if (options?.micCapture || options?.speakerCapture) {
     app.route(
       "/api/recording",
-      createRecordingRouter({
-        mic: options.micCapture,
-        speaker: options.speakerCapture,
-      }),
+      createRecordingRouter(
+        {
+          mic: options.micCapture,
+          speaker: options.speakerCapture,
+        },
+        {
+          mic: options.micSource ? { source: options.micSource } : undefined,
+          speaker: options.speakerSource ? { source: options.speakerSource } : undefined,
+        },
+      ),
     );
   }
 

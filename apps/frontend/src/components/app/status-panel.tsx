@@ -4,13 +4,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { useAudioLevels } from "@/hooks/use-audio-levels";
 import { useRecording } from "@/hooks/use-recording";
 import { useStatus } from "@/hooks/use-status";
+import { LevelMeter } from "./level-meter";
 
 export function StatusPanel() {
   const { status, error, loading } = useStatus();
   const { micRecording, speakerRecording, togglingMic, togglingSpeaker, toggleMic, toggleSpeaker } =
     useRecording();
+  const { levels } = useAudioLevels({
+    enabled: micRecording === true || speakerRecording === true,
+  });
 
   if (loading) {
     return (
@@ -69,56 +74,62 @@ export function StatusPanel() {
         {(micRecording !== null || speakerRecording !== null) && (
           <div className="space-y-3 border-t pt-3">
             {micRecording !== null && (
-              <div className="flex items-center justify-between">
-                <Label
-                  htmlFor="mic-toggle"
-                  className="flex items-center gap-1.5 text-sm font-medium"
-                >
-                  {micRecording ? (
-                    <Mic className="h-4 w-4 text-red-500" />
-                  ) : (
-                    <MicOff className="h-4 w-4 text-zinc-400" />
-                  )}
-                  Microphone
-                </Label>
-                <div className="flex items-center gap-2">
-                  <Badge variant={micRecording ? "default" : "secondary"}>
-                    {micRecording ? "ON" : "OFF"}
-                  </Badge>
-                  <Switch
-                    id="mic-toggle"
-                    checked={micRecording}
-                    disabled={togglingMic}
-                    onCheckedChange={toggleMic}
-                  />
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label
+                    htmlFor="mic-toggle"
+                    className="flex items-center gap-1.5 text-sm font-medium"
+                  >
+                    {micRecording ? (
+                      <Mic className="h-4 w-4 text-red-500" />
+                    ) : (
+                      <MicOff className="h-4 w-4 text-zinc-400" />
+                    )}
+                    Microphone
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={micRecording ? "default" : "secondary"}>
+                      {micRecording ? "ON" : "OFF"}
+                    </Badge>
+                    <Switch
+                      id="mic-toggle"
+                      checked={micRecording}
+                      disabled={togglingMic}
+                      onCheckedChange={toggleMic}
+                    />
+                  </div>
                 </div>
+                {micRecording && <LevelMeter level={levels.mic} />}
               </div>
             )}
 
             {speakerRecording !== null && (
-              <div className="flex items-center justify-between">
-                <Label
-                  htmlFor="speaker-toggle"
-                  className="flex items-center gap-1.5 text-sm font-medium"
-                >
-                  {speakerRecording ? (
-                    <Volume2 className="h-4 w-4 text-red-500" />
-                  ) : (
-                    <VolumeX className="h-4 w-4 text-zinc-400" />
-                  )}
-                  System Audio
-                </Label>
-                <div className="flex items-center gap-2">
-                  <Badge variant={speakerRecording ? "default" : "secondary"}>
-                    {speakerRecording ? "ON" : "OFF"}
-                  </Badge>
-                  <Switch
-                    id="speaker-toggle"
-                    checked={speakerRecording}
-                    disabled={togglingSpeaker}
-                    onCheckedChange={toggleSpeaker}
-                  />
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label
+                    htmlFor="speaker-toggle"
+                    className="flex items-center gap-1.5 text-sm font-medium"
+                  >
+                    {speakerRecording ? (
+                      <Volume2 className="h-4 w-4 text-red-500" />
+                    ) : (
+                      <VolumeX className="h-4 w-4 text-zinc-400" />
+                    )}
+                    System Audio
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={speakerRecording ? "default" : "secondary"}>
+                      {speakerRecording ? "ON" : "OFF"}
+                    </Badge>
+                    <Switch
+                      id="speaker-toggle"
+                      checked={speakerRecording}
+                      disabled={togglingSpeaker}
+                      onCheckedChange={toggleSpeaker}
+                    />
+                  </div>
                 </div>
+                {speakerRecording && <LevelMeter level={levels.speaker} />}
               </div>
             )}
           </div>
