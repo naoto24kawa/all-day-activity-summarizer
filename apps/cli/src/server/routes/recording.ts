@@ -40,7 +40,7 @@ export function createRecordingRouter(captures: RecordingCaptures, config?: Capt
           event: "levels",
           id: String(id++),
         });
-      }, 100); // 10 updates per second
+      }, 50); // 20 updates per second
 
       stream.onAbort(() => {
         clearInterval(interval);
