@@ -25,7 +25,7 @@ export async function runClaude(prompt: string, options?: RunClaudeOptions): Pro
   }
 
   if (options?.disableTools) {
-    args.push("--tools", "");
+    args.push("--tools=");
   } else if (options?.allowedTools) {
     args.push("--allowedTools", options.allowedTools);
   }

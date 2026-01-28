@@ -8,6 +8,7 @@ import type { AdasConfig } from "../config.js";
 import { getTodayDateString } from "../utils/date.js";
 import { transcribeAudio } from "../whisper/client.js";
 import { applyNewPattern, evaluateTranscription } from "../whisper/evaluator.js";
+import { accumulateSpeakerEmbeddings, loadRegisteredEmbeddings } from "../whisper/speaker-store.js";
 
 /**
  * 録音チャンク完了時の共通処理: 文字起こし + DB 保存 + 評価 + 音声ファイル削除。
@@ -43,6 +44,30 @@ export async function processChunkComplete(
   const startTime = new Date(startTimeStr);
   const endTime = new Date(startTime.getTime() + config.audio.chunkDurationMinutes * 60 * 1000);
 
+  // 話者 embedding を処理し、ラベルを登録名に差替え(DB 挿入前に実行)
+  let labelMap: Record<string, string> = {};
+  if (result.speakerEmbeddings && Object.keys(result.speakerEmbeddings).length > 0) {
+    try {
+      const speakerTexts: Record<string, string[]> = {};
+      for (const seg of result.segments) {
+        if (seg.speaker && seg.text.trim()) {
+          if (!speakerTexts[seg.speaker]) {
+            speakerTexts[seg.speaker] = [];
+          }
+          speakerTexts[seg.speaker]?.push(seg.text.trim());
+        }
+      }
+      const registeredEmbeddings = loadRegisteredEmbeddings();
+      labelMap = accumulateSpeakerEmbeddings(
+        result.speakerEmbeddings,
+        speakerTexts,
+        registeredEmbeddings,
+      );
+    } catch (err) {
+      consola.warn(`Failed to accumulate speaker embeddings: ${err}`);
+    }
+  }
+
   const hasSpeakers = result.segments.some((s) => s.speaker);
 
   if (hasSpeakers) {
@@ -50,6 +75,7 @@ export async function processChunkComplete(
       if (!seg.text.trim()) continue;
       const segStart = new Date(startTime.getTime() + seg.start);
       const segEnd = new Date(startTime.getTime() + seg.end);
+      const speaker = seg.speaker && labelMap[seg.speaker] ? labelMap[seg.speaker] : seg.speaker;
       db.insert(schema.transcriptionSegments)
         .values({
           date: datePart,
@@ -60,7 +86,7 @@ export async function processChunkComplete(
           transcription: seg.text,
           language: result.language,
           confidence: null,
-          speaker: seg.speaker ?? null,
+          speaker: speaker ?? null,
         })
         .run();
     }

@@ -80,10 +80,13 @@ def main() -> None:
     result = model.transcribe(audio, batch_size=16)
 
     # 2. Align whisper output
-    model_a, metadata = whisperx.load_align_model(language_code=args.language, device=device)
-    result = whisperx.align(
-        result["segments"], model_a, metadata, audio, device, return_char_alignments=False
-    )
+    try:
+        model_a, metadata = whisperx.load_align_model(language_code=args.language, device=device)
+        result = whisperx.align(
+            result["segments"], model_a, metadata, audio, device, return_char_alignments=False
+        )
+    except Exception as e:
+        print(f"Alignment failed (continuing with unaligned segments): {e}", file=sys.stderr)
 
     # 3. Speaker diarization (if HF_TOKEN is available)
     speaker_name_map: dict[str, str] = {}
@@ -132,13 +135,16 @@ def main() -> None:
 
     # 5. Include speaker embeddings for unknown speaker accumulation
     if diarize_embeddings is not None:
-        speaker_embeddings_out: dict[str, list[float]] = {}
-        for label, emb in diarize_embeddings.items():
-            if hasattr(emb, "tolist"):
-                speaker_embeddings_out[label] = emb.flatten().tolist()
-            else:
-                speaker_embeddings_out[label] = list(emb)
-        output["speaker_embeddings"] = speaker_embeddings_out
+        try:
+            speaker_embeddings_out: dict[str, list[float]] = {}
+            for label, emb in diarize_embeddings.items():
+                if hasattr(emb, "tolist"):
+                    speaker_embeddings_out[label] = emb.flatten().tolist()
+                else:
+                    speaker_embeddings_out[label] = list(emb)
+            output["speaker_embeddings"] = speaker_embeddings_out
+        except Exception as e:
+            print(f"Speaker embeddings export failed (continuing without embeddings): {e}", file=sys.stderr)
 
     json.dump(output, sys.stdout, ensure_ascii=False)
 
