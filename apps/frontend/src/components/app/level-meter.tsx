@@ -16,7 +16,7 @@ function dbToPercent(db: number): number {
   return ((clamped + 60) / 60) * 100;
 }
 
-export function LevelMeter({ level, className, decayRate = 30 }: LevelMeterProps) {
+export function LevelMeter({ level, className, decayRate = 12 }: LevelMeterProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const displayLevelRef = useRef<number>(-60);
   const lastTimeRef = useRef<number>(0);
