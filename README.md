@@ -20,6 +20,7 @@ CLIツール + Worker(文字起こし/評価) + Web UIダッシュボードの3�
 
 - ffmpeg による音声キャプチャ(macOS: avfoundation / Linux: PulseAudio)
 - WhisperX(ローカル)による文字起こし + 話者ダイアライゼーション
+- Claude(sonnet)による音声認識テキストのAI解釈(読みやすい日本語への整形)
 - Claude Code CLI による時間単位(ポモドーロ/1時間)/日次要約
 - Claude Code CLI(haiku)によるハルシネーション自動評価 + パターン自動追加
 - 話者登録(声紋埋め込み) + 未知話者の名前割り当て
@@ -130,6 +131,12 @@ bun run cli -- transcribe                  # 今日の録音を文字起こし
 bun run cli -- transcribe -d 2025-01-01    # 日付指定
 bun run cli -- transcribe --watch          # 録音完了を監視して自動実行
 
+# AI 解釈(interpretedText 生成)
+bun run cli -- interpret                   # 今日の未解釈セグメント
+bun run cli -- interpret -d 2025-01-01     # 日付指定
+bun run cli -- interpret --all             # 全日付の未解釈セグメント
+bun run cli -- interpret --all --force     # 全セグメントを再解釈
+
 # 要約生成
 bun run cli -- summarize                   # 全時間帯の要約
 bun run cli -- summarize --hour 14         # 特定時間の要約
@@ -183,6 +190,7 @@ bun run cli -- all
 | GET | `/rpc/health` | ヘルスチェック(WhisperX/Claude 状態) |
 | POST | `/rpc/transcribe` | WhisperX 文字起こし(multipart/form-data) |
 | POST | `/rpc/summarize` | Claude 要約実行 |
+| POST | `/rpc/interpret` | AI テキスト解釈 |
 | POST | `/rpc/evaluate` | ハルシネーション評価 |
 
 ## アーキテクチャ
@@ -195,9 +203,10 @@ apps/
 │   └── src/
 │       ├── index.ts      # エントリポイント(Commander.js)
 │       ├── config.ts     # 設定管理(~/.adas/config.json)
-│       ├── commands/     # record, transcribe, summarize, serve, setup, all, worker, enroll
+│       ├── commands/     # record, transcribe, interpret, summarize, serve, setup, all, worker, enroll
 │       ├── audio/        # ffmpeg音声キャプチャ + チャンク処理
 │       ├── whisper/      # WhisperXクライアント + 評価 + 話者管理
+│       ├── interpreter/  # AI 解釈共通ロジック(interpretSegments)
 │       ├── summarizer/   # 要約クライアント + スケジューラ
 │       ├── server/       # Hono APIサーバー + ルート定義
 │       └── utils/        # 日付ユーティリティ
@@ -248,7 +257,7 @@ CLI と Worker の間に直接依存はなく、HTTP(RPC)で通信。Worker は�
 
 | テーブル | カラム |
 |---------|--------|
-| `transcription_segments` | id, date, start_time, end_time, audio_source, audio_file_path, transcription, language, confidence, speaker, created_at |
+| `transcription_segments` | id, date, start_time, end_time, audio_source, audio_file_path, transcription, language, confidence, speaker, interpreted_text, created_at |
 | `summaries` | id, date, period_start, period_end, summary_type(pomodoro/hourly/daily), content, segment_ids, model, created_at |
 | `memos` | id, date, content, created_at |
 | `evaluator_logs` | id, date, audio_file_path, transcription_text, judgment, confidence, reason, suggested_pattern, pattern_applied, created_at |
@@ -258,6 +267,7 @@ CLI と Worker の間に直接依存はなく、HTTP(RPC)で通信。Worker は�
 ```
 マイク → ffmpeg → WAV(5分チャンク)
   → Worker(WhisperX) → テキスト + 話者ラベル → SQLite
+  → Worker(Claude sonnet) → AI 解釈(interpretedText)
   → Worker(Claude haiku) → ハルシネーション評価 → パターン自動追加
   → Worker(Claude) → ポモドーロ/時間/日次要約
   → Hono API → React ダッシュボード

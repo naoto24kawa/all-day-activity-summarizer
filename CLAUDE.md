@@ -45,6 +45,13 @@ type: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
 - 設定: `~/.adas/config.json`(apps/cli/src/config.ts)
 - 日付ユーティリティ: `apps/cli/src/utils/date.ts` の `getTodayDateString()` / `getDateString()` を使用(.split("T")[0]! のnon-null assertionを避ける)
 
+### AI 解釈(interpret)
+
+- 共通ロジック: `apps/cli/src/interpreter/run.ts` の `interpretSegments()`
+- `transcribe` コマンド(自動)と `interpret` コマンド(手動)の両方から呼ばれる
+- Worker の `/rpc/interpret` エンドポイントを使用
+- `interpret --all` で全日付の未解釈セグメントを一括処理可能
+
 ### Whisper ハルシネーション対策
 
 - 無音区間で Whisper が出力する定型文(「ご視聴ありがとうございました」等)をフィルタリングしている

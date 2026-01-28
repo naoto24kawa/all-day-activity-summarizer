@@ -28,6 +28,7 @@ bun run cli -- all           # 全機能一括起動(Worker + 録音 + 要約 + 
 bun run cli -- worker        # Worker のみ起動
 bun run cli -- record        # 録音のみ(Worker 起動済み前提)
 bun run cli -- transcribe    # 文字起こし
+bun run cli -- interpret     # AI 解釈(interpretedText 生成)
 bun run cli -- summarize     # 要約生成
 bun run cli -- serve         # APIサーバー(:3001)
 bun run cli -- enroll        # 話者登録
@@ -56,9 +57,10 @@ apps/
 │   └── src/
 │       ├── index.ts    # エントリポイント(Commander.js)
 │       ├── config.ts   # 設定管理(~/.adas/config.json)
-│       ├── commands/   # record, transcribe, summarize, serve, setup, all, worker, enroll
+│       ├── commands/   # record, transcribe, interpret, summarize, serve, setup, all, worker, enroll
 │       ├── audio/      # ffmpeg音声キャプチャ + チャンク処理
 │       ├── whisper/    # WhisperXクライアント + 評価 + 話者管理
+│       ├── interpreter/ # AI 解釈共通ロジック(interpretSegments)
 │       ├── summarizer/ # 要約クライアント + スケジューラ
 │       ├── server/     # Hono APIサーバー + ルート定義
 │       └── utils/      # 日付ユーティリティ
@@ -109,7 +111,7 @@ CLI と Worker の間に直接依存はなく、HTTP(RPC)で通信。
 
 | テーブル | カラム |
 |---------|--------|
-| `transcription_segments` | id, date, start_time, end_time, audio_source, audio_file_path, transcription, language, confidence, speaker, created_at |
+| `transcription_segments` | id, date, start_time, end_time, audio_source, audio_file_path, transcription, language, confidence, speaker, interpreted_text, created_at |
 | `summaries` | id, date, period_start, period_end, summary_type(pomodoro/hourly/daily), content, segment_ids, model, created_at |
 | `memos` | id, date, content, created_at |
 | `evaluator_logs` | id, date, audio_file_path, transcription_text, judgment, confidence, reason, suggested_pattern, pattern_applied, created_at |
@@ -138,6 +140,7 @@ CLI と Worker の間に直接依存はなく、HTTP(RPC)で通信。
 | GET | `/rpc/health` | ヘルスチェック |
 | POST | `/rpc/transcribe` | WhisperX 文字起こし |
 | POST | `/rpc/summarize` | Claude 要約実行 |
+| POST | `/rpc/interpret` | AI テキスト解釈 |
 | POST | `/rpc/evaluate` | ハルシネーション評価 |
 
 ## 開発ガイドライン
