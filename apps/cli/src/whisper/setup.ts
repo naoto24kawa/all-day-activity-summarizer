@@ -1,7 +1,10 @@
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import consola from "consola";
 import type { AdasConfig } from "../config.js";
+
+const WHISPERX_VENV_DIR = join(homedir(), ".adas", "whisperx-venv");
 
 function getWhisperBinaryPath(config: AdasConfig): string {
   return join(config.whisper.installDir, "build", "bin", "whisper-cli");
@@ -66,6 +69,68 @@ export async function setupWhisper(config: AdasConfig): Promise<void> {
   }
 
   consola.success("whisper.cpp setup complete!");
+}
+
+export function getWhisperXVenvDir(): string {
+  return WHISPERX_VENV_DIR;
+}
+
+export function getWhisperXPythonPath(): string {
+  return join(WHISPERX_VENV_DIR, "bin", "python3");
+}
+
+export function isWhisperXInstalled(): boolean {
+  if (!existsSync(getWhisperXPythonPath())) return false;
+  // Verify whisperx module is actually importable
+  try {
+    const proc = Bun.spawnSync([getWhisperXPythonPath(), "-c", "import whisperx"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return proc.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
+function findPythonForVenv(): string {
+  // whisperX requires Python <3.14, prefer 3.12
+  const candidates = [
+    "/opt/homebrew/opt/python@3.12/bin/python3.12",
+    "/opt/homebrew/opt/python@3.13/bin/python3.13",
+    "/opt/homebrew/opt/python@3.11/bin/python3.11",
+    "python3.12",
+    "python3.13",
+    "python3.11",
+    "python3",
+  ];
+  for (const cmd of candidates) {
+    if (existsSync(cmd)) return cmd;
+  }
+  return "python3";
+}
+
+export async function setupWhisperX(): Promise<void> {
+  if (isWhisperXInstalled()) {
+    consola.info("whisperX venv already exists, skipping setup");
+    return;
+  }
+
+  consola.info("Setting up whisperX virtual environment...");
+
+  const python = findPythonForVenv();
+  consola.info(`Using Python: ${python}`);
+
+  // Create venv
+  await runCommand([python, "-m", "venv", WHISPERX_VENV_DIR]);
+
+  const pip = join(WHISPERX_VENV_DIR, "bin", "pip");
+
+  // Install whisperx and dependencies
+  consola.info("Installing whisperX (this may take a while)...");
+  await runCommand([pip, "install", "whisperx", "torch", "torchaudio"]);
+
+  consola.success("whisperX setup complete!");
 }
 
 export { getWhisperBinaryPath, getModelPath };

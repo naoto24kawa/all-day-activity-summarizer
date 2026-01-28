@@ -9,8 +9,12 @@ interface TimelineProps {
 export function Timeline({ date }: TimelineProps) {
   const { segments } = useTranscriptions(date);
 
-  // Group segments by hour
-  const hourlyData = Array.from({ length: 24 }, (_, hour) => {
+  const START_HOUR = 9;
+  const END_HOUR = 19;
+
+  // Group segments by hour (business hours only)
+  const hourlyData = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => {
+    const hour = START_HOUR + i;
     const hourSegments = segments.filter((s) => {
       const h = new Date(s.startTime).getHours();
       return h === hour;

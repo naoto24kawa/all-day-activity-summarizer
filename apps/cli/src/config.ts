@@ -9,6 +9,8 @@ export interface AdasConfig {
     modelName: string;
     language: string;
     installDir: string;
+    engine: "whisperx" | "whisper-cpp";
+    hfToken?: string;
   };
   audio: {
     sampleRate: number;
@@ -17,6 +19,14 @@ export interface AdasConfig {
   };
   server: {
     port: number;
+  };
+  evaluator: {
+    enabled: boolean;
+    autoApplyPatterns: boolean;
+  };
+  worker: {
+    url: string;
+    timeout: number;
   };
 }
 
@@ -30,6 +40,8 @@ const defaultConfig: AdasConfig = {
     modelName: "ggml-large-v3-turbo-q5_0.bin",
     language: "ja",
     installDir: join(ADAS_HOME, "whisper.cpp"),
+    engine: "whisperx",
+    hfToken: undefined,
   },
   audio: {
     sampleRate: 16000,
@@ -38,6 +50,14 @@ const defaultConfig: AdasConfig = {
   },
   server: {
     port: 3001,
+  },
+  evaluator: {
+    enabled: true,
+    autoApplyPatterns: true,
+  },
+  worker: {
+    url: "http://localhost:3100",
+    timeout: 300000,
   },
 };
 

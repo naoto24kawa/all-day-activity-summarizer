@@ -6,8 +6,17 @@
 
 // ADAS型定義
 export type {
+  EvaluatorLog,
   GenerateSummaryRequest,
   GenerateSummaryResponse,
+  Memo,
+  RpcEvaluateRequest,
+  RpcEvaluateResponse,
+  RpcHealthResponse,
+  RpcSummarizeRequest,
+  RpcSummarizeResponse,
+  RpcTranscribeConfig,
+  RpcTranscribeResponse,
   StatusResponse,
   Summary,
   TranscriptionSegment,

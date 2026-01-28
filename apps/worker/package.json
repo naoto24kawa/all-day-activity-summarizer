@@ -1,0 +1,19 @@
+{
+  "name": "@repo/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/app.ts",
+  "exports": {
+    ".": "./src/app.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "consola": "^3.4.2",
+    "@repo/core": "workspace:*",
+    "@repo/types": "workspace:*",
+    "hono": "^4.10.6"
+  }
+}

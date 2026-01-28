@@ -2,7 +2,11 @@ import { createDatabase } from "@repo/db";
 import type { Command } from "commander";
 import consola from "consola";
 import { loadConfig } from "../config.js";
-import { generateDailySummary, generateHourlySummary } from "../summarizer/scheduler.js";
+import {
+  generateDailySummary,
+  generateHourlySummary,
+  generatePomodoroSummary,
+} from "../summarizer/scheduler.js";
 import { getDateString } from "../utils/date.js";
 
 async function handleHourlySummary(
@@ -45,6 +49,21 @@ async function handleAllSummaries(
   dateStr: string,
 ): Promise<void> {
   consola.info(`Generating all summaries for ${dateStr}...`);
+
+  // Generate pomodoro summaries (30-min intervals)
+  for (let period = 0; period < 48; period++) {
+    const hour = Math.floor(period / 2);
+    const isSecondHalf = period % 2 === 1;
+    const hh = String(hour).padStart(2, "0");
+    const startTime = isSecondHalf ? `${dateStr}T${hh}:30:00` : `${dateStr}T${hh}:00:00`;
+    const endTime = isSecondHalf ? `${dateStr}T${hh}:59:59` : `${dateStr}T${hh}:29:59`;
+    const result = await generatePomodoroSummary(db, dateStr, startTime, endTime);
+    if (result) {
+      consola.success(`Pomodoro ${startTime} - ${endTime} summary generated`);
+    }
+  }
+
+  // Generate hourly summaries (aggregating pomodoro)
   for (let hour = 0; hour < 24; hour++) {
     const result = await generateHourlySummary(db, dateStr, hour);
     if (result) {

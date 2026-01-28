@@ -66,7 +66,14 @@ export function TranscriptionList({ date }: TranscriptionListProps) {
                       {segment.language}
                     </Badge>
                   </div>
-                  <p className="text-sm">{segment.transcription}</p>
+                  <div className="flex items-start gap-2">
+                    {segment.speaker && (
+                      <Badge variant="default" className="mt-0.5 shrink-0 text-xs">
+                        {segment.speaker}
+                      </Badge>
+                    )}
+                    <p className="text-sm">{segment.transcription}</p>
+                  </div>
                 </div>
               ))}
             </div>

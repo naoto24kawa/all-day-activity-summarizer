@@ -2,7 +2,11 @@ import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { generateDailySummary, generateHourlySummary } from "../../summarizer/scheduler.js";
+import {
+  generateDailySummary,
+  generateHourlySummary,
+  generatePomodoroSummary,
+} from "../../summarizer/scheduler.js";
 import { getTodayDateString } from "../../utils/date.js";
 
 export function createSummariesRouter(db: AdasDatabase) {
@@ -10,7 +14,7 @@ export function createSummariesRouter(db: AdasDatabase) {
 
   router.get("/", (c) => {
     const date = c.req.query("date");
-    const type = c.req.query("type") as "hourly" | "daily" | undefined;
+    const type = c.req.query("type") as "pomodoro" | "hourly" | "daily" | undefined;
 
     const query = db.select().from(schema.summaries);
 
@@ -32,7 +36,11 @@ export function createSummariesRouter(db: AdasDatabase) {
   });
 
   router.post("/generate", async (c) => {
-    const body = await c.req.json<{ date?: string; type?: "hourly" | "daily"; hour?: number }>();
+    const body = await c.req.json<{
+      date?: string;
+      type?: "pomodoro" | "hourly" | "daily";
+      hour?: number;
+    }>();
     const date = body.date ?? getTodayDateString();
 
     if (body.type === "daily") {
@@ -45,17 +53,30 @@ export function createSummariesRouter(db: AdasDatabase) {
       return c.json({ success: !!result, content: result });
     }
 
-    // Generate all hourly + daily
-    const results: string[] = [];
+    // Generate all: pomodoro → hourly → daily
+    const pomodoroResults: string[] = [];
+    for (let period = 0; period < 48; period++) {
+      const hour = Math.floor(period / 2);
+      const isSecondHalf = period % 2 === 1;
+      const hh = String(hour).padStart(2, "0");
+      const startTime = isSecondHalf ? `${date}T${hh}:30:00` : `${date}T${hh}:00:00`;
+      const endTime = isSecondHalf ? `${date}T${hh}:59:59` : `${date}T${hh}:29:59`;
+      const result = await generatePomodoroSummary(db, date, startTime, endTime);
+      if (result) pomodoroResults.push(result);
+    }
+
+    const hourlyResults: string[] = [];
     for (let hour = 0; hour < 24; hour++) {
       const result = await generateHourlySummary(db, date, hour);
-      if (result) results.push(result);
+      if (result) hourlyResults.push(result);
     }
+
     const daily = await generateDailySummary(db, date);
 
     return c.json({
       success: true,
-      hourlyCount: results.length,
+      pomodoroCount: pomodoroResults.length,
+      hourlyCount: hourlyResults.length,
       dailyGenerated: !!daily,
     });
   });

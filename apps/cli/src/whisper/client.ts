@@ -1,83 +1,81 @@
+import { readFileSync } from "node:fs";
+import type { RpcTranscribeConfig, RpcTranscribeResponse } from "@repo/types";
 import consola from "consola";
 import type { AdasConfig } from "../config.js";
-import { getModelPath, getWhisperBinaryPath, isWhisperInstalled } from "./setup.js";
+import { loadRegisteredEmbeddings } from "./speaker-store.js";
 
 export interface WhisperSegment {
   start: number; // ms
   end: number; // ms
   text: string;
-}
-
-interface WhisperJsonOutput {
-  transcription: Array<{
-    timestamps: { from: string; to: string };
-    offsets: { from: number; to: number };
-    text: string;
-  }>;
+  speaker?: string;
 }
 
 export interface WhisperResult {
   text: string;
   segments: WhisperSegment[];
   language: string;
+  speakerEmbeddings?: Record<string, number[]>;
 }
 
 export async function transcribeAudio(
   audioPath: string,
   config: AdasConfig,
 ): Promise<WhisperResult> {
-  if (!isWhisperInstalled(config)) {
-    throw new Error("whisper.cpp is not installed. Run 'adas setup' first.");
-  }
+  const { url, timeout } = config.worker;
 
-  const binaryPath = getWhisperBinaryPath(config);
-  const modelPath = getModelPath(config);
+  consola.info(`[worker] Sending transcription to ${url}/rpc/transcribe`);
 
-  consola.debug(`Transcribing: ${audioPath}`);
+  const formData = new FormData();
 
-  const proc = Bun.spawn(
-    [
-      binaryPath,
-      "-m",
-      modelPath,
-      "-f",
-      audioPath,
-      "-l",
-      config.whisper.language,
-      "--output-json",
-      "--no-prints",
-    ],
-    {
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
+  // WAV ファイルを読み込んで送信
+  const audioBuffer = readFileSync(audioPath);
+  const audioBlob = new Blob([audioBuffer], { type: "audio/wav" });
+  formData.append("audio", audioBlob, "audio.wav");
 
-  const stdout = await new Response(proc.stdout).text();
-  const exitCode = await proc.exited;
-
-  if (exitCode !== 0) {
-    const stderrStream = proc.stderr;
-    const stderr =
-      stderrStream && typeof stderrStream !== "number"
-        ? await new Response(stderrStream).text()
-        : "";
-    throw new Error(`whisper.cpp failed (exit ${exitCode}): ${stderr.slice(0, 500)}`);
-  }
-
-  const json = JSON.parse(stdout) as WhisperJsonOutput;
-
-  const segments: WhisperSegment[] = json.transcription.map((seg) => ({
-    start: seg.offsets.from,
-    end: seg.offsets.to,
-    text: seg.text.trim(),
-  }));
-
-  const fullText = segments.map((s) => s.text).join(" ");
-
-  return {
-    text: fullText,
-    segments,
+  // config
+  const rpcConfig: RpcTranscribeConfig = {
     language: config.whisper.language,
+    engine: config.whisper.engine,
+    hfToken: config.whisper.hfToken,
   };
+  formData.append("config", JSON.stringify(rpcConfig));
+
+  // embeddings
+  const embeddings = loadRegisteredEmbeddings();
+  if (Object.keys(embeddings).length > 0) {
+    formData.append("embeddings", JSON.stringify(embeddings));
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(`${url}/rpc/transcribe`, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`Worker returned ${response.status}: ${errorBody}`);
+    }
+
+    const result = (await response.json()) as RpcTranscribeResponse;
+
+    return {
+      text: result.text,
+      segments: result.segments.map((seg) => ({
+        start: seg.start,
+        end: seg.end,
+        text: seg.text,
+        speaker: seg.speaker,
+      })),
+      language: result.language,
+      speakerEmbeddings: result.speakerEmbeddings,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }

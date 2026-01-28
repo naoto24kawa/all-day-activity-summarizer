@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { ActivityFeed } from "./activity-feed";
+import { EvaluatorLogPanel } from "./evaluator-log-panel";
+import { MemoPanel } from "./memo-panel";
+import { SpeakerAssignPanel } from "./speaker-assign-panel";
 import { StatusPanel } from "./status-panel";
 import { SummaryView } from "./summary-view";
 import { Timeline } from "./timeline";
-import { TranscriptionList } from "./transcription-list";
 
 function getTodayString(): string {
   return new Date().toISOString().slice(0, 10);
@@ -24,16 +27,20 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2">
         <StatusPanel />
-        <div className="md:col-span-2">
-          <Timeline date={date} />
-        </div>
+        <Timeline date={date} />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <SummaryView date={date} />
+        <ActivityFeed date={date} />
+        <MemoPanel date={date} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <SummaryView date={date} />
-        <TranscriptionList date={date} />
+        <SpeakerAssignPanel />
+        <EvaluatorLogPanel date={date} />
       </div>
     </div>
   );

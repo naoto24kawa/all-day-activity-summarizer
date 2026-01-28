@@ -4,6 +4,7 @@ import type { Command } from "commander";
 import consola from "consola";
 import { loadConfig } from "../config.js";
 import { createApp } from "../server/app.js";
+import { startScheduler } from "../summarizer/scheduler.js";
 
 export function registerServeCommand(program: Command): void {
   program
@@ -24,5 +25,8 @@ export function registerServeCommand(program: Command): void {
       });
 
       consola.success(`API server running on http://localhost:${port}`);
+
+      const _stopScheduler = startScheduler(db);
+      consola.success("Summary scheduler started");
     });
 }

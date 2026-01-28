@@ -45,6 +45,14 @@ type: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
 - 設定: `~/.adas/config.json`(apps/cli/src/config.ts)
 - 日付ユーティリティ: `apps/cli/src/utils/date.ts` の `getTodayDateString()` / `getDateString()` を使用(.split("T")[0]! のnon-null assertionを避ける)
 
+### Whisper ハルシネーション対策
+
+- 無音区間で Whisper が出力する定型文(「ご視聴ありがとうございました」等)をフィルタリングしている
+- 対象: `apps/cli/src/commands/transcribe.ts` の `HALLUCINATION_PATTERNS` 配列
+- 新しいパターンが見つかったら、この配列に正規表現を追加する
+- **自動評価**: Claude SDK(haiku)による第2段階フィルタが有効。既存パターンを通過したテキストを非同期で評価し、ハルシネーション検出時は DB 削除 + パターン自動追加を行う
+- 設定: `~/.adas/config.json` の `evaluator.enabled` / `evaluator.autoApplyPatterns` で制御(デフォルト: 両方 true)
+
 ### APIサーバー
 
 - `apps/cli/src/server/app.ts` で Hono アプリ定義

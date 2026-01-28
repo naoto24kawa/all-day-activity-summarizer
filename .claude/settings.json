@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "osascript -e 'display notification \"作業が完了しました！\" with title \"Claude Code\" subtitle \"$CLAUDE_PROJECT_DIR\"'"
+            "command": "osascript -e 'display notification \"作業が完了しました！\" with title \"Claude Code\" subtitle \"all-day-activity-summarizer\"'"
           },
           {
             "type": "command",

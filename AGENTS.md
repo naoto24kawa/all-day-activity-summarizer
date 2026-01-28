@@ -10,7 +10,8 @@ AI アシスタント向け共通ドキュメント。常に日本語で回答�
 |---------|------|
 | 音声キャプチャ | ffmpeg + PulseAudio(WSL2) |
 | 文字起こし | whisper.cpp(ローカル実行) |
-| 要約 | @anthropic-ai/sdk(Claude API) |
+| 要約 | @anthropic-ai/claude-agent-sdk(Claude API) |
+| 文字起こし評価 | @anthropic-ai/claude-agent-sdk(haiku, ハルシネーション検出) |
 | DB | SQLite(bun:sqlite + Drizzle ORM) |
 | CLI | Commander.js + Bun |
 | APIサーバー | Hono + @hono/node-server |
@@ -53,7 +54,7 @@ apps/
 │       ├── config.ts   # 設定管理(~/.adas/config.json)
 │       ├── commands/   # record, transcribe, summarize, serve, setup, all
 │       ├── audio/      # ffmpeg音声キャプチャ
-│       ├── whisper/    # whisper.cppラッパー + セットアップ
+│       ├── whisper/    # whisper.cppラッパー + セットアップ + Claude SDK評価
 │       ├── summarizer/ # Claude API要約 + スケジューラ
 │       ├── server/     # Hono APIサーバー + ルート定義
 │       └── utils/      # 共通ユーティリティ(date.ts)

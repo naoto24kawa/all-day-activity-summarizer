@@ -21,7 +21,34 @@ function getChunkFileName(): string {
   return `chunk_${time}.wav`;
 }
 
-export async function listPulseAudioSources(): Promise<string[]> {
+export async function listAudioSources(): Promise<string[]> {
+  if (process.platform === "darwin") {
+    const proc = Bun.spawn(["ffmpeg", "-f", "avfoundation", "-list_devices", "true", "-i", ""], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stderr = await new Response(proc.stderr).text();
+    await proc.exited;
+
+    const lines = stderr.split("\n");
+    const sources: string[] = [];
+    let inAudio = false;
+    for (const line of lines) {
+      if (line.includes("AVFoundation audio devices:")) {
+        inAudio = true;
+        continue;
+      }
+      if (inAudio) {
+        const match = line.match(/\[(\d+)]\s+(.+)/);
+        if (match) {
+          sources.push(`${match[1]}: ${match[2]}`);
+        }
+      }
+    }
+    return sources;
+  }
+
+  // Linux (PulseAudio)
   const proc = Bun.spawn(["pactl", "list", "short", "sources"], {
     stdout: "pipe",
     stderr: "pipe",
@@ -91,27 +118,12 @@ export class AudioCapture {
 
     consola.debug(`Recording chunk: ${this.currentFilePath}`);
 
-    this.process = Bun.spawn(
-      [
-        "ffmpeg",
-        "-f",
-        "pulse",
-        "-i",
-        this.source,
-        "-ac",
-        String(this.config.audio.channels),
-        "-ar",
-        String(this.config.audio.sampleRate),
-        "-t",
-        String(durationSec),
-        "-y",
-        this.currentFilePath,
-      ],
-      {
-        stdout: "ignore",
-        stderr: "pipe",
-      },
-    );
+    const ffmpegArgs = this.buildFfmpegArgs(durationSec);
+
+    this.process = Bun.spawn(ffmpegArgs, {
+      stdout: "ignore",
+      stderr: "pipe",
+    });
 
     // Wait for ffmpeg to finish the chunk, then start next
     this.process.exited.then(async (exitCode) => {
@@ -133,6 +145,52 @@ export class AudioCapture {
         await this.startChunk();
       }
     });
+  }
+
+  private buildFfmpegArgs(durationSec: number): string[] {
+    const output = this.currentFilePath ?? "";
+    if (!output) {
+      throw new Error("currentFilePath is not set");
+    }
+    const channels = String(this.config.audio.channels);
+    const sampleRate = String(this.config.audio.sampleRate);
+
+    if (process.platform === "darwin") {
+      // avfoundation: source is ":deviceIndex" (audio-only)
+      const device = this.source === "default" ? ":0" : `:${this.source}`;
+      return [
+        "ffmpeg",
+        "-f",
+        "avfoundation",
+        "-i",
+        device,
+        "-ac",
+        channels,
+        "-ar",
+        sampleRate,
+        "-t",
+        String(durationSec),
+        "-y",
+        output,
+      ];
+    }
+
+    // Linux (PulseAudio)
+    return [
+      "ffmpeg",
+      "-f",
+      "pulse",
+      "-i",
+      this.source,
+      "-ac",
+      channels,
+      "-ar",
+      sampleRate,
+      "-t",
+      String(durationSec),
+      "-y",
+      output,
+    ];
   }
 
   private async stopCurrentProcess(): Promise<void> {

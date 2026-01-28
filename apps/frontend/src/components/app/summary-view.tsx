@@ -13,6 +13,11 @@ interface SummaryViewProps {
 
 export function SummaryView({ date }: SummaryViewProps) {
   const {
+    summaries: pomodoroSummaries,
+    loading: pomodoroLoading,
+    error: pomodoroError,
+  } = useSummaries(date, "pomodoro");
+  const {
     summaries: hourlySummaries,
     loading: hourlyLoading,
     error: hourlyError,
@@ -63,6 +68,14 @@ export function SummaryView({ date }: SummaryViewProps) {
                 </Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="pomodoro">
+              Pomodoro
+              {pomodoroSummaries.length > 0 && (
+                <Badge variant="secondary" className="ml-1">
+                  {pomodoroSummaries.length}
+                </Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="daily">
@@ -94,6 +107,30 @@ export function SummaryView({ date }: SummaryViewProps) {
               <ScrollArea className="h-[300px]">
                 <div className="space-y-4">
                   {hourlySummaries.map((summary) => (
+                    <div key={summary.id} className="rounded-md border p-3">
+                      <p className="mb-1 text-xs font-medium text-muted-foreground">
+                        {new Date(summary.periodStart).toLocaleTimeString()} -{" "}
+                        {new Date(summary.periodEnd).toLocaleTimeString()}
+                      </p>
+                      <pre className="whitespace-pre-wrap text-sm">{summary.content}</pre>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </TabsContent>
+
+          <TabsContent value="pomodoro">
+            {pomodoroLoading ? (
+              <Skeleton className="h-32 w-full" />
+            ) : pomodoroError ? (
+              <p className="text-sm text-muted-foreground">{pomodoroError}</p>
+            ) : pomodoroSummaries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No pomodoro summaries yet.</p>
+            ) : (
+              <ScrollArea className="h-[300px]">
+                <div className="space-y-4">
+                  {pomodoroSummaries.map((summary) => (
                     <div key={summary.id} className="rounded-md border p-3">
                       <p className="mb-1 text-xs font-medium text-muted-foreground">
                         {new Date(summary.periodStart).toLocaleTimeString()} -{" "}

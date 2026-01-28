@@ -20,4 +20,14 @@ async function postAdasApi<T>(path: string, body: unknown): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export { fetchAdasApi, postAdasApi, ADAS_API_URL };
+async function deleteAdasApi<T>(path: string): Promise<T> {
+  const response = await fetch(`${ADAS_API_URL}${path}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`ADAS API error: ${response.status} ${response.statusText}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+export { fetchAdasApi, postAdasApi, deleteAdasApi, ADAS_API_URL };
