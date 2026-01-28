@@ -112,8 +112,9 @@ export async function processChunkComplete(
   try {
     unlinkSync(filePath);
     consola.debug(`Deleted: ${basename(filePath)}`);
-  } catch {
-    consola.warn(`Failed to delete: ${basename(filePath)}`);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    consola.warn(`Failed to delete: ${basename(filePath)} - ${errMsg}`);
   }
 
   // 第2段階: Claude SDK による非同期ハルシネーション評価

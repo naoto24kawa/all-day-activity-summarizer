@@ -77,6 +77,16 @@ Respond ONLY with a JSON object (no markdown, no code blocks):
 
   const parsed = JSON.parse(jsonMatch[0]) as RpcEvaluateResponse;
 
+  // judgment のバリデーション: LLM が想定外の値を返す場合がある
+  if (parsed.judgment !== "hallucination" && parsed.judgment !== "legitimate") {
+    consola.debug(
+      `[worker/evaluate] Unexpected judgment value: ${parsed.judgment}, normalizing to 'legitimate'`,
+    );
+    // 想定外の値(mixed など)は legitimate として扱う(正当なコンテンツを誤って削除しないため)
+    parsed.judgment = "legitimate";
+    parsed.suggestedPattern = null;
+  }
+
   // suggestedPattern の妥当性を検証
   if (parsed.suggestedPattern) {
     try {
