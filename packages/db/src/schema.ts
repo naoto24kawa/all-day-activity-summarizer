@@ -11,6 +11,7 @@ export const transcriptionSegments = sqliteTable("transcription_segments", {
   language: text("language").notNull().default("ja"),
   confidence: real("confidence"),
   speaker: text("speaker"),
+  interpretedText: text("interpreted_text"),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -45,6 +46,43 @@ export type Summary = typeof summaries.$inferSelect;
 export type NewSummary = typeof summaries.$inferInsert;
 export type Memo = typeof memos.$inferSelect;
 export type NewMemo = typeof memos.$inferInsert;
+
+export const segmentFeedbacks = sqliteTable("segment_feedbacks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  segmentId: integer("segment_id").notNull(),
+  rating: text("rating", { enum: ["good", "bad"] }).notNull(),
+  target: text("target", {
+    enum: ["interpret", "evaluate", "summarize-hourly", "summarize-daily"],
+  })
+    .notNull()
+    .default("interpret"),
+  reason: text("reason"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type SegmentFeedback = typeof segmentFeedbacks.$inferSelect;
+export type NewSegmentFeedback = typeof segmentFeedbacks.$inferInsert;
+
+export const promptImprovements = sqliteTable("prompt_improvements", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  target: text("target", {
+    enum: ["interpret", "evaluate", "summarize-hourly", "summarize-daily"],
+  }).notNull(),
+  previousPrompt: text("previous_prompt").notNull(),
+  newPrompt: text("new_prompt").notNull(),
+  feedbackCount: integer("feedback_count").notNull(),
+  goodCount: integer("good_count").notNull(),
+  badCount: integer("bad_count").notNull(),
+  improvementReason: text("improvement_reason"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type PromptImprovement = typeof promptImprovements.$inferSelect;
+export type NewPromptImprovement = typeof promptImprovements.$inferInsert;
 
 export const evaluatorLogs = sqliteTable("evaluator_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),

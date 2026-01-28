@@ -1,13 +1,22 @@
 import { spawn } from "node:child_process";
+import { join } from "node:path";
 import consola from "consola";
 
 export interface RunClaudeOptions {
   model?: string;
   systemPrompt?: string;
+  appendSystemPromptFile?: string;
   allowedTools?: string;
   disableTools?: boolean;
   dangerouslySkipPermissions?: boolean;
   cwd?: string;
+}
+
+/**
+ * packages/core/prompts/ 配下のプロンプトファイルの絶対パスを返す。
+ */
+export function getPromptFilePath(name: string): string {
+  return join(import.meta.dirname, "../prompts", `${name}.md`);
 }
 
 /**
@@ -22,6 +31,10 @@ export async function runClaude(prompt: string, options?: RunClaudeOptions): Pro
 
   if (options?.systemPrompt) {
     args.push("--system-prompt", options.systemPrompt);
+  }
+
+  if (options?.appendSystemPromptFile) {
+    args.push("--append-system-prompt-file", options.appendSystemPromptFile);
   }
 
   if (options?.disableTools) {

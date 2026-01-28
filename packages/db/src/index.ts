@@ -8,8 +8,12 @@ export type {
   Memo,
   NewEvaluatorLog,
   NewMemo,
+  NewPromptImprovement,
+  NewSegmentFeedback,
   NewSummary,
   NewTranscriptionSegment,
+  PromptImprovement,
+  SegmentFeedback,
   Summary,
   TranscriptionSegment,
 } from "./schema.js";
@@ -86,6 +90,54 @@ export function createDatabase(dbPath: string) {
   } catch {
     // Column already exists, ignore
   }
+
+  // Migration: add interpreted_text column if not exists
+  try {
+    sqlite.exec(`ALTER TABLE transcription_segments ADD COLUMN interpreted_text TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+
+  // Migration: create segment_feedbacks table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS segment_feedbacks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      segment_id INTEGER NOT NULL,
+      rating TEXT NOT NULL CHECK(rating IN ('good', 'bad')),
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_segment_feedbacks_segment_id ON segment_feedbacks(segment_id);
+  `);
+
+  // Migration: add target and reason columns to segment_feedbacks
+  try {
+    sqlite.exec(
+      `ALTER TABLE segment_feedbacks ADD COLUMN target TEXT NOT NULL DEFAULT 'interpret'`,
+    );
+  } catch {
+    // Column already exists
+  }
+  try {
+    sqlite.exec(`ALTER TABLE segment_feedbacks ADD COLUMN reason TEXT`);
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: create prompt_improvements table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS prompt_improvements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      target TEXT NOT NULL,
+      previous_prompt TEXT NOT NULL,
+      new_prompt TEXT NOT NULL,
+      feedback_count INTEGER NOT NULL,
+      good_count INTEGER NOT NULL,
+      bad_count INTEGER NOT NULL,
+      improvement_reason TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_prompt_improvements_target ON prompt_improvements(target);
+  `);
 
   // Migration: update CHECK constraint to allow 'pomodoro' summary_type
   // SQLite doesn't support ALTER CHECK, so recreate the table

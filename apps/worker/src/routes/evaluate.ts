@@ -1,4 +1,4 @@
-import { runClaude } from "@repo/core";
+import { getPromptFilePath, runClaude } from "@repo/core";
 import type { RpcEvaluateRequest, RpcEvaluateResponse } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
@@ -62,8 +62,7 @@ Respond ONLY with a JSON object (no markdown, no code blocks):
 
   const result = await runClaude(prompt, {
     model: EVALUATOR_MODEL,
-    systemPrompt:
-      "You are a transcription quality evaluator. Respond ONLY with a valid JSON object. No markdown, no explanation, no code blocks.",
+    appendSystemPromptFile: getPromptFilePath("evaluate"),
     disableTools: true,
   });
 

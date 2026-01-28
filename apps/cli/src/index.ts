@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { registerAllCommand } from "./commands/all.js";
 import { registerEnrollCommand } from "./commands/enroll.js";
+import { registerImprovePromptCommand } from "./commands/improve-prompt.js";
 import { registerRecordCommand } from "./commands/record.js";
 import { registerServeCommand } from "./commands/serve.js";
 import { registerSetupCommand } from "./commands/setup.js";
@@ -23,6 +24,7 @@ registerSummarizeCommand(program);
 registerServeCommand(program);
 registerEnrollCommand(program);
 registerWorkerCommand(program);
+registerImprovePromptCommand(program);
 registerAllCommand(program);
 
 program.parse();

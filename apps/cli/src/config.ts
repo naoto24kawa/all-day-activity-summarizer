@@ -28,6 +28,10 @@ export interface AdasConfig {
     url: string;
     timeout: number;
   };
+  promptImprovement: {
+    enabled: boolean;
+    badFeedbackThreshold: number;
+  };
 }
 
 const ADAS_HOME = join(homedir(), ".adas");
@@ -58,6 +62,10 @@ const defaultConfig: AdasConfig = {
   worker: {
     url: "http://localhost:3100",
     timeout: 300000,
+  },
+  promptImprovement: {
+    enabled: false,
+    badFeedbackThreshold: 5,
   },
 };
 

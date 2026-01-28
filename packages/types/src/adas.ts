@@ -10,6 +10,7 @@ export interface TranscriptionSegment {
   language: string;
   confidence: number | null;
   speaker: string | null;
+  interpretedText: string | null;
   createdAt: string;
 }
 
@@ -117,6 +118,44 @@ export interface RpcEvaluateResponse {
   confidence: number;
   reason: string;
   suggestedPattern: string | null;
+}
+
+/** RPC Interpret リクエスト */
+export interface RpcInterpretRequest {
+  text: string;
+  speaker?: string;
+  context?: string;
+}
+
+/** RPC Interpret レスポンス */
+export interface RpcInterpretResponse {
+  interpretedText: string;
+}
+
+/** プロンプト改善ターゲット */
+export type PromptTarget = "interpret" | "evaluate" | "summarize-hourly" | "summarize-daily";
+
+/** セグメント評価 */
+export interface SegmentFeedback {
+  id: number;
+  segmentId: number;
+  rating: "good" | "bad";
+  target: PromptTarget;
+  reason: string | null;
+  createdAt: string;
+}
+
+/** プロンプト改善履歴 */
+export interface PromptImprovement {
+  id: number;
+  target: PromptTarget;
+  previousPrompt: string;
+  newPrompt: string;
+  feedbackCount: number;
+  goodCount: number;
+  badCount: number;
+  improvementReason: string | null;
+  createdAt: string;
 }
 
 /** RPC Health レスポンス */

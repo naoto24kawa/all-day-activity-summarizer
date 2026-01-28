@@ -26,7 +26,7 @@ export function registerServeCommand(program: Command): void {
 
       consola.success(`API server running on http://localhost:${port}`);
 
-      const _stopScheduler = startScheduler(db);
+      startScheduler(db);
       consola.success("Summary scheduler started");
     });
 }
