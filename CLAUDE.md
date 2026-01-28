@@ -50,7 +50,13 @@ type: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
 - 共通ロジック: `apps/cli/src/interpreter/run.ts` の `interpretSegments()`
 - `transcribe` コマンド(自動)と `interpret` コマンド(手動)の両方から呼ばれる
 - Worker の `/rpc/interpret` エンドポイントを使用
-- `interpret --all` で全日付の未解釈セグメントを一括処理可能
+
+```bash
+bun run cli -- interpret                   # 今日の未解釈セグメント
+bun run cli -- interpret -d 2025-01-01     # 日付指定
+bun run cli -- interpret --all             # 全日付の未解釈セグメント一括処理
+bun run cli -- interpret --all --force     # 全セグメントを強制再解釈
+```
 
 ### Whisper ハルシネーション対策
 
