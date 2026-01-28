@@ -101,3 +101,27 @@ export const evaluatorLogs = sqliteTable("evaluator_logs", {
 
 export type EvaluatorLog = typeof evaluatorLogs.$inferSelect;
 export type NewEvaluatorLog = typeof evaluatorLogs.$inferInsert;
+
+export const summaryQueue = sqliteTable("summary_queue", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobType: text("job_type", { enum: ["pomodoro", "hourly", "daily"] }).notNull(),
+  date: text("date").notNull(),
+  periodParam: integer("period_param"), // pomodoro: 0-47, hourly: 0-23
+  status: text("status", { enum: ["pending", "processing", "completed", "failed"] })
+    .notNull()
+    .default("pending"),
+  retryCount: integer("retry_count").notNull().default(0),
+  maxRetries: integer("max_retries").notNull().default(3),
+  errorMessage: text("error_message"),
+  lockedAt: text("locked_at"),
+  runAfter: text("run_after").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type SummaryQueueJob = typeof summaryQueue.$inferSelect;
+export type NewSummaryQueueJob = typeof summaryQueue.$inferInsert;

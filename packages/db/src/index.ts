@@ -11,10 +11,12 @@ export type {
   NewPromptImprovement,
   NewSegmentFeedback,
   NewSummary,
+  NewSummaryQueueJob,
   NewTranscriptionSegment,
   PromptImprovement,
   SegmentFeedback,
   Summary,
+  SummaryQueueJob,
   TranscriptionSegment,
 } from "./schema.js";
 
@@ -137,6 +139,29 @@ export function createDatabase(dbPath: string) {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_prompt_improvements_target ON prompt_improvements(target);
+  `);
+
+  // Migration: create summary_queue table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS summary_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_type TEXT NOT NULL CHECK(job_type IN ('pomodoro', 'hourly', 'daily')),
+      date TEXT NOT NULL,
+      period_param INTEGER,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 3,
+      error_message TEXT,
+      locked_at TEXT,
+      run_after TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_summary_queue_status ON summary_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_summary_queue_run_after ON summary_queue(run_after);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_summary_queue_unique_job
+      ON summary_queue(job_type, date, period_param)
+      WHERE status IN ('pending', 'processing');
   `);
 
   // Migration: update CHECK constraint to allow 'pomodoro' summary_type
