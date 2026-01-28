@@ -1,3 +1,4 @@
+import { getTodayDateString } from "@repo/core";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { ActivityFeed } from "./activity-feed";
@@ -8,16 +9,8 @@ import { StatusPanel } from "./status-panel";
 import { SummaryView } from "./summary-view";
 import { Timeline } from "./timeline";
 
-function getTodayString(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 export function Dashboard() {
-  const [date, setDate] = useState(getTodayString());
+  const [date, setDate] = useState(getTodayDateString());
 
   return (
     <div className="container mx-auto max-w-6xl space-y-6 p-6">

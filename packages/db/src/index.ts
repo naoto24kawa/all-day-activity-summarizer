@@ -22,6 +22,24 @@ export type {
 
 export type AdasDatabase = ReturnType<typeof createDatabase>;
 
+/**
+ * カラムが存在しない場合のみ追加するヘルパー関数。
+ * SQLite の ALTER TABLE ADD COLUMN は、既存カラムがあるとエラーになるため、
+ * try-catch でエラーを無視する。
+ */
+function addColumnIfNotExists(
+  sqlite: Database,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  try {
+    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  } catch {
+    // Column already exists, ignore
+  }
+}
+
 export function createDatabase(dbPath: string) {
   const sqlite = new Database(dbPath, { create: true });
   sqlite.exec("PRAGMA journal_mode = WAL");
@@ -86,19 +104,9 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_evaluator_logs_date ON evaluator_logs(date);
   `);
 
-  // Migration: add speaker column if not exists
-  try {
-    sqlite.exec(`ALTER TABLE transcription_segments ADD COLUMN speaker TEXT`);
-  } catch {
-    // Column already exists, ignore
-  }
-
-  // Migration: add interpreted_text column if not exists
-  try {
-    sqlite.exec(`ALTER TABLE transcription_segments ADD COLUMN interpreted_text TEXT`);
-  } catch {
-    // Column already exists, ignore
-  }
+  // Migration: add columns to transcription_segments
+  addColumnIfNotExists(sqlite, "transcription_segments", "speaker", "TEXT");
+  addColumnIfNotExists(sqlite, "transcription_segments", "interpreted_text", "TEXT");
 
   // Migration: create segment_feedbacks table
   sqlite.exec(`
@@ -111,19 +119,9 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_segment_feedbacks_segment_id ON segment_feedbacks(segment_id);
   `);
 
-  // Migration: add target and reason columns to segment_feedbacks
-  try {
-    sqlite.exec(
-      `ALTER TABLE segment_feedbacks ADD COLUMN target TEXT NOT NULL DEFAULT 'interpret'`,
-    );
-  } catch {
-    // Column already exists
-  }
-  try {
-    sqlite.exec(`ALTER TABLE segment_feedbacks ADD COLUMN reason TEXT`);
-  } catch {
-    // Column already exists
-  }
+  // Migration: add columns to segment_feedbacks
+  addColumnIfNotExists(sqlite, "segment_feedbacks", "target", "TEXT NOT NULL DEFAULT 'interpret'");
+  addColumnIfNotExists(sqlite, "segment_feedbacks", "reason", "TEXT");
 
   // Migration: create prompt_improvements table
   sqlite.exec(`
