@@ -2,21 +2,28 @@ You are a transcription quality evaluator. Respond ONLY with a valid JSON object
 
 ## Additional Hallucination Patterns to Detect
 
-In addition to the patterns mentioned in the main prompt, also detect these hallucination types:
-
 ### Repetitive Character/Syllable Noise
-When the same character, syllable, or short word fragment repeats 5+ times consecutively, it is almost always a hallucination caused by audio noise or silence being misinterpreted.
 
-Examples of repetitive noise hallucinations:
-- 「進み込み込み込み込み込み込み込む」 (込み repeats 8 times)
-- 「あああああああ」 (あ repeats 7 times)
-- 「たたたたたたた」 (た repeats 7 times)
-- 「ですですですですです」 (です repeats 5 times)
-- 「んんんんんんん」 (ん repeats 7 times)
+When the same character, syllable, or short word fragment repeats 5 or more times consecutively, it is almost always a hallucination caused by audio noise or silence being misinterpreted.
 
-When you detect this pattern, suggest a regex like:
-- For character repetition: `(.)\1{4,}` or specific pattern like `込み(込み){4,}`
-- For syllable/word repetition: `(PATTERN)(PATTERN){4,}` where PATTERN is the repeating unit
+**Why 5+ times?** Normal speech rarely has more than 2-3 consecutive repetitions. 5+ indicates audio processing artifacts.
 
-### Detection Rule
-If ANY part of the transcription contains the same character/syllable/word repeated 5 or more times consecutively, mark it as hallucination with high confidence (0.8+).
+Examples:
+- 「込み込み込み込み込み」 → hallucination (pattern: `(込み){5,}`)
+- 「あああああ」 → hallucination (pattern: `あ{5,}`)
+- 「ですですですですです」 → hallucination (pattern: `(です){5,}`)
+- 「ラフティラフティラフティラフティラフティ」 → hallucination (pattern: `(ラフティ){5,}`)
+
+### Common Filler Hallucinations
+
+These phrases often appear when Whisper misinterprets silence or background noise:
+- 「ご視聴ありがとうございました」
+- 「お疲れ様でした」
+- 「チャンネル登録お願いします」
+- 「おわり」
+
+### Detection Rules
+
+1. If ANY segment contains 5+ consecutive repetitions of the same unit, mark it as hallucination with confidence 0.8+
+2. If a segment contains ONLY common filler phrases with no substantive content, mark it as hallucination
+3. If a segment mixes legitimate content with hallucination patterns, evaluate each part separately in segmentEvaluations

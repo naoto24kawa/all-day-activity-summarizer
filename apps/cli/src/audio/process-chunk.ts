@@ -140,28 +140,83 @@ async function runAsyncEvaluation(
     audioFilePath: filePath,
   });
 
-  if (evaluation.judgment !== "hallucination" || evaluation.confidence < 0.7) {
+  // legitimate の場合は何も削除しない
+  if (evaluation.judgment === "legitimate") {
     consola.info(
       `[evaluator] Passed: ${basename(filePath)} (${evaluation.judgment}, confidence: ${evaluation.confidence})`,
     );
     return;
   }
 
-  consola.warn(`Hallucination detected by evaluator: ${basename(filePath)} - ${evaluation.reason}`);
-
-  // DB からセグメントを削除
-  db.delete(schema.transcriptionSegments)
+  // DB からセグメントを取得 (id 順)
+  const dbSegments = db
+    .select()
+    .from(schema.transcriptionSegments)
     .where(eq(schema.transcriptionSegments.audioFilePath, filePath))
-    .run();
-  consola.info(`Removed hallucinated segments for ${basename(filePath)}`);
+    .all();
 
-  // 新しいパターンを自動適用
-  if (config.evaluator?.autoApplyPatterns !== false && evaluation.suggestedPattern) {
+  // segmentEvaluations がない場合は旧ロジック (全削除)
+  if (!evaluation.segmentEvaluations || evaluation.segmentEvaluations.length === 0) {
+    if (evaluation.judgment === "hallucination" && evaluation.confidence >= 0.7) {
+      consola.warn(
+        `Hallucination detected by evaluator: ${basename(filePath)} - ${evaluation.reason}`,
+      );
+      db.delete(schema.transcriptionSegments)
+        .where(eq(schema.transcriptionSegments.audioFilePath, filePath))
+        .run();
+      consola.info(`Removed all segments for ${basename(filePath)}`);
+
+      if (config.evaluator?.autoApplyPatterns !== false && evaluation.suggestedPattern) {
+        const projectRoot = resolve(import.meta.dirname, "../../../../");
+        await applyNewPattern(evaluation.suggestedPattern, evaluation.reason, projectRoot, {
+          db,
+          audioFilePath: filePath,
+        });
+        consola.success(`New hallucination pattern applied: ${evaluation.suggestedPattern}`);
+      }
+    }
+    return;
+  }
+
+  // セグメント単位で削除
+  const patternsToApply: { pattern: string; reason: string }[] = [];
+  let removedCount = 0;
+
+  for (const segEval of evaluation.segmentEvaluations) {
+    if (segEval.judgment === "hallucination" && segEval.confidence >= 0.7) {
+      const dbSeg = dbSegments[segEval.index];
+      if (dbSeg) {
+        db.delete(schema.transcriptionSegments)
+          .where(eq(schema.transcriptionSegments.id, dbSeg.id))
+          .run();
+        consola.warn(
+          `[evaluator] Removed segment #${segEval.index}: "${dbSeg.transcription?.slice(0, 30)}..." - ${segEval.reason}`,
+        );
+        removedCount++;
+      }
+      if (segEval.suggestedPattern) {
+        patternsToApply.push({ pattern: segEval.suggestedPattern, reason: segEval.reason });
+      }
+    }
+  }
+
+  if (removedCount > 0) {
+    consola.info(
+      `[evaluator] Removed ${removedCount}/${segments.length} hallucinated segments for ${basename(filePath)}`,
+    );
+  } else {
+    consola.info(
+      `[evaluator] Passed: ${basename(filePath)} (${evaluation.judgment}, no high-confidence hallucinations)`,
+    );
+  }
+
+  // 新しいパターンを自動適用 (重複排除)
+  if (config.evaluator?.autoApplyPatterns !== false && patternsToApply.length > 0) {
+    const uniquePatterns = [...new Map(patternsToApply.map((p) => [p.pattern, p])).values()];
     const projectRoot = resolve(import.meta.dirname, "../../../../");
-    await applyNewPattern(evaluation.suggestedPattern, evaluation.reason, projectRoot, {
-      db,
-      audioFilePath: filePath,
-    });
-    consola.success(`New hallucination pattern applied: ${evaluation.suggestedPattern}`);
+    for (const { pattern, reason } of uniquePatterns) {
+      await applyNewPattern(pattern, reason, projectRoot, { db, audioFilePath: filePath });
+      consola.success(`New hallucination pattern applied: ${pattern}`);
+    }
   }
 }

@@ -28,6 +28,7 @@ export function useAudioLevels(options: UseAudioLevelsOptions = {}) {
     es.addEventListener("levels", (event) => {
       try {
         const data = JSON.parse(event.data) as AudioLevels;
+        console.log("[SSE] levels:", data);
         setLevels(data);
       } catch {
         // Ignore parse errors

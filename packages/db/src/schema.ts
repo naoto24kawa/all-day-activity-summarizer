@@ -89,7 +89,7 @@ export const evaluatorLogs = sqliteTable("evaluator_logs", {
   date: text("date").notNull(), // YYYY-MM-DD
   audioFilePath: text("audio_file_path").notNull(),
   transcriptionText: text("transcription_text").notNull(),
-  judgment: text("judgment", { enum: ["hallucination", "legitimate"] }).notNull(),
+  judgment: text("judgment", { enum: ["hallucination", "legitimate", "mixed"] }).notNull(),
   confidence: real("confidence").notNull(),
   reason: text("reason").notNull(),
   suggestedPattern: text("suggested_pattern"),

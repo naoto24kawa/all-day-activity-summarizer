@@ -10,6 +10,8 @@ export interface RunClaudeOptions {
   disableTools?: boolean;
   dangerouslySkipPermissions?: boolean;
   cwd?: string;
+  /** 設定ソースを指定 (user, project, local)。user を除外するとユーザーレベルの CLAUDE.md を無視できる */
+  settingSources?: string[];
 }
 
 /**
@@ -21,9 +23,19 @@ export function getPromptFilePath(name: string): string {
 
 /**
  * Claude Code CLI を `claude -p` で呼び出してテキスト結果を返す。
+ * デフォルトで settingSources: ["project", "local"] を使用し、
+ * ユーザーレベルの CLAUDE.md を無視する(口調の影響を避けるため)。
  */
 export async function runClaude(prompt: string, options?: RunClaudeOptions): Promise<string> {
+  // デフォルトで user 設定を除外(ユーザーレベルの CLAUDE.md の口調を無視)
+  const settingSources = options?.settingSources ?? ["project", "local"];
+
   const args = ["-p", prompt, "--no-session-persistence"];
+
+  // settingSources を最初に追加(デフォルト値を使用)
+  if (settingSources.length > 0) {
+    args.push("--setting-sources", settingSources.join(","));
+  }
 
   if (options?.model) {
     args.push("--model", options.model);

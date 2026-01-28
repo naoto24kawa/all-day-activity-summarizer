@@ -106,7 +106,7 @@ export function SummaryView({ date }: SummaryViewProps) {
             ) : (
               <ScrollArea className="h-[300px]">
                 <div className="space-y-4">
-                  {hourlySummaries.map((summary) => (
+                  {[...hourlySummaries].reverse().map((summary) => (
                     <div key={summary.id} className="rounded-md border p-3">
                       <p className="mb-1 text-xs font-medium text-muted-foreground">
                         {new Date(summary.periodStart).toLocaleTimeString()} -{" "}
@@ -130,7 +130,7 @@ export function SummaryView({ date }: SummaryViewProps) {
             ) : (
               <ScrollArea className="h-[300px]">
                 <div className="space-y-4">
-                  {pomodoroSummaries.map((summary) => (
+                  {[...pomodoroSummaries].reverse().map((summary) => (
                     <div key={summary.id} className="rounded-md border p-3">
                       <p className="mb-1 text-xs font-medium text-muted-foreground">
                         {new Date(summary.periodStart).toLocaleTimeString()} -{" "}

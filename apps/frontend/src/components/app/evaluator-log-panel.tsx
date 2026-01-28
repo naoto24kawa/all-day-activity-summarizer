@@ -16,7 +16,10 @@ export function EvaluatorLogPanel({ date }: EvaluatorLogPanelProps) {
   const { logs, loading, error } = useEvaluatorLogs(date);
   const [filter, setFilter] = useState<Filter>("all");
 
-  const filtered = filter === "all" ? logs : logs.filter((l) => l.judgment === filter);
+  const sorted = [...logs].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+  const filtered = filter === "all" ? sorted : sorted.filter((l) => l.judgment === filter);
 
   const hallucinationCount = logs.filter((l) => l.judgment === "hallucination").length;
   const legitimateCount = logs.filter((l) => l.judgment === "legitimate").length;

@@ -1,15 +1,16 @@
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import type { RpcEvaluateResponse } from "@repo/types";
+import type { RpcEvaluateResponse, SegmentEvaluation } from "@repo/types";
 import consola from "consola";
 import { eq } from "drizzle-orm";
 import { loadConfig } from "../config.js";
 
-interface EvaluationResult {
-  judgment: "hallucination" | "legitimate";
+export interface EvaluationResult {
+  judgment: "hallucination" | "legitimate" | "mixed";
   confidence: number;
   reason: string;
   suggestedPattern: string | null;
+  segmentEvaluations?: SegmentEvaluation[];
 }
 
 /**

@@ -31,30 +31,43 @@ async function evaluateWithClaude(
   text: string,
   segments: RpcEvaluateRequest["segments"],
 ): Promise<RpcEvaluateResponse> {
-  const segmentTexts = segments.map((s) => s.text).join("\n");
+  const segmentList = segments.map((s, i) => `[${i}] "${s.text}"`).join("\n");
+
   const prompt = `You are a transcription quality evaluator for Whisper speech-to-text output.
 
-Analyze the following transcription and determine if it is a hallucination (noise/silence misinterpreted as speech) or legitimate speech content.
+Analyze EACH segment individually and determine if it is a hallucination (noise/silence misinterpreted as speech) or legitimate speech content.
 
 Common Whisper hallucination patterns:
 - Repetitive phrases (e.g., "Thank you for watching" repeated)
 - Generic filler phrases with no real content
 - Subtitling artifacts or channel subscription prompts
 - Very short meaningless utterances repeated
+- Repetitive character noise (e.g., "あああああ", "えーえーえー")
 
-Full text:
-${text}
-
-Segments:
-${segmentTexts}
+Segments to evaluate:
+${segmentList}
 
 Respond ONLY with a JSON object (no markdown, no code blocks):
 {
-  "judgment": "hallucination" | "legitimate",
+  "judgment": "hallucination" | "legitimate" | "mixed",
   "confidence": 0.0-1.0,
-  "reason": "brief explanation",
-  "suggestedPattern": "regex pattern string if hallucination, null if legitimate"
-}`;
+  "reason": "brief overall explanation",
+  "suggestedPattern": "regex pattern for the most common hallucination type, or null",
+  "segmentEvaluations": [
+    {
+      "index": 0,
+      "judgment": "hallucination" | "legitimate",
+      "confidence": 0.0-1.0,
+      "reason": "brief explanation for this segment",
+      "suggestedPattern": "regex pattern if hallucination, null if legitimate"
+    }
+  ]
+}
+
+Rules:
+- Evaluate each segment independently
+- "judgment" should be "hallucination" if ALL segments are hallucinations, "legitimate" if ALL are legitimate, "mixed" otherwise
+- Include an evaluation for EVERY segment in segmentEvaluations array`;
 
   consola.info(
     `[worker/evaluate] Evaluating transcription (${text.length} chars, ${segments.length} segments)...`,
@@ -78,11 +91,14 @@ Respond ONLY with a JSON object (no markdown, no code blocks):
   const parsed = JSON.parse(jsonMatch[0]) as RpcEvaluateResponse;
 
   // judgment のバリデーション: LLM が想定外の値を返す場合がある
-  if (parsed.judgment !== "hallucination" && parsed.judgment !== "legitimate") {
+  if (
+    parsed.judgment !== "hallucination" &&
+    parsed.judgment !== "legitimate" &&
+    parsed.judgment !== "mixed"
+  ) {
     consola.debug(
       `[worker/evaluate] Unexpected judgment value: ${parsed.judgment}, normalizing to 'legitimate'`,
     );
-    // 想定外の値(mixed など)は legitimate として扱う(正当なコンテンツを誤って削除しないため)
     parsed.judgment = "legitimate";
     parsed.suggestedPattern = null;
   }
@@ -97,8 +113,28 @@ Respond ONLY with a JSON object (no markdown, no code blocks):
     }
   }
 
+  // segmentEvaluations のバリデーション
+  if (parsed.segmentEvaluations) {
+    for (const seg of parsed.segmentEvaluations) {
+      if (seg.judgment !== "hallucination" && seg.judgment !== "legitimate") {
+        seg.judgment = "legitimate";
+        seg.suggestedPattern = null;
+      }
+      if (seg.suggestedPattern) {
+        try {
+          new RegExp(seg.suggestedPattern);
+        } catch {
+          consola.debug(`Invalid regex from segment evaluator: ${seg.suggestedPattern}`);
+          seg.suggestedPattern = null;
+        }
+      }
+    }
+  }
+
+  const hallucinationCount =
+    parsed.segmentEvaluations?.filter((s) => s.judgment === "hallucination").length ?? 0;
   consola.info(
-    `[worker/evaluate] Result: ${parsed.judgment} (confidence: ${parsed.confidence}) - ${parsed.reason}`,
+    `[worker/evaluate] Result: ${parsed.judgment} (${hallucinationCount}/${segments.length} hallucinations) - ${parsed.reason}`,
   );
 
   return parsed;

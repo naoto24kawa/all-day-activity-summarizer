@@ -23,6 +23,7 @@ export type {
   RpcSummarizeResponse,
   RpcTranscribeConfig,
   RpcTranscribeResponse,
+  SegmentEvaluation,
   SegmentFeedback,
   StatusResponse,
   Summary,

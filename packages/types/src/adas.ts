@@ -123,12 +123,24 @@ export interface RpcEvaluateRequest {
   segments: Array<{ text: string; start: number; end: number; speaker?: string }>;
 }
 
-/** RPC Evaluate レスポンス */
-export interface RpcEvaluateResponse {
+/** セグメント単位の評価結果 */
+export interface SegmentEvaluation {
+  index: number;
   judgment: "hallucination" | "legitimate";
   confidence: number;
   reason: string;
   suggestedPattern: string | null;
+}
+
+/** RPC Evaluate レスポンス */
+export interface RpcEvaluateResponse {
+  /** 全体の判定 (後方互換性のため維持) */
+  judgment: "hallucination" | "legitimate" | "mixed";
+  confidence: number;
+  reason: string;
+  suggestedPattern: string | null;
+  /** セグメント単位の判定結果 */
+  segmentEvaluations?: SegmentEvaluation[];
 }
 
 /** RPC Interpret リクエスト */

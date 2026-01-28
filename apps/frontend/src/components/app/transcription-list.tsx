@@ -55,7 +55,7 @@ export function TranscriptionList({ date }: TranscriptionListProps) {
             <p className="text-sm text-muted-foreground">No transcriptions for this date.</p>
           ) : (
             <div className="space-y-3">
-              {segments.map((segment) => (
+              {[...segments].reverse().map((segment) => (
                 <div key={segment.id} className="rounded-md border p-3">
                   <div className="mb-1 flex items-center gap-2">
                     <span className="text-xs font-medium text-muted-foreground">

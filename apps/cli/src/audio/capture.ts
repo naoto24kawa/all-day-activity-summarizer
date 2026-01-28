@@ -133,9 +133,11 @@ export class AudioCapture {
     this.process.exited.then(async (exitCode) => {
       const completedPath = this.currentFilePath;
 
-      if (exitCode === 0 && completedPath) {
+      if (exitCode === 0 && completedPath && existsSync(completedPath)) {
         consola.success(`Chunk saved: ${completedPath}`);
         this.onChunkComplete?.(completedPath);
+      } else if (exitCode === 0 && completedPath && !existsSync(completedPath)) {
+        consola.warn(`ffmpeg reported success but file not found: ${completedPath}`);
       } else if (this.running) {
         const stderrStream = this.process?.stderr;
         const stderr =
@@ -202,9 +204,11 @@ export class AudioCapture {
       this.process.kill("SIGINT");
       await this.process.exited;
 
-      if (this.currentFilePath) {
+      if (this.currentFilePath && existsSync(this.currentFilePath)) {
         consola.info(`Final chunk saved: ${this.currentFilePath}`);
         this.onChunkComplete?.(this.currentFilePath);
+      } else if (this.currentFilePath) {
+        consola.warn(`Final chunk file not found: ${this.currentFilePath}`);
       }
 
       this.process = null;
