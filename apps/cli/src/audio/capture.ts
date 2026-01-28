@@ -7,6 +7,7 @@ import { getTodayDateString } from "../utils/date.js";
 
 interface CaptureOptions {
   source?: string;
+  sourceType?: "mic" | "speaker";
   config: AdasConfig;
   onChunkComplete?: (filePath: string) => void;
 }
@@ -15,10 +16,11 @@ function getDateDir(baseDir: string): string {
   return join(baseDir, getTodayDateString());
 }
 
-function getChunkFileName(): string {
+function getChunkFileName(sourceType?: string): string {
   const now = new Date();
   const time = now.toTimeString().split(" ")[0]?.replace(/:/g, "-");
-  return `chunk_${time}.wav`;
+  const suffix = sourceType ? `_${sourceType}` : "";
+  return `chunk_${time}${suffix}.wav`;
 }
 
 export async function listAudioSources(): Promise<string[]> {
@@ -72,12 +74,14 @@ export class AudioCapture {
   private chunkTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly config: AdasConfig;
   private readonly source: string;
+  private readonly sourceType?: "mic" | "speaker";
   private readonly onChunkComplete?: (filePath: string) => void;
   private currentFilePath: string | null = null;
 
   constructor(options: CaptureOptions) {
     this.config = options.config;
     this.source = options.source ?? "default";
+    this.sourceType = options.sourceType;
     this.onChunkComplete = options.onChunkComplete;
   }
 
@@ -116,7 +120,7 @@ export class AudioCapture {
       mkdirSync(dateDir, { recursive: true });
     }
 
-    const fileName = getChunkFileName();
+    const fileName = getChunkFileName(this.sourceType);
     this.currentFilePath = join(dateDir, fileName);
     const durationSec = this.config.audio.chunkDurationMinutes * 60;
 

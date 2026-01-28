@@ -39,7 +39,9 @@ export async function processChunkComplete(
 
   const datePart = filePath.split("/").at(-2) ?? getTodayDateString();
   const fileName = basename(filePath, ".wav");
-  const timeParts = fileName.replace("chunk_", "").split("-");
+  // Remove chunk_ prefix and _mic/_speaker suffix to extract time
+  const timeStr = fileName.replace("chunk_", "").replace(/_(?:mic|speaker)$/, "");
+  const timeParts = timeStr.split("-");
   const startTimeStr = `${datePart}T${timeParts.join(":")}`;
   const startTime = new Date(startTimeStr);
   const endTime = new Date(startTime.getTime() + config.audio.chunkDurationMinutes * 60 * 1000);

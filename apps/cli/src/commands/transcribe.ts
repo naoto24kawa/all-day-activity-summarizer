@@ -129,13 +129,17 @@ async function transcribeFile(
     return;
   }
 
-  // Extract date and time from filename (chunk_HH-MM-SS.wav)
+  // Extract date, time, and source type from filename (chunk_HH-MM-SS_mic.wav or chunk_HH-MM-SS_speaker.wav)
   const fileName = basename(filePath, ".wav");
   const datePart = filePath.split("/").at(-2) ?? getTodayDateString();
-  const timeParts = fileName.replace("chunk_", "").split("-");
+  // Remove chunk_ prefix and _mic/_speaker suffix to extract time
+  const timeStr = fileName.replace("chunk_", "").replace(/_(?:mic|speaker)$/, "");
+  const timeParts = timeStr.split("-");
   const startTimeStr = `${datePart}T${timeParts.join(":")}`;
   const startTime = new Date(startTimeStr);
   const endTime = new Date(startTime.getTime() + config.audio.chunkDurationMinutes * 60 * 1000);
+  // Determine source type from filename
+  const isMicSource = fileName.endsWith("_mic");
 
   // 話者 embedding を処理し、ラベルを登録名に差替え(DB 挿入前に実行)
   let labelMap: Record<string, string> = {};
@@ -168,8 +172,12 @@ async function transcribeFile(
       if (isHallucination(seg.text)) continue;
       const segStart = new Date(startTime.getTime() + seg.start);
       const segEnd = new Date(startTime.getTime() + seg.end);
-      // ラベルを登録名に差替え
-      const speaker = seg.speaker && labelMap[seg.speaker] ? labelMap[seg.speaker] : seg.speaker;
+      // マイク音声は "Me" に固定、それ以外はラベルを登録名に差替え
+      const speaker = isMicSource
+        ? "Me"
+        : seg.speaker && labelMap[seg.speaker]
+          ? labelMap[seg.speaker]
+          : seg.speaker;
       db.insert(schema.transcriptionSegments)
         .values({
           date: datePart,
@@ -195,7 +203,7 @@ async function transcribeFile(
         transcription: result.text,
         language: result.language,
         confidence: null,
-        speaker: null,
+        speaker: isMicSource ? "Me" : null,
       })
       .run();
   }

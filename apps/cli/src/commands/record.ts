@@ -77,6 +77,7 @@ export function registerRecordCommand(program: Command): void {
         // Create audio capture instances (always both)
         const micCapture = new AudioCapture({
           source: micSource,
+          sourceType: "mic",
           config,
           onChunkComplete: async (filePath) => {
             try {
@@ -90,6 +91,7 @@ export function registerRecordCommand(program: Command): void {
 
         const speakerCapture = new AudioCapture({
           source: speakerSource,
+          sourceType: "speaker",
           config,
           onChunkComplete: async (filePath) => {
             try {
