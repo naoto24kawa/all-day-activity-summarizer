@@ -12,7 +12,8 @@ import { createSummariesRouter } from "./routes/summaries.js";
 import { createTranscriptionsRouter } from "./routes/transcriptions.js";
 
 interface CreateAppOptions {
-  capture?: AudioCapture;
+  micCapture?: AudioCapture;
+  speakerCapture?: AudioCapture;
 }
 
 export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
@@ -29,8 +30,14 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/speakers", createSpeakersRouter(db));
   app.route("/api/status", createStatusRouter(db));
 
-  if (options?.capture) {
-    app.route("/api/recording", createRecordingRouter(options.capture));
+  if (options?.micCapture || options?.speakerCapture) {
+    app.route(
+      "/api/recording",
+      createRecordingRouter({
+        mic: options.micCapture,
+        speaker: options.speakerCapture,
+      }),
+    );
   }
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));

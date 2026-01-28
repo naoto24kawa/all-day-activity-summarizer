@@ -37,6 +37,12 @@ export interface Memo {
 
 /** 録音状態レスポンス */
 export interface RecordingStatusResponse {
+  mic: boolean | null;
+  speaker: boolean | null;
+}
+
+/** 個別ソース録音制御レスポンス */
+export interface RecordingSourceResponse {
   recording: boolean;
 }
 

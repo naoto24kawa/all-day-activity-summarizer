@@ -1,18 +1,22 @@
-import type { RecordingStatusResponse } from "@repo/types";
+import type { RecordingSourceResponse, RecordingStatusResponse } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
 import { fetchAdasApi, postAdasApi } from "./use-adas-api";
 
 export function useRecording(pollInterval = 5_000) {
-  const [recording, setRecording] = useState<boolean | null>(null);
-  const [toggling, setToggling] = useState(false);
+  const [micRecording, setMicRecording] = useState<boolean | null>(null);
+  const [speakerRecording, setSpeakerRecording] = useState<boolean | null>(null);
+  const [togglingMic, setTogglingMic] = useState(false);
+  const [togglingSpeaker, setTogglingSpeaker] = useState(false);
 
   const fetchRecording = useCallback(async () => {
     try {
       const data = await fetchAdasApi<RecordingStatusResponse>("/api/recording");
-      setRecording(data.recording);
+      setMicRecording(data.mic);
+      setSpeakerRecording(data.speaker);
     } catch {
       // recording endpoint not available (e.g. serve-only mode)
-      setRecording(null);
+      setMicRecording(null);
+      setSpeakerRecording(null);
     }
   }, []);
 
@@ -22,23 +26,46 @@ export function useRecording(pollInterval = 5_000) {
     return () => clearInterval(interval);
   }, [fetchRecording, pollInterval]);
 
-  const toggle = useCallback(
+  const toggleMic = useCallback(
     async (checked: boolean) => {
-      setToggling(true);
+      setTogglingMic(true);
       try {
-        const data = await postAdasApi<RecordingStatusResponse>("/api/recording", {
+        const data = await postAdasApi<RecordingSourceResponse>("/api/recording/mic", {
           recording: checked,
         });
-        setRecording(data.recording);
+        setMicRecording(data.recording);
       } catch {
-        // revert on error by re-fetching
         await fetchRecording();
       } finally {
-        setToggling(false);
+        setTogglingMic(false);
       }
     },
     [fetchRecording],
   );
 
-  return { recording, toggling, toggle };
+  const toggleSpeaker = useCallback(
+    async (checked: boolean) => {
+      setTogglingSpeaker(true);
+      try {
+        const data = await postAdasApi<RecordingSourceResponse>("/api/recording/speaker", {
+          recording: checked,
+        });
+        setSpeakerRecording(data.recording);
+      } catch {
+        await fetchRecording();
+      } finally {
+        setTogglingSpeaker(false);
+      }
+    },
+    [fetchRecording],
+  );
+
+  return {
+    micRecording,
+    speakerRecording,
+    togglingMic,
+    togglingSpeaker,
+    toggleMic,
+    toggleSpeaker,
+  };
 }

@@ -15,87 +15,134 @@ export function registerRecordCommand(program: Command): void {
     .description(
       "Start recording services (audio capture + transcription + API server + scheduler)",
     )
-    .option("-s, --source <source>", "PulseAudio source name (default: auto-detect)")
+    .option("-s, --source <source>", "PulseAudio source name (alias for --mic-source)")
+    .option("--mic-source <micSource>", "Microphone source name")
+    .option("--speaker-source <speakerSource>", "Speaker/system audio source name")
     .option("-p, --port <port>", "API server port")
     .option("--list-sources", "List available PulseAudio sources")
-    .action(async (options: { source?: string; port?: string; listSources?: boolean }) => {
-      setupFileLogger();
+    .action(
+      async (options: {
+        source?: string;
+        micSource?: string;
+        speakerSource?: string;
+        port?: string;
+        listSources?: boolean;
+      }) => {
+        setupFileLogger();
 
-      if (options.listSources) {
-        const sources = await listAudioSources();
-        consola.info("Available PulseAudio sources:");
-        for (const src of sources) {
-          consola.log(`  - ${src}`);
-        }
-        return;
-      }
-
-      const config = loadConfig();
-      const port = options.port ? Number.parseInt(options.port, 10) : config.server.port;
-      const db = createDatabase(config.dbPath);
-
-      // Worker health check
-      const workerUrl = config.worker.url;
-      consola.start(`Checking worker at ${workerUrl}...`);
-      try {
-        const healthRes = await fetch(`${workerUrl}/rpc/health`, {
-          signal: AbortSignal.timeout(5000),
-        });
-        if (!healthRes.ok) {
-          throw new Error(`Worker returned ${healthRes.status}`);
-        }
-        const health = (await healthRes.json()) as {
-          status: string;
-          whisperx: boolean;
-          claude: boolean;
-        };
-        consola.success(
-          `Worker connected (whisperx: ${health.whisperx}, claude: ${health.claude})`,
-        );
-      } catch (err) {
-        consola.fatal(`Worker is not reachable at ${workerUrl}`);
-        consola.fatal("Start the worker first: bun run cli -- worker");
-        consola.fatal(`Error: ${err}`);
-        process.exit(1);
-      }
-
-      // Create audio capture instance
-      const audioSource = options.source ?? "default";
-      const capture = new AudioCapture({
-        source: options.source,
-        config,
-        onChunkComplete: async (filePath) => {
-          try {
-            await processChunkComplete(filePath, config, db, audioSource);
-          } catch (err) {
-            consola.error(`Transcription failed for ${filePath}:`, err);
+        if (options.listSources) {
+          const sources = await listAudioSources();
+          consola.info("Available PulseAudio sources:");
+          for (const src of sources) {
+            consola.log(`  - ${src}`);
           }
-        },
-      });
+          return;
+        }
 
-      // Start API server
-      const app = createApp(db, { capture });
-      serve({ fetch: app.fetch, port });
-      consola.success(`API server running on http://localhost:${port}`);
+        const config = loadConfig();
+        const port = options.port ? Number.parseInt(options.port, 10) : config.server.port;
+        const db = createDatabase(config.dbPath);
 
-      // Start summarization scheduler
-      const stopScheduler = startScheduler(db);
-      consola.success("Summarization scheduler started");
+        // Worker health check
+        const workerUrl = config.worker.url;
+        consola.start(`Checking worker at ${workerUrl}...`);
+        try {
+          const healthRes = await fetch(`${workerUrl}/rpc/health`, {
+            signal: AbortSignal.timeout(5000),
+          });
+          if (!healthRes.ok) {
+            throw new Error(`Worker returned ${healthRes.status}`);
+          }
+          const health = (await healthRes.json()) as {
+            status: string;
+            whisperx: boolean;
+            claude: boolean;
+          };
+          consola.success(
+            `Worker connected (whisperx: ${health.whisperx}, claude: ${health.claude})`,
+          );
+        } catch (err) {
+          consola.fatal(`Worker is not reachable at ${workerUrl}`);
+          consola.fatal("Start the worker first: bun run cli -- worker");
+          consola.fatal(`Error: ${err}`);
+          process.exit(1);
+        }
 
-      // Start audio capture
-      consola.info("Starting audio capture (Ctrl+C to stop)");
-      await capture.start();
+        // Resolve mic source (--source is alias for --mic-source)
+        const micSourceName = options.micSource ?? options.source;
+        const speakerSourceName = options.speakerSource;
 
-      // Graceful shutdown
-      const shutdown = async () => {
-        consola.info("Shutting down recording services...");
-        await capture.stop();
-        stopScheduler();
-        consola.success("All recording services stopped");
-        process.exit(0);
-      };
+        // Create audio capture instances
+        let micCapture: AudioCapture | undefined;
+        let speakerCapture: AudioCapture | undefined;
 
-      process.on("SIGINT", shutdown);
-      process.on("SIGTERM", shutdown);
-    });
+        if (micSourceName !== undefined) {
+          micCapture = new AudioCapture({
+            source: micSourceName,
+            config,
+            onChunkComplete: async (filePath) => {
+              try {
+                await processChunkComplete(filePath, config, db, "mic");
+              } catch (err) {
+                consola.error(`Transcription failed for ${filePath}:`, err);
+              }
+            },
+          });
+          consola.info(`Mic capture configured (source: ${micSourceName})`);
+        }
+
+        if (speakerSourceName !== undefined) {
+          speakerCapture = new AudioCapture({
+            source: speakerSourceName,
+            config,
+            onChunkComplete: async (filePath) => {
+              try {
+                await processChunkComplete(filePath, config, db, "speaker");
+              } catch (err) {
+                consola.error(`Transcription failed for ${filePath}:`, err);
+              }
+            },
+          });
+          consola.info(`Speaker capture configured (source: ${speakerSourceName})`);
+        }
+
+        if (!micCapture && !speakerCapture) {
+          consola.fatal(
+            "No audio source specified. Use --mic-source and/or --speaker-source (or -s as alias for --mic-source)",
+          );
+          process.exit(1);
+        }
+
+        // Start API server
+        const app = createApp(db, { micCapture, speakerCapture });
+        serve({ fetch: app.fetch, port });
+        consola.success(`API server running on http://localhost:${port}`);
+
+        // Start summarization scheduler
+        const stopScheduler = startScheduler(db);
+        consola.success("Summarization scheduler started");
+
+        // Start audio captures
+        consola.info("Starting audio capture (Ctrl+C to stop)");
+        const startPromises: Promise<void>[] = [];
+        if (micCapture) startPromises.push(micCapture.start());
+        if (speakerCapture) startPromises.push(speakerCapture.start());
+        await Promise.all(startPromises);
+
+        // Graceful shutdown
+        const shutdown = async () => {
+          consola.info("Shutting down recording services...");
+          const stopPromises: Promise<void>[] = [];
+          if (micCapture) stopPromises.push(micCapture.stop());
+          if (speakerCapture) stopPromises.push(speakerCapture.stop());
+          await Promise.all(stopPromises);
+          stopScheduler();
+          consola.success("All recording services stopped");
+          process.exit(0);
+        };
+
+        process.on("SIGINT", shutdown);
+        process.on("SIGTERM", shutdown);
+      },
+    );
 }
