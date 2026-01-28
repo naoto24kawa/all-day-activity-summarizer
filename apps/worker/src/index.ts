@@ -1,5 +1,8 @@
+import { setupFileLogger } from "@repo/core";
 import consola from "consola";
 import { createWorkerApp } from "./app.js";
+
+setupFileLogger();
 
 const PORT = Number(process.env.WORKER_PORT ?? "3100");
 

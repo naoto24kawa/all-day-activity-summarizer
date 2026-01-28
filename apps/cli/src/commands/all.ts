@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { setupFileLogger } from "@repo/core";
 import { createDatabase } from "@repo/db";
 import type { Command } from "commander";
 import consola from "consola";
@@ -16,6 +17,8 @@ export function registerAllCommand(program: Command): void {
     .option("-p, --port <port>", "API server port")
     .option("--worker-port <workerPort>", "Worker server port", "3100")
     .action(async (options: { source?: string; port?: string; workerPort: string }) => {
+      setupFileLogger();
+
       const config = loadConfig();
       const port = options.port ? Number.parseInt(options.port, 10) : config.server.port;
       const workerPort = Number.parseInt(options.workerPort, 10);

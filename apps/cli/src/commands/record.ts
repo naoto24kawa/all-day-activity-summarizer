@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { setupFileLogger } from "@repo/core";
 import { createDatabase } from "@repo/db";
 import type { Command } from "commander";
 import consola from "consola";
@@ -18,6 +19,8 @@ export function registerRecordCommand(program: Command): void {
     .option("-p, --port <port>", "API server port")
     .option("--list-sources", "List available PulseAudio sources")
     .action(async (options: { source?: string; port?: string; listSources?: boolean }) => {
+      setupFileLogger();
+
       if (options.listSources) {
         const sources = await listAudioSources();
         consola.info("Available PulseAudio sources:");
