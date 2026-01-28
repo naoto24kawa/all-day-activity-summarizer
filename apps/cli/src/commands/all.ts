@@ -68,46 +68,37 @@ export function registerAllCommand(program: Command): void {
           process.exit(1);
         }
 
-        // Resolve mic source (--source is alias for --mic-source)
-        // If nothing specified, default to mic with "default" source for backward compat
-        const micSourceName = options.micSource ?? options.source;
-        const speakerSourceName = options.speakerSource;
-        const useDefaultMic = micSourceName === undefined && speakerSourceName === undefined;
+        // Resolve sources (--source is alias for --mic-source)
+        // If nothing specified, both default to undefined (auto-detect)
+        const micSource = options.micSource ?? options.source;
+        const speakerSource = options.speakerSource;
 
-        // Create audio capture instances
-        let micCapture: AudioCapture | undefined;
-        let speakerCapture: AudioCapture | undefined;
+        // Create audio capture instances (always both)
+        const micCapture = new AudioCapture({
+          source: micSource,
+          config,
+          onChunkComplete: async (filePath) => {
+            try {
+              await processChunkComplete(filePath, config, db, "mic");
+            } catch (err) {
+              consola.error(`Transcription failed for ${filePath}:`, err);
+            }
+          },
+        });
+        consola.info(`Mic capture configured (source: ${micSource ?? "default"})`);
 
-        if (micSourceName !== undefined || useDefaultMic) {
-          const source = micSourceName ?? undefined;
-          micCapture = new AudioCapture({
-            source,
-            config,
-            onChunkComplete: async (filePath) => {
-              try {
-                await processChunkComplete(filePath, config, db, "mic");
-              } catch (err) {
-                consola.error(`Transcription failed for ${filePath}:`, err);
-              }
-            },
-          });
-          consola.info(`Mic capture configured (source: ${source ?? "default"})`);
-        }
-
-        if (speakerSourceName !== undefined) {
-          speakerCapture = new AudioCapture({
-            source: speakerSourceName,
-            config,
-            onChunkComplete: async (filePath) => {
-              try {
-                await processChunkComplete(filePath, config, db, "speaker");
-              } catch (err) {
-                consola.error(`Transcription failed for ${filePath}:`, err);
-              }
-            },
-          });
-          consola.info(`Speaker capture configured (source: ${speakerSourceName})`);
-        }
+        const speakerCapture = new AudioCapture({
+          source: speakerSource,
+          config,
+          onChunkComplete: async (filePath) => {
+            try {
+              await processChunkComplete(filePath, config, db, "speaker");
+            } catch (err) {
+              consola.error(`Transcription failed for ${filePath}:`, err);
+            }
+          },
+        });
+        consola.info(`Speaker capture configured (source: ${speakerSource ?? "default"})`);
 
         // Start API server
         const app = createApp(db, { micCapture, speakerCapture });
