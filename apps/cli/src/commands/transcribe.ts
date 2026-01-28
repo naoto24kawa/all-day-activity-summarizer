@@ -5,6 +5,7 @@ import type { Command } from "commander";
 import consola from "consola";
 import { eq } from "drizzle-orm";
 import { loadConfig } from "../config.js";
+import { interpretSegments } from "../interpreter/run.js";
 import { checkAndAutoImprove } from "../prompts/auto-trigger.js";
 import { getDateString, getTodayDateString } from "../utils/date.js";
 import { transcribeAudio } from "../whisper/client.js";
@@ -206,76 +207,19 @@ async function transcribeFile(
   }
 
   // AI 解釈: セグメントテキストを読みやすく整理
-  runAsyncInterpretation(filePath, config, db).then(
-    () => {},
-    (err) => consola.warn(`[interpret] Interpretation failed for ${basename(filePath)}:`, err),
-  );
-}
-
-async function runAsyncInterpretation(
-  filePath: string,
-  config: ReturnType<typeof loadConfig>,
-  db: ReturnType<typeof createDatabase>,
-): Promise<void> {
-  const { url, timeout } = config.worker;
-
-  // 該当ファイルのセグメントを取得
-  const segments = db
+  const uninterpreted = db
     .select()
     .from(schema.transcriptionSegments)
     .where(eq(schema.transcriptionSegments.audioFilePath, filePath))
-    .all();
-
-  if (segments.length === 0) return;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i]!;
-      if (segment.interpretedText) continue; // 既に解釈済み
-
-      // 直前1-2セグメントの transcription をコンテキストとして渡す
-      const contextSegments: string[] = [];
-      if (i >= 2 && segments[i - 2]?.transcription) {
-        contextSegments.push(segments[i - 2]!.transcription);
-      }
-      if (i >= 1 && segments[i - 1]?.transcription) {
-        contextSegments.push(segments[i - 1]!.transcription);
-      }
-      const context = contextSegments.length > 0 ? contextSegments.join("\n") : undefined;
-
-      const response = await fetch(`${url}/rpc/interpret`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: segment.transcription,
-          speaker: segment.speaker ?? undefined,
-          context,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        consola.warn(`[interpret] Worker returned ${response.status} for segment ${segment.id}`);
-        continue;
-      }
-
-      const result = (await response.json()) as { interpretedText: string };
-
-      db.update(schema.transcriptionSegments)
-        .set({ interpretedText: result.interpretedText })
-        .where(eq(schema.transcriptionSegments.id, segment.id))
-        .run();
-
-      consola.debug(`[interpret] Segment ${segment.id} interpreted`);
-    }
-
-    consola.info(`[interpret] Interpretation complete for ${basename(filePath)}`);
-  } finally {
-    clearTimeout(timeoutId);
-  }
+    .all()
+    .filter((s) => !s.interpretedText);
+  interpretSegments(uninterpreted, config, db).then(
+    ({ success }) =>
+      consola.info(
+        `[interpret] Interpretation complete for ${basename(filePath)} (${success} segments)`,
+      ),
+    (err) => consola.warn(`[interpret] Interpretation failed for ${basename(filePath)}:`, err),
+  );
 }
 
 async function runAsyncEvaluation(
