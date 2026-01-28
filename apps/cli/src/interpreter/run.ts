@@ -62,7 +62,8 @@ export async function interpretSegments(
           .run();
 
         success++;
-        consola.debug(`[interpret] Segment ${segment.id} done (${success}/${segments.length})`);
+        const preview = result.interpretedText.slice(0, 50);
+        consola.info(`[interpret] [${success}/${segments.length}] #${segment.id}: ${preview}...`);
       } catch (err) {
         if (controller.signal.aborted) {
           consola.error("[interpret] Timeout exceeded");
