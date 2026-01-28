@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 interface LevelMeterProps {
   level: number | null; // dB value (-60 to 0)
   className?: string;
-  decayRate?: number; // dB per second (default: 30)
+  decayRate?: number; // dB per second (default: 12)
 }
 
 /**
@@ -19,9 +19,22 @@ function dbToPercent(db: number): number {
 export function LevelMeter({ level, className, decayRate = 12 }: LevelMeterProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const displayLevelRef = useRef<number>(-60);
+  const targetLevelRef = useRef<number>(-60);
   const lastTimeRef = useRef<number>(0);
   const animationRef = useRef<number>(0);
+  const decayRateRef = useRef<number>(decayRate);
 
+  // Update target level when prop changes
+  useEffect(() => {
+    targetLevelRef.current = level ?? -60;
+  }, [level]);
+
+  // Update decay rate when prop changes
+  useEffect(() => {
+    decayRateRef.current = decayRate;
+  }, [decayRate]);
+
+  // Animation loop - runs once on mount
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -34,13 +47,13 @@ export function LevelMeter({ level, className, decayRate = 12 }: LevelMeterProps
       lastTimeRef.current = timestamp;
 
       // Update display level with decay
-      const targetLevel = level ?? -60;
+      const targetLevel = targetLevelRef.current;
       if (targetLevel > displayLevelRef.current) {
         // Rise instantly
         displayLevelRef.current = targetLevel;
       } else {
         // Decay gradually
-        const decay = decayRate * deltaTime;
+        const decay = decayRateRef.current * deltaTime;
         displayLevelRef.current = Math.max(targetLevel, displayLevelRef.current - decay);
       }
 
@@ -90,7 +103,7 @@ export function LevelMeter({ level, className, decayRate = 12 }: LevelMeterProps
     return () => {
       cancelAnimationFrame(animationRef.current);
     };
-  }, [level, decayRate]);
+  }, []); // Empty dependency - animation loop runs once
 
   return (
     <canvas
