@@ -1,5 +1,5 @@
 import { unlinkSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import consola from "consola";
@@ -7,9 +7,10 @@ import { eq } from "drizzle-orm";
 import type { AdasConfig } from "../config.js";
 import { getTodayDateString } from "../utils/date.js";
 import { transcribeAudio } from "../whisper/client.js";
+import { applyNewPattern, evaluateTranscription } from "../whisper/evaluator.js";
 
 /**
- * 録音チャンク完了時の共通処理: 文字起こし + DB 保存 + 音声ファイル削除。
+ * 録音チャンク完了時の共通処理: 文字起こし + DB 保存 + 評価 + 音声ファイル削除。
  * record コマンドと all コマンドで共有する。
  */
 export async function processChunkComplete(
@@ -87,5 +88,53 @@ export async function processChunkComplete(
     consola.debug(`Deleted: ${basename(filePath)}`);
   } catch {
     consola.warn(`Failed to delete: ${basename(filePath)}`);
+  }
+
+  // 第2段階: Claude SDK による非同期ハルシネーション評価
+  if (config.evaluator?.enabled !== false) {
+    runAsyncEvaluation(result.text, result.segments, filePath, datePart, config, db).then(
+      () => {},
+      (err) => consola.warn(`[evaluator] Evaluation failed for ${basename(filePath)}:`, err),
+    );
+  }
+}
+
+async function runAsyncEvaluation(
+  text: string,
+  segments: { text: string; start: number; end: number; speaker?: string }[],
+  filePath: string,
+  datePart: string,
+  config: AdasConfig,
+  db: AdasDatabase,
+): Promise<void> {
+  const evaluation = await evaluateTranscription(text, segments, {
+    db,
+    date: datePart,
+    audioFilePath: filePath,
+  });
+
+  if (evaluation.judgment !== "hallucination" || evaluation.confidence < 0.7) {
+    consola.info(
+      `[evaluator] Passed: ${basename(filePath)} (${evaluation.judgment}, confidence: ${evaluation.confidence})`,
+    );
+    return;
+  }
+
+  consola.warn(`Hallucination detected by evaluator: ${basename(filePath)} - ${evaluation.reason}`);
+
+  // DB からセグメントを削除
+  db.delete(schema.transcriptionSegments)
+    .where(eq(schema.transcriptionSegments.audioFilePath, filePath))
+    .run();
+  consola.info(`Removed hallucinated segments for ${basename(filePath)}`);
+
+  // 新しいパターンを自動適用
+  if (config.evaluator?.autoApplyPatterns !== false && evaluation.suggestedPattern) {
+    const projectRoot = resolve(import.meta.dirname, "../../../../");
+    await applyNewPattern(evaluation.suggestedPattern, evaluation.reason, projectRoot, {
+      db,
+      audioFilePath: filePath,
+    });
+    consola.success(`New hallucination pattern applied: ${evaluation.suggestedPattern}`);
   }
 }
