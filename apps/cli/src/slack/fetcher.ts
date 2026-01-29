@@ -122,6 +122,66 @@ export async function fetchMentions(
 }
 
 /**
+ * Fetch and store messages matching keywords
+ */
+export async function fetchKeywords(
+  db: AdasDatabase,
+  client: SlackClient,
+  keywords: string[],
+): Promise<{ fetched: number; stored: number; lastTs?: string }> {
+  if (keywords.length === 0) {
+    return { fetched: 0, stored: 0 };
+  }
+
+  let fetched = 0;
+  let stored = 0;
+  let lastTs: string | undefined;
+
+  try {
+    for (const keyword of keywords) {
+      const response = await client.searchMessages(keyword, {
+        count: 50,
+        sort: "timestamp",
+        sort_dir: "desc",
+      });
+
+      for (const match of response.messages.matches) {
+        fetched++;
+        lastTs = lastTs ? (match.ts > lastTs ? match.ts : lastTs) : match.ts;
+
+        const dateStr = tsToDateString(match.ts);
+        const userInfo = match.user ? await client.getUserInfo(match.user) : null;
+
+        const inserted = insertMessageIfNotExists(db, {
+          date: dateStr,
+          messageTs: match.ts,
+          channelId: match.channel.id,
+          channelName: match.channel.name,
+          userId: match.user || "unknown",
+          userName: userInfo?.real_name || userInfo?.name || null,
+          messageType: "keyword",
+          text: match.text,
+          threadTs: match.thread_ts || null,
+          permalink: match.permalink,
+          isRead: false,
+        });
+
+        if (inserted) {
+          stored++;
+        }
+      }
+    }
+
+    consola.debug(`Keywords: fetched ${fetched}, stored ${stored} (keywords: ${keywords.length})`);
+  } catch (error) {
+    consola.error("Failed to fetch keywords:", error);
+    throw error;
+  }
+
+  return { fetched, stored, lastTs };
+}
+
+/**
  * Fetch thread replies for a message
  */
 async function fetchThreadReplies(
@@ -339,10 +399,16 @@ export async function processSlackJob(
   job: SlackQueueJob,
   currentUserId: string,
   mentionGroups: string[] = [],
+  watchKeywords: string[] = [],
 ): Promise<string | undefined> {
   switch (job.jobType) {
     case "fetch_mentions": {
       const result = await fetchMentions(db, client, currentUserId, mentionGroups);
+      return result.lastTs;
+    }
+
+    case "fetch_keywords": {
+      const result = await fetchKeywords(db, client, watchKeywords);
       return result.lastTs;
     }
 

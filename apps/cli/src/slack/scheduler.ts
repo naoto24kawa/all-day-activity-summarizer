@@ -58,6 +58,16 @@ export function startSlackEnqueueScheduler(
       consola.debug("[Slack] Enqueued mentions fetch job");
     }
 
+    // Enqueue keywords fetch if configured
+    if (config.slack.watchKeywords && config.slack.watchKeywords.length > 0) {
+      const keywordsJob = enqueueSlackJob(db, {
+        jobType: "fetch_keywords",
+      });
+      if (keywordsJob) {
+        consola.debug("[Slack] Enqueued keywords fetch job");
+      }
+    }
+
     // Enqueue channel fetch jobs
     for (const channelId of channelIds) {
       const channelJob = enqueueSlackJob(db, {

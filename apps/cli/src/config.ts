@@ -40,6 +40,7 @@ export interface AdasConfig {
     parallelWorkers: number;
     channels: string[]; // Channel IDs to monitor
     mentionGroups: string[]; // Group names to monitor (e.g., "team_製品開発本部_ジョブアンテナ")
+    watchKeywords: string[]; // Keywords to monitor (e.g., "ジョブアンテナ", "障害")
   };
   claudeCode: {
     enabled: boolean;
@@ -94,6 +95,7 @@ const defaultConfig: AdasConfig = {
     parallelWorkers: 3,
     channels: [],
     mentionGroups: [],
+    watchKeywords: [],
   },
   claudeCode: {
     enabled: false,

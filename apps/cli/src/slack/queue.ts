@@ -6,7 +6,7 @@ import type { AdasDatabase, SlackQueueJob } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 
-export type SlackJobType = "fetch_mentions" | "fetch_channel" | "fetch_dm";
+export type SlackJobType = "fetch_mentions" | "fetch_channel" | "fetch_dm" | "fetch_keywords";
 
 export interface EnqueueSlackJobOptions {
   jobType: SlackJobType;

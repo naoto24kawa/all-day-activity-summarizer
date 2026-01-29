@@ -139,7 +139,7 @@ export const slackMessages = sqliteTable("slack_messages", {
   userId: text("user_id").notNull(),
   userName: text("user_name"),
   messageType: text("message_type", {
-    enum: ["mention", "channel", "dm"],
+    enum: ["mention", "channel", "dm", "keyword"],
   }).notNull(),
   text: text("text").notNull(),
   threadTs: text("thread_ts"), // Parent message ts if in thread
@@ -160,7 +160,7 @@ export type NewSlackMessage = typeof slackMessages.$inferInsert;
 export const slackQueue = sqliteTable("slack_queue", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   jobType: text("job_type", {
-    enum: ["fetch_mentions", "fetch_channel", "fetch_dm"],
+    enum: ["fetch_mentions", "fetch_channel", "fetch_dm", "fetch_keywords"],
   }).notNull(),
   channelId: text("channel_id"), // null for mentions search
   status: text("status", { enum: ["pending", "processing", "completed", "failed"] })

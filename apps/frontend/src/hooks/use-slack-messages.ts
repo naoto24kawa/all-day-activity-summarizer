@@ -11,6 +11,7 @@ export interface SlackUnreadCounts {
   mention: number;
   channel: number;
   dm: number;
+  keyword: number;
 }
 
 export function useSlackMessages(date?: string) {
@@ -68,6 +69,7 @@ export function useSlackUnreadCounts(date?: string) {
     mention: 0,
     channel: 0,
     dm: 0,
+    keyword: 0,
   });
   const [error, setError] = useState<string | null>(null);
 

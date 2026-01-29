@@ -13,6 +13,7 @@ import {
   Hash,
   MessageSquare,
   RefreshCw,
+  Search,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,7 @@ export function SlackFeed({ date }: SlackFeedProps) {
   const mentionMessages = messages.filter((m) => m.messageType === "mention");
   const channelMessages = messages.filter((m) => m.messageType === "channel");
   const dmMessages = messages.filter((m) => m.messageType === "dm");
+  const keywordMessages = messages.filter((m) => m.messageType === "keyword");
 
   return (
     <Card>
@@ -117,6 +119,15 @@ export function SlackFeed({ date }: SlackFeedProps) {
                   </Badge>
                 )}
               </TabsTrigger>
+              <TabsTrigger value="keyword" className="flex items-center gap-1">
+                <Search className="h-3 w-3" />
+                Keywords
+                {counts.keyword > 0 && (
+                  <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
+                    {counts.keyword}
+                  </Badge>
+                )}
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="mention">
               <MessageList messages={mentionMessages} onMarkAsRead={markAsRead} />
@@ -126,6 +137,9 @@ export function SlackFeed({ date }: SlackFeedProps) {
             </TabsContent>
             <TabsContent value="dm">
               <MessageList messages={dmMessages} onMarkAsRead={markAsRead} />
+            </TabsContent>
+            <TabsContent value="keyword">
+              <MessageList messages={keywordMessages} onMarkAsRead={markAsRead} />
             </TabsContent>
           </Tabs>
         )}

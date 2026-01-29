@@ -88,10 +88,14 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
       mention: 0,
       channel: 0,
       dm: 0,
+      keyword: 0,
     };
 
     for (const msg of messages) {
-      counts[msg.messageType]++;
+      const msgType = msg.messageType as keyof typeof counts;
+      if (msgType in counts && msgType !== "total") {
+        counts[msgType]++;
+      }
     }
 
     return c.json(counts);
