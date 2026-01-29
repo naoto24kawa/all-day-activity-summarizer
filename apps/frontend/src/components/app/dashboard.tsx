@@ -24,13 +24,14 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <StatusPanel />
+      <StatusPanel />
+
+      <div className="grid gap-6 lg:grid-cols-2">
         <Timeline date={date} />
+        <SummaryView date={date} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <SummaryView date={date} />
+      <div className="grid gap-6 lg:grid-cols-2">
         <ActivityFeed date={date} />
         <MemoPanel date={date} />
       </div>
