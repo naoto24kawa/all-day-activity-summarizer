@@ -1,12 +1,21 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import consola from "consola";
-import { ensureAdasHome, getAdasHome } from "../config.js";
+import { ensureAdasHome, getAdasHome, loadConfig } from "../config.js";
 
 const UNKNOWN_SPEAKERS_FILENAME = "unknown_speakers.json";
 const EMBEDDINGS_FILENAME = "speaker_embeddings.json";
 const METADATA_FILENAME = "speaker_metadata.json";
-const SIMILARITY_THRESHOLD = 0.5;
+
+/** 話者照合の閾値を取得 (config から読み込み、デフォルト 0.6) */
+function getSimilarityThreshold(): number {
+  try {
+    const config = loadConfig();
+    return config.speaker?.similarityThreshold ?? 0.6;
+  } catch {
+    return 0.6;
+  }
+}
 
 export interface UnknownSpeaker {
   embedding: number[];
@@ -133,6 +142,7 @@ function findMatchingSpeaker(
   emb: number[],
   registeredEmbeddings: Record<string, number[]>,
 ): string | null {
+  const threshold = getSimilarityThreshold();
   let bestName: string | null = null;
   let bestScore = -1;
   for (const [name, regEmb] of Object.entries(registeredEmbeddings)) {
@@ -142,9 +152,13 @@ function findMatchingSpeaker(
       bestName = name;
     }
   }
-  if (bestName && bestScore >= SIMILARITY_THRESHOLD) {
+  if (bestName && bestScore >= threshold) {
+    consola.debug(
+      `Speaker matched: ${bestName} (score: ${bestScore.toFixed(3)}, threshold: ${threshold})`,
+    );
     return bestName;
   }
+  consola.debug(`No speaker match (best: ${bestScore.toFixed(3)}, threshold: ${threshold})`);
   return null;
 }
 
