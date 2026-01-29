@@ -1,10 +1,8 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
-import { registerAllCommand } from "./commands/all.js";
 import { registerEnrollCommand } from "./commands/enroll.js";
 import { registerImprovePromptCommand } from "./commands/improve-prompt.js";
 import { registerInterpretCommand } from "./commands/interpret.js";
-import { registerRecordCommand } from "./commands/record.js";
 import { registerServeCommand } from "./commands/serve.js";
 import { registerSetupCommand } from "./commands/setup.js";
 import { registerSummarizeCommand } from "./commands/summarize.js";
@@ -19,7 +17,6 @@ program
   .version("0.1.0");
 
 registerSetupCommand(program);
-registerRecordCommand(program);
 registerTranscribeCommand(program);
 registerSummarizeCommand(program);
 registerServeCommand(program);
@@ -27,6 +24,5 @@ registerEnrollCommand(program);
 registerWorkerCommand(program);
 registerInterpretCommand(program);
 registerImprovePromptCommand(program);
-registerAllCommand(program);
 
 program.parse();

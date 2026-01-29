@@ -17,6 +17,7 @@ export type {
   PromptTarget,
   RecordingSourceResponse,
   RecordingStatusResponse,
+  RecordingsStorageMetrics,
   RpcEvaluateRequest,
   RpcEvaluateResponse,
   RpcHealthResponse,
@@ -29,6 +30,8 @@ export type {
   SegmentEvaluation,
   SegmentFeedback,
   StatusResponse,
+  StorageFolderMetrics,
+  StorageMetrics,
   Summary,
   TranscriptionSegment,
 } from "./adas";

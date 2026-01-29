@@ -8,7 +8,7 @@ AI アシスタント向け共通ドキュメント。常に日本語で回答�
 
 | カテゴリ | 技術 |
 |---------|------|
-| 音声キャプチャ | ffmpeg + PulseAudio(WSL2) |
+| 音声キャプチャ | ブラウザ MediaRecorder API(Web UI 経由) |
 | 文字起こし | whisper.cpp(ローカル実行) |
 | 要約 | @anthropic-ai/claude-agent-sdk(Claude API) |
 | 文字起こし評価 | @anthropic-ai/claude-agent-sdk(haiku, ハルシネーション検出) |
@@ -24,13 +24,11 @@ AI アシスタント向け共通ドキュメント。常に日本語で回答�
 ```bash
 # CLI
 bun run cli -- setup         # WhisperX + whisper.cpp セットアップ
-bun run cli -- all           # 全機能一括起動(Worker + 録音 + 要約 + API)
 bun run cli -- worker        # Worker のみ起動
-bun run cli -- record        # 録音のみ(Worker 起動済み前提)
+bun run cli -- serve         # APIサーバー + ブラウザ録音 + 要約スケジューラ
 bun run cli -- transcribe    # 文字起こし
 bun run cli -- interpret     # AI 解釈(interpretedText 生成)
 bun run cli -- summarize     # 要約生成
-bun run cli -- serve         # APIサーバー(:3001)
 bun run cli -- enroll        # 話者登録
 
 # 開発
@@ -57,8 +55,8 @@ apps/
 │   └── src/
 │       ├── index.ts    # エントリポイント(Commander.js)
 │       ├── config.ts   # 設定管理(~/.adas/config.json)
-│       ├── commands/   # record, transcribe, interpret, summarize, serve, setup, all, worker, enroll
-│       ├── audio/      # ffmpeg音声キャプチャ + チャンク処理
+│       ├── commands/   # transcribe, interpret, summarize, serve, setup, worker, enroll
+│       ├── audio/      # 音声チャンク処理
 │       ├── whisper/    # WhisperXクライアント + 評価 + 話者管理
 │       ├── interpreter/ # AI 解釈共通ロジック(interpretSegments)
 │       ├── summarizer/ # 要約クライアント + スケジューラ

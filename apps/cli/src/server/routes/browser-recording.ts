@@ -4,8 +4,8 @@ import type { AdasDatabase } from "@repo/db";
 import type { BrowserRecordingChunkMetadata, BrowserRecordingChunkResponse } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
-import { convertWebmToWav } from "../../audio/webm-converter.js";
 import { processChunkComplete } from "../../audio/process-chunk.js";
+import { convertWebmToWav } from "../../audio/webm-converter.js";
 import type { AdasConfig } from "../../config.js";
 
 export function createBrowserRecordingRouter(db: AdasDatabase, config: AdasConfig) {

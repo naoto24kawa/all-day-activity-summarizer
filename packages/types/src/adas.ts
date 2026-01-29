@@ -219,3 +219,36 @@ export interface BrowserRecordingStatus {
   /** 録音開始時刻 (ISO8601) */
   startedAt?: string;
 }
+
+// ========== Storage Metrics 型定義 ==========
+
+/** ストレージフォルダ情報 */
+export interface StorageFolderMetrics {
+  /** バイト数 */
+  bytes: number;
+  /** フォーマット済みサイズ */
+  formatted: string;
+  /** ファイル数 */
+  fileCount: number;
+}
+
+/** 録音ストレージ情報 */
+export interface RecordingsStorageMetrics extends StorageFolderMetrics {
+  /** 日付別内訳 */
+  byDate: Record<string, StorageFolderMetrics>;
+}
+
+/** ストレージメトリクス全体 */
+export interface StorageMetrics {
+  /** 録音フォルダ */
+  recordings: RecordingsStorageMetrics;
+  /** データベース */
+  database: StorageFolderMetrics;
+  /** ログフォルダ */
+  logs: StorageFolderMetrics;
+  /** 合計 */
+  total: {
+    bytes: number;
+    formatted: string;
+  };
+}

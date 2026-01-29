@@ -248,22 +248,17 @@ export function useBrowserRecording(): UseBrowserRecordingReturn {
   }, [systemMedia, setupAnalyser, updateLevels]);
 
   const stopSystem = useCallback(async (): Promise<void> => {
-    console.log("stopSystem: start");
     try {
       if (systemChunkManagerRef.current) {
-        console.log("stopSystem: stopping ChunkManager");
         await systemChunkManagerRef.current.stop();
         systemChunkManagerRef.current = null;
-        console.log("stopSystem: ChunkManager stopped");
       }
     } catch (e) {
       console.error("stopSystem: ChunkManager stop error", e);
     }
 
     try {
-      console.log("stopSystem: calling stopCapture");
       systemMedia.stopCapture();
-      console.log("stopSystem: stopCapture done");
     } catch (e) {
       console.error("stopSystem: stopCapture error", e);
     }
@@ -271,23 +266,19 @@ export function useBrowserRecording(): UseBrowserRecordingReturn {
 
     try {
       if (systemAudioContextRef.current) {
-        console.log("stopSystem: closing AudioContext");
         await systemAudioContextRef.current.close();
         systemAudioContextRef.current = null;
-        console.log("stopSystem: AudioContext closed");
       }
     } catch (e) {
       console.error("stopSystem: AudioContext close error", e);
     }
 
-    console.log("stopSystem: updating state");
     setState((prev) => ({
       ...prev,
       systemRecording: false,
       systemLevel: 0,
       startedAt: prev.micRecording ? prev.startedAt : null,
     }));
-    console.log("stopSystem: done");
   }, [systemMedia]);
 
   const stopAll = useCallback(async (): Promise<void> => {

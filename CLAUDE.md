@@ -17,7 +17,7 @@ Claude Code 向け指示書。
 コード参照時は `file_path:line_number` 形式を使用:
 
 ```
-例: apps/cli/src/commands/record.ts:15
+例: apps/cli/src/commands/serve.ts:15
 ```
 
 ### コミットメッセージ

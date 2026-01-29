@@ -10,6 +10,7 @@ import { createMemosRouter } from "./routes/memos.js";
 import { createRecordingRouter } from "./routes/recording.js";
 import { createSpeakersRouter } from "./routes/speakers.js";
 import { createStatusRouter } from "./routes/status.js";
+import { createStorageRouter } from "./routes/storage.js";
 import { createSummariesRouter } from "./routes/summaries.js";
 import { createTranscriptionsRouter } from "./routes/transcriptions.js";
 
@@ -57,6 +58,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   // Browser recording は常に有効(設定がある場合)
   if (options?.config) {
     app.route("/api/browser-recording", createBrowserRecordingRouter(db, options.config));
+    app.route("/api/storage", createStorageRouter(options.config));
   }
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));

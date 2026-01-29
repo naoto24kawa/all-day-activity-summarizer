@@ -1,6 +1,6 @@
 import type { BrowserRecordingChunkMetadata, BrowserRecordingChunkResponse } from "@repo/types";
-import { getDateString } from "./date";
 import { postFormDataAdasApi } from "./adas-api";
+import { getDateString } from "./date";
 
 export type AudioSourceType = "browser-mic" | "browser-system";
 
@@ -33,7 +33,7 @@ export class AudioChunkManager {
   private readonly onError?: (error: Error) => void;
 
   constructor(options: ChunkManagerOptions) {
-    this.chunkIntervalMs = options.chunkIntervalMs ?? 5 * 60 * 1000; // デフォルト 5分
+    this.chunkIntervalMs = options.chunkIntervalMs ?? 2 * 60 * 1000; // デフォルト 2分(タイムアウト対策)
     this.audioSource = options.audioSource;
     this.onChunkSent = options.onChunkSent;
     this.onError = options.onError;
@@ -71,7 +71,7 @@ export class AudioChunkManager {
 
     try {
       this.recorder = new MediaRecorder(stream, { mimeType: this.mimeType });
-    } catch (err) {
+    } catch (_err) {
       // mimeType がサポートされていない場合はデフォルトで試す
       this.recorder = new MediaRecorder(stream);
     }

@@ -1,4 +1,4 @@
-import { Monitor, Chrome, AlertCircle } from "lucide-react";
+import { AlertCircle, Chrome, Monitor } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface ScreenShareGuideProps {
