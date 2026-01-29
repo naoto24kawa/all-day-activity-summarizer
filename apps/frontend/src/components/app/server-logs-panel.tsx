@@ -12,27 +12,68 @@ interface ServerLogsPanelProps {
 }
 
 export function ServerLogsPanel({ date }: ServerLogsPanelProps) {
+  const serveData = useServerLogs("serve", date);
+  const workerData = useServerLogs("worker", date);
+
   const serveRef = useRef<HTMLDivElement>(null);
   const workerRef = useRef<HTMLDivElement>(null);
   const [syncEnabled, setSyncEnabled] = useState(true);
   const isScrolling = useRef(false);
 
+  // 時刻ベースでスクロール同期
   const handleScroll = useCallback(
     (source: "serve" | "worker") => {
       if (!syncEnabled || isScrolling.current) return;
 
       const sourceRef = source === "serve" ? serveRef : workerRef;
       const targetRef = source === "serve" ? workerRef : serveRef;
+      const targetEntries = source === "serve" ? workerData.entries : serveData.entries;
 
-      if (sourceRef.current && targetRef.current) {
+      if (!sourceRef.current || !targetRef.current || targetEntries.length === 0) return;
+
+      // ソース側で現在表示されている最初のエントリのタイムスタンプを取得
+      const sourceContainer = sourceRef.current;
+      const sourceRows = sourceContainer.querySelectorAll("[data-timestamp]");
+
+      let visibleTimestamp: string | null = null;
+      for (const row of sourceRows) {
+        const rect = row.getBoundingClientRect();
+        const containerRect = sourceContainer.getBoundingClientRect();
+        if (rect.top >= containerRect.top && rect.top < containerRect.bottom) {
+          visibleTimestamp = row.getAttribute("data-timestamp");
+          break;
+        }
+      }
+
+      if (!visibleTimestamp) return;
+
+      // ターゲット側で最も近いタイムスタンプのエントリを見つける
+      const targetContainer = targetRef.current;
+      const targetRows = targetContainer.querySelectorAll("[data-timestamp]");
+
+      let closestRow: Element | null = null;
+      let closestDiff = Infinity;
+
+      for (const row of targetRows) {
+        const ts = row.getAttribute("data-timestamp");
+        if (!ts) continue;
+        const diff = Math.abs(new Date(ts).getTime() - new Date(visibleTimestamp).getTime());
+        if (diff < closestDiff) {
+          closestDiff = diff;
+          closestRow = row;
+        }
+      }
+
+      if (closestRow) {
         isScrolling.current = true;
-        targetRef.current.scrollTop = sourceRef.current.scrollTop;
-        requestAnimationFrame(() => {
+        closestRow.scrollIntoView({ block: "start" });
+        // スクロール完了後にフラグをリセット
+        setTimeout(() => {
           isScrolling.current = false;
-        });
+        }, 100);
       }
     },
-    [syncEnabled],
+    [syncEnabled, serveData.entries, workerData.entries],
   );
 
   return (
@@ -47,20 +88,26 @@ export function ServerLogsPanel({ date }: ServerLogsPanelProps) {
           size="sm"
           onClick={() => setSyncEnabled(!syncEnabled)}
         >
-          {syncEnabled ? "Sync ON" : "Sync OFF"}
+          {syncEnabled ? "Time Sync ON" : "Time Sync OFF"}
         </Button>
       </CardHeader>
       <CardContent>
         <div className="grid gap-4 lg:grid-cols-2">
           <LogView
             source="serve"
-            date={date}
+            entries={serveData.entries}
+            loading={serveData.loading}
+            error={serveData.error}
+            refetch={serveData.refetch}
             scrollRef={serveRef}
             onScroll={() => handleScroll("serve")}
           />
           <LogView
             source="worker"
-            date={date}
+            entries={workerData.entries}
+            loading={workerData.loading}
+            error={workerData.error}
+            refetch={workerData.refetch}
             scrollRef={workerRef}
             onScroll={() => handleScroll("worker")}
           />
@@ -72,13 +119,15 @@ export function ServerLogsPanel({ date }: ServerLogsPanelProps) {
 
 interface LogViewProps {
   source: LogSource;
-  date: string;
+  entries: LogEntry[];
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
   scrollRef?: React.RefObject<HTMLDivElement>;
   onScroll?: () => void;
 }
 
-function LogView({ source, date, scrollRef, onScroll }: LogViewProps) {
-  const { entries, loading, error, refetch } = useServerLogs(source, date);
+function LogView({ source, entries, loading, error, refetch, scrollRef, onScroll }: LogViewProps) {
   const icon =
     source === "serve" ? <Server className="h-4 w-4" /> : <Terminal className="h-4 w-4" />;
   const title = source === "serve" ? "Serve" : "Worker";
@@ -91,7 +140,7 @@ function LogView({ source, date, scrollRef, onScroll }: LogViewProps) {
           <span className="font-medium">{title}</span>
           {!loading && <Badge variant="secondary">{entries.length}</Badge>}
         </div>
-        <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
+        <Button variant="ghost" size="icon" onClick={refetch} title="Refresh">
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
@@ -130,7 +179,10 @@ function LogEntryRow({ entry }: { entry: LogEntry }) {
   const levelColor = getLevelColor(entry.level);
 
   return (
-    <div className="flex gap-2 border-b border-border/50 py-1 last:border-0">
+    <div
+      data-timestamp={entry.timestamp}
+      className="flex gap-2 border-b border-border/50 py-1 last:border-0"
+    >
       <span className="shrink-0 text-muted-foreground">{time}</span>
       <span className={`shrink-0 font-semibold ${levelColor}`}>{entry.level.padEnd(5)}</span>
       <span className="break-all">{entry.message}</span>
