@@ -1,12 +1,47 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AdasDatabase } from "@repo/db";
-import type { BrowserRecordingChunkMetadata, BrowserRecordingChunkResponse } from "@repo/types";
+import type {
+  AudioSourceType,
+  BrowserRecordingChunkMetadata,
+  BrowserRecordingChunkResponse,
+} from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
 import { processChunkComplete } from "../../audio/process-chunk.js";
 import { convertWebmToWav } from "../../audio/webm-converter.js";
 import type { AdasConfig } from "../../config.js";
+
+/**
+ * バックグラウンドで WebM → WAV 変換と文字起こしを実行する。
+ * エラーが発生してもクライアントには影響しない。
+ */
+function processChunkInBackground(
+  webmPath: string,
+  wavPath: string,
+  config: AdasConfig,
+  db: AdasDatabase,
+  audioSource: AudioSourceType,
+): void {
+  (async () => {
+    try {
+      // WebM -> WAV 変換
+      await convertWebmToWav(webmPath, wavPath, {
+        sampleRate: config.audio.sampleRate,
+        channels: config.audio.channels,
+        deleteInput: true,
+      });
+
+      // 文字起こし処理
+      await processChunkComplete(wavPath, config, db, audioSource);
+
+      consola.success(`Background processing completed: ${wavPath}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      consola.error(`Background processing failed: ${message}`);
+    }
+  })();
+}
 
 export function createBrowserRecordingRouter(db: AdasDatabase, config: AdasConfig) {
   const router = new Hono();
@@ -69,15 +104,8 @@ export function createBrowserRecordingRouter(db: AdasDatabase, config: AdasConfi
 
       consola.info(`Received browser audio chunk: ${webmPath} (${audioFile.size} bytes)`);
 
-      // WebM -> WAV 変換
-      await convertWebmToWav(webmPath, wavPath, {
-        sampleRate: config.audio.sampleRate,
-        channels: config.audio.channels,
-        deleteInput: true,
-      });
-
-      // 文字起こし処理(既存パイプラインを再利用)
-      await processChunkComplete(wavPath, config, db, metadata.audioSource);
+      // バックグラウンドで変換・文字起こしを実行(クライアントを待たせない)
+      processChunkInBackground(webmPath, wavPath, config, db, metadata.audioSource);
 
       return c.json<BrowserRecordingChunkResponse>({ success: true });
     } catch (error) {
