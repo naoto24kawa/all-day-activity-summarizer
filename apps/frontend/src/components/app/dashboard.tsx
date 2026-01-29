@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getTodayDateString } from "@/lib/date";
 import { ActivityFeed } from "./activity-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
@@ -30,15 +31,24 @@ export function Dashboard() {
         <SummaryView date={date} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <ActivityFeed date={date} />
-        <MemoPanel date={date} />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <SpeakerAssignPanel />
-        <EvaluatorLogPanel date={date} />
-      </div>
+      <Tabs defaultValue="activity">
+        <TabsList>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+        </TabsList>
+        <TabsContent value="activity">
+          <div className="grid gap-6 pt-4 lg:grid-cols-2">
+            <ActivityFeed date={date} />
+            <MemoPanel date={date} />
+          </div>
+        </TabsContent>
+        <TabsContent value="settings">
+          <div className="grid gap-6 pt-4 lg:grid-cols-2">
+            <SpeakerAssignPanel />
+            <EvaluatorLogPanel date={date} />
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
