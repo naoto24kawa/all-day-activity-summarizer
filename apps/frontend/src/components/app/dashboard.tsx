@@ -1,6 +1,6 @@
-import { getTodayDateString } from "@repo/core";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { getTodayDateString } from "@/lib/date";
 import { ActivityFeed } from "./activity-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
 import { MemoPanel } from "./memo-panel";
