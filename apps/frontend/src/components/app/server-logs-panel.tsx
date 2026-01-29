@@ -175,7 +175,14 @@ function LogView({ source, entries, loading, error, refetch, scrollRef, onScroll
 }
 
 function LogEntryRow({ entry }: { entry: LogEntry }) {
-  const time = entry.timestamp.split("T")[1]?.slice(0, 12) || "";
+  // UTC から ローカルタイムに変換して表示
+  const date = new Date(entry.timestamp);
+  const time = date.toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    fractionalSecondDigits: 3,
+  });
   const levelColor = getLevelColor(entry.level);
 
   return (
