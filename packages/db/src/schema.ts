@@ -125,3 +125,60 @@ export const summaryQueue = sqliteTable("summary_queue", {
 
 export type SummaryQueueJob = typeof summaryQueue.$inferSelect;
 export type NewSummaryQueueJob = typeof summaryQueue.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Slack Messages
+// ---------------------------------------------------------------------------
+
+export const slackMessages = sqliteTable("slack_messages", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  date: text("date").notNull(), // YYYY-MM-DD
+  messageTs: text("message_ts").notNull(), // Slack message timestamp (unique per channel)
+  channelId: text("channel_id").notNull(),
+  channelName: text("channel_name"),
+  userId: text("user_id").notNull(),
+  userName: text("user_name"),
+  messageType: text("message_type", {
+    enum: ["mention", "channel", "dm"],
+  }).notNull(),
+  text: text("text").notNull(),
+  threadTs: text("thread_ts"), // Parent message ts if in thread
+  permalink: text("permalink"),
+  isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type SlackMessage = typeof slackMessages.$inferSelect;
+export type NewSlackMessage = typeof slackMessages.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Slack Queue
+// ---------------------------------------------------------------------------
+
+export const slackQueue = sqliteTable("slack_queue", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobType: text("job_type", {
+    enum: ["fetch_mentions", "fetch_channel", "fetch_dm"],
+  }).notNull(),
+  channelId: text("channel_id"), // null for mentions search
+  status: text("status", { enum: ["pending", "processing", "completed", "failed"] })
+    .notNull()
+    .default("pending"),
+  retryCount: integer("retry_count").notNull().default(0),
+  maxRetries: integer("max_retries").notNull().default(3),
+  errorMessage: text("error_message"),
+  lockedAt: text("locked_at"),
+  runAfter: text("run_after").notNull(),
+  lastFetchedTs: text("last_fetched_ts"), // Last message ts fetched (for pagination)
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type SlackQueueJob = typeof slackQueue.$inferSelect;
+export type NewSlackQueueJob = typeof slackQueue.$inferInsert;

@@ -29,6 +29,7 @@ export type {
   RpcTranscribeResponse,
   SegmentEvaluation,
   SegmentFeedback,
+  SlackMessage,
   StatusResponse,
   StorageFolderMetrics,
   StorageMetrics,

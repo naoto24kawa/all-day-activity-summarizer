@@ -22,9 +22,11 @@ export interface ChunkManagerOptions {
  */
 export class AudioChunkManager {
   private recorder: MediaRecorder | null = null;
+  private stream: MediaStream | null = null;
   private chunks: Blob[] = [];
   private chunkStartTime: Date | null = null;
   private intervalId: ReturnType<typeof setInterval> | null = null;
+  private isRestarting = false;
 
   private readonly chunkIntervalMs: number;
   private readonly mimeType: string;
@@ -69,11 +71,28 @@ export class AudioChunkManager {
       return;
     }
 
+    this.stream = stream;
+    this.startRecorder();
+
+    // チャンク送信タイマー: 録音を停止→チャンク送信→録音を再開
+    this.intervalId = setInterval(() => {
+      this.rotateChunk();
+    }, this.chunkIntervalMs);
+  }
+
+  /**
+   * 内部: MediaRecorder を開始する
+   */
+  private startRecorder(): void {
+    if (!this.stream) {
+      return;
+    }
+
     try {
-      this.recorder = new MediaRecorder(stream, { mimeType: this.mimeType });
+      this.recorder = new MediaRecorder(this.stream, { mimeType: this.mimeType });
     } catch (_err) {
       // mimeType がサポートされていない場合はデフォルトで試す
-      this.recorder = new MediaRecorder(stream);
+      this.recorder = new MediaRecorder(this.stream);
     }
 
     this.chunks = [];
@@ -90,13 +109,54 @@ export class AudioChunkManager {
       this.onError?.(error);
     };
 
-    // 1秒ごとにデータを取得(timeslice)
-    this.recorder.start(1000);
+    // 連続録音モード(timeslice なし)で開始
+    // stopで完全なWebMファイルが生成される
+    this.recorder.start();
+  }
 
-    // チャンク送信タイマー
-    this.intervalId = setInterval(() => {
-      this.sendCurrentChunk();
-    }, this.chunkIntervalMs);
+  /**
+   * チャンクをローテーションする: 現在の録音を停止して送信し、新しい録音を開始
+   * これにより各チャンクが独立した完全なWebMファイルになる
+   */
+  private async rotateChunk(): Promise<void> {
+    if (this.isRestarting || !this.recorder || this.recorder.state === "inactive") {
+      return;
+    }
+
+    this.isRestarting = true;
+
+    try {
+      // 現在の録音を停止(stopでondataavailableが最終データを発火)
+      await this.stopRecorderAndWait();
+
+      // チャンクを送信(バックグラウンドで実行)
+      this.sendCurrentChunk().catch((err) => {
+        console.error("AudioChunkManager: Failed to send chunk during rotation", err);
+      });
+
+      // 新しい録音を開始
+      this.startRecorder();
+    } finally {
+      this.isRestarting = false;
+    }
+  }
+
+  /**
+   * MediaRecorder を停止し、onstop イベントを待つ
+   */
+  private stopRecorderAndWait(): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.recorder || this.recorder.state === "inactive") {
+        resolve();
+        return;
+      }
+
+      this.recorder.onstop = () => {
+        resolve();
+      };
+
+      this.recorder.stop();
+    });
   }
 
   /**
@@ -109,15 +169,16 @@ export class AudioChunkManager {
     }
 
     if (this.recorder && this.recorder.state !== "inactive") {
-      this.recorder.stop();
+      await this.stopRecorderAndWait();
     }
 
-    // 最後のチャンクを送信（バックグラウンドで実行、await しない）
+    // 最後のチャンクを送信(バックグラウンドで実行、await しない)
     this.sendCurrentChunk().catch((err) => {
       console.error("AudioChunkManager: Failed to send final chunk", err);
     });
 
     this.recorder = null;
+    this.stream = null;
     this.chunks = [];
     this.chunkStartTime = null;
   }
@@ -177,6 +238,6 @@ export class AudioChunkManager {
    * 録音中かどうか
    */
   isRecording(): boolean {
-    return this.recorder !== null && this.recorder.state === "recording";
+    return this.stream !== null && !this.isRestarting;
   }
 }

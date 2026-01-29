@@ -10,11 +10,15 @@ export type {
   NewMemo,
   NewPromptImprovement,
   NewSegmentFeedback,
+  NewSlackMessage,
+  NewSlackQueueJob,
   NewSummary,
   NewSummaryQueueJob,
   NewTranscriptionSegment,
   PromptImprovement,
   SegmentFeedback,
+  SlackMessage,
+  SlackQueueJob,
   Summary,
   SummaryQueueJob,
   TranscriptionSegment,
@@ -160,6 +164,47 @@ export function createDatabase(dbPath: string) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_summary_queue_unique_job
       ON summary_queue(job_type, date, period_param)
       WHERE status IN ('pending', 'processing');
+
+    -- Slack messages table
+    CREATE TABLE IF NOT EXISTS slack_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      message_ts TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      channel_name TEXT,
+      user_id TEXT NOT NULL,
+      user_name TEXT,
+      message_type TEXT NOT NULL CHECK(message_type IN ('mention', 'channel', 'dm')),
+      text TEXT NOT NULL,
+      thread_ts TEXT,
+      permalink TEXT,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_slack_messages_date ON slack_messages(date);
+    CREATE INDEX IF NOT EXISTS idx_slack_messages_channel ON slack_messages(channel_id);
+    CREATE INDEX IF NOT EXISTS idx_slack_messages_type ON slack_messages(message_type);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_slack_messages_unique ON slack_messages(channel_id, message_ts);
+
+    -- Slack queue table
+    CREATE TABLE IF NOT EXISTS slack_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_type TEXT NOT NULL CHECK(job_type IN ('fetch_mentions', 'fetch_channel', 'fetch_dm')),
+      channel_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 3,
+      error_message TEXT,
+      locked_at TEXT,
+      run_after TEXT NOT NULL,
+      last_fetched_ts TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_slack_queue_status ON slack_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_slack_queue_run_after ON slack_queue(run_after);
   `);
 
   // Migration: update CHECK constraint to allow 'pomodoro' summary_type

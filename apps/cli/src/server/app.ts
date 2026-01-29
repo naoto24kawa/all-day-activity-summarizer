@@ -8,6 +8,7 @@ import { createEvaluatorLogsRouter } from "./routes/evaluator-logs.js";
 import { createFeedbacksRouter, createSegmentFeedbackRouter } from "./routes/feedbacks.js";
 import { createMemosRouter } from "./routes/memos.js";
 import { createRecordingRouter } from "./routes/recording.js";
+import { createSlackMessagesRouter } from "./routes/slack-messages.js";
 import { createSpeakersRouter } from "./routes/speakers.js";
 import { createStatusRouter } from "./routes/status.js";
 import { createStorageRouter } from "./routes/storage.js";
@@ -34,6 +35,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/feedbacks", createFeedbacksRouter(db));
   app.route("/api/segments", createSegmentFeedbackRouter(db));
   app.route("/api/speakers", createSpeakersRouter(db));
+  app.route("/api/slack-messages", createSlackMessagesRouter(db));
   app.route("/api/status", createStatusRouter(db));
 
   if (options?.micCapture || options?.speakerCapture) {

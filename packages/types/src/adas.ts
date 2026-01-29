@@ -220,6 +220,25 @@ export interface BrowserRecordingStatus {
   startedAt?: string;
 }
 
+// ========== Slack 型定義 ==========
+
+/** Slack メッセージ */
+export interface SlackMessage {
+  id: number;
+  date: string;
+  messageTs: string;
+  channelId: string;
+  channelName: string | null;
+  userId: string;
+  userName: string | null;
+  messageType: "mention" | "channel" | "dm";
+  text: string;
+  threadTs: string | null;
+  permalink: string | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
 // ========== Storage Metrics 型定義 ==========
 
 /** ストレージフォルダ情報 */

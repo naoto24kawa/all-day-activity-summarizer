@@ -32,6 +32,14 @@ export interface AdasConfig {
     enabled: boolean;
     badFeedbackThreshold: number;
   };
+  slack: {
+    enabled: boolean;
+    xoxcToken?: string;
+    xoxdToken?: string;
+    fetchIntervalMinutes: number;
+    parallelWorkers: number;
+    channels: string[]; // Channel IDs to monitor
+  };
 }
 
 const ADAS_HOME = join(homedir(), ".adas");
@@ -67,6 +75,14 @@ const defaultConfig: AdasConfig = {
     enabled: false,
     badFeedbackThreshold: 5,
   },
+  slack: {
+    enabled: false,
+    xoxcToken: undefined,
+    xoxdToken: undefined,
+    fetchIntervalMinutes: 5,
+    parallelWorkers: 3,
+    channels: [],
+  },
 };
 
 export function getAdasHome(): string {
@@ -89,7 +105,19 @@ export function loadConfig(): AdasConfig {
 
   const raw = readFileSync(CONFIG_PATH, "utf-8");
   const userConfig = JSON.parse(raw) as Partial<AdasConfig>;
-  return { ...defaultConfig, ...userConfig };
+
+  // Deep merge nested config objects
+  return {
+    ...defaultConfig,
+    ...userConfig,
+    whisper: { ...defaultConfig.whisper, ...userConfig.whisper },
+    audio: { ...defaultConfig.audio, ...userConfig.audio },
+    server: { ...defaultConfig.server, ...userConfig.server },
+    evaluator: { ...defaultConfig.evaluator, ...userConfig.evaluator },
+    worker: { ...defaultConfig.worker, ...userConfig.worker },
+    promptImprovement: { ...defaultConfig.promptImprovement, ...userConfig.promptImprovement },
+    slack: { ...defaultConfig.slack, ...userConfig.slack },
+  };
 }
 
 export function saveConfig(config: AdasConfig): void {

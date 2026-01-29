@@ -6,6 +6,7 @@ import { ActivityFeed } from "./activity-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
 import { MemoPanel } from "./memo-panel";
 import { MonitoringPanel } from "./monitoring-panel";
+import { SlackFeed } from "./slack-feed";
 import { SpeakerAssignPanel } from "./speaker-assign-panel";
 import { StatusPanel } from "./status-panel";
 import { SummaryView } from "./summary-view";
@@ -50,9 +51,12 @@ export function Dashboard() {
           <TabsTrigger value="logs">Logs</TabsTrigger>
         </TabsList>
         <TabsContent value="activity">
-          <div className="grid gap-6 pt-4 lg:grid-cols-2">
-            <ActivityFeed date={date} />
-            <MemoPanel date={date} />
+          <div className="space-y-6 pt-4">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <ActivityFeed date={date} />
+              <MemoPanel date={date} />
+            </div>
+            <SlackFeed date={date} />
           </div>
         </TabsContent>
         <TabsContent value="timeline">

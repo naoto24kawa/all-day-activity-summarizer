@@ -5,13 +5,14 @@ import consola from "consola";
 import type { AdasConfig } from "../config.js";
 import { loadConfig } from "../config.js";
 import { createApp } from "../server/app.js";
+import { startSlackSystem } from "../slack/scheduler.js";
 import { startScheduler } from "../summarizer/scheduler.js";
 
 /**
  * Worker への接続確認を行う
  */
 async function checkWorkerConnection(config: AdasConfig): Promise<boolean> {
-  const url = config.workerUrl;
+  const url = config.worker.url;
   try {
     const response = await fetch(`${url}/rpc/health`, {
       method: "GET",
@@ -75,5 +76,11 @@ export function registerServeCommand(program: Command): void {
 
       startScheduler(db);
       consola.success("Summary scheduler started");
+
+      // Start Slack system if enabled
+      const stopSlack = await startSlackSystem(db, config);
+      if (stopSlack) {
+        consola.success("Slack integration started");
+      }
     });
 }
