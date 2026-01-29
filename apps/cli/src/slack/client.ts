@@ -66,6 +66,16 @@ export interface ConversationsHistoryResponse {
   error?: string;
 }
 
+export interface ConversationsRepliesResponse {
+  ok: boolean;
+  messages: SlackMessage[];
+  has_more: boolean;
+  response_metadata?: {
+    next_cursor?: string;
+  };
+  error?: string;
+}
+
 export interface SearchMessagesResponse {
   ok: boolean;
   messages: {
@@ -209,6 +219,30 @@ export class SlackClient {
     }
 
     return this.apiRequest<ConversationsHistoryResponse>("conversations.history", params);
+  }
+
+  /**
+   * Get thread replies
+   */
+  async getConversationsReplies(
+    channelId: string,
+    threadTs: string,
+    options: {
+      limit?: number;
+      cursor?: string;
+    } = {},
+  ): Promise<ConversationsRepliesResponse> {
+    const params: Record<string, string> = {
+      channel: channelId,
+      ts: threadTs,
+      limit: String(options.limit || 100),
+    };
+
+    if (options.cursor) {
+      params.cursor = options.cursor;
+    }
+
+    return this.apiRequest<ConversationsRepliesResponse>("conversations.replies", params);
   }
 
   /**

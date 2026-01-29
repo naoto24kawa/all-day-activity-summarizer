@@ -28,6 +28,7 @@ export function startSlackWorker(
 ): () => void {
   let isProcessing = false;
   const parallelWorkers = config.slack.parallelWorkers;
+  const mentionGroups = config.slack.mentionGroups || [];
 
   const processQueue = async () => {
     if (isProcessing) {
@@ -51,7 +52,7 @@ export function startSlackWorker(
         await Promise.all(
           jobs.map(async (job) => {
             try {
-              const lastTs = await processSlackJob(db, client, job, currentUserId);
+              const lastTs = await processSlackJob(db, client, job, currentUserId, mentionGroups);
               markSlackJobCompleted(db, job.id, lastTs);
               consola.debug(`[Slack] Job ${job.id} (${job.jobType}) completed`);
             } catch (err) {

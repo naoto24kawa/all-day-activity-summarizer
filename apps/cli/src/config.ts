@@ -39,12 +39,17 @@ export interface AdasConfig {
     fetchIntervalMinutes: number;
     parallelWorkers: number;
     channels: string[]; // Channel IDs to monitor
+    mentionGroups: string[]; // Group names to monitor (e.g., "team_製品開発本部_ジョブアンテナ")
   };
   claudeCode: {
     enabled: boolean;
     fetchIntervalMinutes: number;
     parallelWorkers: number;
     projects: string[]; // Project paths to monitor (empty = all)
+  };
+  speaker: {
+    similarityThreshold: number; // 話者照合の閾値 (0.0-1.0, デフォルト 0.6)
+    mergeAcrossChunks: boolean; // チャンク間での話者統合を有効にする
   };
 }
 
@@ -88,12 +93,17 @@ const defaultConfig: AdasConfig = {
     fetchIntervalMinutes: 5,
     parallelWorkers: 3,
     channels: [],
+    mentionGroups: [],
   },
   claudeCode: {
     enabled: false,
     fetchIntervalMinutes: 5,
     parallelWorkers: 2,
     projects: [],
+  },
+  speaker: {
+    similarityThreshold: 0.6,
+    mergeAcrossChunks: true,
   },
 };
 
@@ -130,6 +140,7 @@ export function loadConfig(): AdasConfig {
     promptImprovement: { ...defaultConfig.promptImprovement, ...userConfig.promptImprovement },
     slack: { ...defaultConfig.slack, ...userConfig.slack },
     claudeCode: { ...defaultConfig.claudeCode, ...userConfig.claudeCode },
+    speaker: { ...defaultConfig.speaker, ...userConfig.speaker },
   };
 }
 

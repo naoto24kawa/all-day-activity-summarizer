@@ -56,54 +56,63 @@ function insertMessageIfNotExists(db: AdasDatabase, message: NewSlackMessage): b
 
 /**
  * Fetch and store messages from mentions search
+ * Searches for direct mentions and group mentions
  */
 export async function fetchMentions(
   db: AdasDatabase,
   client: SlackClient,
   currentUserId: string,
+  mentionGroups: string[] = [],
 ): Promise<{ fetched: number; stored: number; lastTs?: string }> {
-  const query = `to:@${currentUserId}`;
+  // Build search queries: direct mention + group mentions
+  const queries = [`to:@${currentUserId}`];
+  for (const group of mentionGroups) {
+    queries.push(`to:@${group}`);
+  }
 
   let fetched = 0;
   let stored = 0;
   let lastTs: string | undefined;
 
   try {
-    const response = await client.searchMessages(query, {
-      count: 50,
-      sort: "timestamp",
-      sort_dir: "desc",
-    });
-
-    for (const match of response.messages.matches) {
-      fetched++;
-      lastTs = lastTs ? (match.ts > lastTs ? match.ts : lastTs) : match.ts;
-
-      const dateStr = tsToDateString(match.ts);
-
-      // Get user info
-      const userInfo = match.user ? await client.getUserInfo(match.user) : null;
-
-      const inserted = insertMessageIfNotExists(db, {
-        date: dateStr,
-        messageTs: match.ts,
-        channelId: match.channel.id,
-        channelName: match.channel.name,
-        userId: match.user || "unknown",
-        userName: userInfo?.real_name || userInfo?.name || null,
-        messageType: "mention",
-        text: match.text,
-        threadTs: match.thread_ts || null,
-        permalink: match.permalink,
-        isRead: false,
+    // Execute all queries
+    for (const query of queries) {
+      const response = await client.searchMessages(query, {
+        count: 50,
+        sort: "timestamp",
+        sort_dir: "desc",
       });
 
-      if (inserted) {
-        stored++;
+      for (const match of response.messages.matches) {
+        fetched++;
+        lastTs = lastTs ? (match.ts > lastTs ? match.ts : lastTs) : match.ts;
+
+        const dateStr = tsToDateString(match.ts);
+
+        // Get user info
+        const userInfo = match.user ? await client.getUserInfo(match.user) : null;
+
+        const inserted = insertMessageIfNotExists(db, {
+          date: dateStr,
+          messageTs: match.ts,
+          channelId: match.channel.id,
+          channelName: match.channel.name,
+          userId: match.user || "unknown",
+          userName: userInfo?.real_name || userInfo?.name || null,
+          messageType: "mention",
+          text: match.text,
+          threadTs: match.thread_ts || null,
+          permalink: match.permalink,
+          isRead: false,
+        });
+
+        if (inserted) {
+          stored++;
+        }
       }
     }
 
-    consola.debug(`Mentions: fetched ${fetched}, stored ${stored}`);
+    consola.debug(`Mentions: fetched ${fetched}, stored ${stored} (queries: ${queries.length})`);
   } catch (error) {
     consola.error("Failed to fetch mentions:", error);
     throw error;
@@ -113,7 +122,67 @@ export async function fetchMentions(
 }
 
 /**
- * Fetch and store messages from a channel
+ * Fetch thread replies for a message
+ */
+async function fetchThreadReplies(
+  db: AdasDatabase,
+  client: SlackClient,
+  channelId: string,
+  channelName: string | null,
+  threadTs: string,
+): Promise<{ fetched: number; stored: number }> {
+  let fetched = 0;
+  let stored = 0;
+
+  try {
+    const response = await client.getConversationsReplies(channelId, threadTs, {
+      limit: 100,
+    });
+
+    for (const message of response.messages) {
+      // Skip the parent message (it has the same ts as threadTs)
+      if (message.ts === threadTs) {
+        continue;
+      }
+
+      // Skip non-user messages
+      if (message.type !== "message" || !message.user) {
+        continue;
+      }
+
+      fetched++;
+
+      const dateStr = tsToDateString(message.ts);
+      const userInfo = await client.getUserInfo(message.user);
+      const permalink = await client.getPermalink(channelId, message.ts);
+
+      const inserted = insertMessageIfNotExists(db, {
+        date: dateStr,
+        messageTs: message.ts,
+        channelId,
+        channelName,
+        userId: message.user,
+        userName: userInfo?.real_name || userInfo?.name || null,
+        messageType: "channel",
+        text: message.text,
+        threadTs: message.thread_ts || null,
+        permalink,
+        isRead: false,
+      });
+
+      if (inserted) {
+        stored++;
+      }
+    }
+  } catch (error) {
+    consola.warn(`Failed to fetch thread replies for ${threadTs}:`, error);
+  }
+
+  return { fetched, stored };
+}
+
+/**
+ * Fetch and store messages from a channel (including thread replies)
  */
 export async function fetchChannel(
   db: AdasDatabase,
@@ -134,6 +203,9 @@ export async function fetchChannel(
       limit: 100,
       oldest,
     });
+
+    // Collect threads to fetch
+    const threadsToFetch: string[] = [];
 
     for (const message of response.messages) {
       // Skip non-user messages (bot messages, system messages, etc.)
@@ -169,9 +241,23 @@ export async function fetchChannel(
       if (inserted) {
         stored++;
       }
+
+      // If this message has replies, queue it for thread fetching
+      if (message.reply_count && message.reply_count > 0) {
+        threadsToFetch.push(message.ts);
+      }
     }
 
-    consola.debug(`Channel ${channelId}: fetched ${fetched}, stored ${stored}`);
+    // Fetch thread replies
+    for (const threadTs of threadsToFetch) {
+      const threadResult = await fetchThreadReplies(db, client, channelId, channelName, threadTs);
+      fetched += threadResult.fetched;
+      stored += threadResult.stored;
+    }
+
+    consola.debug(
+      `Channel ${channelId}: fetched ${fetched}, stored ${stored} (threads: ${threadsToFetch.length})`,
+    );
   } catch (error) {
     consola.error(`Failed to fetch channel ${channelId}:`, error);
     throw error;
@@ -252,10 +338,11 @@ export async function processSlackJob(
   client: SlackClient,
   job: SlackQueueJob,
   currentUserId: string,
+  mentionGroups: string[] = [],
 ): Promise<string | undefined> {
   switch (job.jobType) {
     case "fetch_mentions": {
-      const result = await fetchMentions(db, client, currentUserId);
+      const result = await fetchMentions(db, client, currentUserId, mentionGroups);
       return result.lastTs;
     }
 
