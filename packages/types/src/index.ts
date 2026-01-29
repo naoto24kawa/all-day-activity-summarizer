@@ -6,6 +6,9 @@
 
 // ADAS型定義
 export type {
+  BrowserRecordingChunkMetadata,
+  BrowserRecordingChunkResponse,
+  BrowserRecordingStatus,
   EvaluatorLog,
   GenerateSummaryRequest,
   GenerateSummaryResponse,

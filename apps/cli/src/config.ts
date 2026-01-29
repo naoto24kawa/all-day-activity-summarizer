@@ -50,7 +50,7 @@ const defaultConfig: AdasConfig = {
   audio: {
     sampleRate: 16000,
     channels: 1,
-    chunkDurationMinutes: 5,
+    chunkDurationMinutes: 2,
   },
   server: {
     port: 3001,

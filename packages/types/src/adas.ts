@@ -187,3 +187,35 @@ export interface RpcHealthResponse {
   whisperx: boolean;
   claude: boolean;
 }
+
+// ========== Browser Recording 型定義 ==========
+
+/** ブラウザ録音チャンクのメタデータ */
+export interface BrowserRecordingChunkMetadata {
+  /** 録音開始時刻 (ISO8601) */
+  startTime: string;
+  /** 録音終了時刻 (ISO8601) */
+  endTime: string;
+  /** 音声ソース種別 */
+  audioSource: "browser-mic" | "browser-system";
+  /** 日付 (YYYY-MM-DD) */
+  date: string;
+}
+
+/** ブラウザ録音チャンクのレスポンス */
+export interface BrowserRecordingChunkResponse {
+  success: boolean;
+  error?: string;
+}
+
+/** ブラウザ録音状態 */
+export interface BrowserRecordingStatus {
+  /** マイク録音中 */
+  micRecording: boolean;
+  /** システム音声録音中 */
+  systemRecording: boolean;
+  /** 最後のチャンク送信時刻 (ISO8601) */
+  lastChunkTime?: string;
+  /** 録音開始時刻 (ISO8601) */
+  startedAt?: string;
+}

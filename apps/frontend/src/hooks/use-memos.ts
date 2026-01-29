@@ -1,6 +1,6 @@
 import type { Memo } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
-import { fetchAdasApi, postAdasApi } from "./use-adas-api";
+import { deleteAdasApi, fetchAdasApi, postAdasApi, putAdasApi } from "@/lib/adas-api";
 
 export function useMemos(date: string) {
   const [memos, setMemos] = useState<Memo[]>([]);
@@ -37,5 +37,21 @@ export function useMemos(date: string) {
     [date, fetchMemos],
   );
 
-  return { memos, error, loading, refetch: fetchMemos, postMemo };
+  const updateMemo = useCallback(
+    async (id: number, content: string) => {
+      await putAdasApi<Memo>(`/api/memos/${id}`, { content });
+      await fetchMemos(true);
+    },
+    [fetchMemos],
+  );
+
+  const deleteMemo = useCallback(
+    async (id: number) => {
+      await deleteAdasApi<{ success: boolean }>(`/api/memos/${id}`);
+      await fetchMemos(true);
+    },
+    [fetchMemos],
+  );
+
+  return { memos, error, loading, refetch: fetchMemos, postMemo, updateMemo, deleteMemo };
 }

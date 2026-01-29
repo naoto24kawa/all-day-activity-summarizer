@@ -15,7 +15,7 @@ export function registerServeCommand(program: Command): void {
       const config = loadConfig();
       const port = options.port ? Number.parseInt(options.port, 10) : config.server.port;
       const db = createDatabase(config.dbPath);
-      const app = createApp(db);
+      const app = createApp(db, { config });
 
       consola.info(`Starting API server on http://localhost:${port}`);
 

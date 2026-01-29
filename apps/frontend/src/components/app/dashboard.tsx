@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getTodayDateString } from "@/lib/date";
 import { ActivityFeed } from "./activity-feed";
+import { BrowserRecordingPanel } from "./browser-recording-panel";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
 import { MemoPanel } from "./memo-panel";
 import { SpeakerAssignPanel } from "./speaker-assign-panel";
@@ -25,8 +26,12 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-2">
         <StatusPanel />
+        <BrowserRecordingPanel />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
         <Timeline date={date} />
         <SummaryView date={date} />
       </div>
@@ -35,6 +40,7 @@ export function Dashboard() {
         <TabsList>
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="logs">Logs</TabsTrigger>
         </TabsList>
         <TabsContent value="activity">
           <div className="grid gap-6 pt-4 lg:grid-cols-2">
@@ -43,8 +49,12 @@ export function Dashboard() {
           </div>
         </TabsContent>
         <TabsContent value="settings">
-          <div className="grid gap-6 pt-4 lg:grid-cols-2">
+          <div className="pt-4">
             <SpeakerAssignPanel />
+          </div>
+        </TabsContent>
+        <TabsContent value="logs">
+          <div className="pt-4">
             <EvaluatorLogPanel date={date} />
           </div>
         </TabsContent>

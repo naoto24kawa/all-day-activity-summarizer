@@ -109,6 +109,7 @@ export function registerRecordCommand(program: Command): void {
           speakerCapture,
           micSource: micSource ?? "default",
           speakerSource: speakerSource ?? "default",
+          config,
         });
         serve({ fetch: app.fetch, port });
         consola.success(`API server running on http://localhost:${port}`);

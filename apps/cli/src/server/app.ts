@@ -2,6 +2,8 @@ import type { AdasDatabase } from "@repo/db";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AudioCapture } from "../audio/capture.js";
+import type { AdasConfig } from "../config.js";
+import { createBrowserRecordingRouter } from "./routes/browser-recording.js";
 import { createEvaluatorLogsRouter } from "./routes/evaluator-logs.js";
 import { createFeedbacksRouter, createSegmentFeedbackRouter } from "./routes/feedbacks.js";
 import { createMemosRouter } from "./routes/memos.js";
@@ -16,6 +18,7 @@ interface CreateAppOptions {
   speakerCapture?: AudioCapture;
   micSource?: string;
   speakerSource?: string;
+  config?: AdasConfig;
 }
 
 export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
@@ -46,6 +49,14 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
         },
       ),
     );
+  } else {
+    // serve モードでは録音機能なし - 空のレスポンスを返す
+    app.get("/api/recording", (c) => c.json({ mic: null, speaker: null }));
+  }
+
+  // Browser recording は常に有効(設定がある場合)
+  if (options?.config) {
+    app.route("/api/browser-recording", createBrowserRecordingRouter(db, options.config));
   }
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));

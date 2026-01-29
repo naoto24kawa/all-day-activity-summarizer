@@ -33,11 +33,40 @@ export async function postAdasApi<T>(path: string, body: unknown): Promise<T> {
 }
 
 /**
+ * ADAS API に PUT リクエストを送信する
+ */
+export async function putAdasApi<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${ADAS_API_URL}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`ADAS API error: ${response.status} ${response.statusText}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+/**
  * ADAS API に DELETE リクエストを送信する
  */
 export async function deleteAdasApi<T>(path: string): Promise<T> {
   const response = await fetch(`${ADAS_API_URL}${path}`, {
     method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`ADAS API error: ${response.status} ${response.statusText}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+/**
+ * ADAS API に FormData (multipart/form-data) で POST リクエストを送信する
+ */
+export async function postFormDataAdasApi<T>(path: string, formData: FormData): Promise<T> {
+  const response = await fetch(`${ADAS_API_URL}${path}`, {
+    method: "POST",
+    body: formData,
   });
   if (!response.ok) {
     throw new Error(`ADAS API error: ${response.status} ${response.statusText}`);

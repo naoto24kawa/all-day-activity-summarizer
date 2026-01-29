@@ -41,5 +41,48 @@ export function createMemosRouter(db: AdasDatabase) {
     return c.json(result, 201);
   });
 
+  router.put("/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const body = await c.req.json<{ content: string }>();
+
+    if (!body.content || typeof body.content !== "string" || body.content.trim() === "") {
+      return c.json({ error: "content is required" }, 400);
+    }
+
+    const existing = db.select().from(schema.memos).where(eq(schema.memos.id, id)).get();
+    if (!existing) {
+      return c.json({ error: "Memo not found" }, 404);
+    }
+
+    const result = db
+      .update(schema.memos)
+      .set({ content: body.content.trim() })
+      .where(eq(schema.memos.id, id))
+      .returning()
+      .get();
+
+    return c.json(result);
+  });
+
+  router.delete("/:id", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const existing = db.select().from(schema.memos).where(eq(schema.memos.id, id)).get();
+    if (!existing) {
+      return c.json({ error: "Memo not found" }, 404);
+    }
+
+    db.delete(schema.memos).where(eq(schema.memos.id, id)).run();
+
+    return c.json({ success: true });
+  });
+
   return router;
 }
