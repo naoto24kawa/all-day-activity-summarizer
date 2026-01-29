@@ -77,3 +77,42 @@ bun run cli -- interpret --all --force     # 全セグメントを強制再解�
 - ダッシュボード: `apps/frontend/src/components/app/dashboard.tsx`
 - ADAS API接続: `apps/frontend/src/hooks/use-adas-api.ts` のヘルパーを使用
 - shadcn/ui コンポーネント追加は `apps/frontend` ディレクトリで実行
+
+### WSL (Worker 実行環境)
+
+Worker は WSL2 上で動作し、GPU (CUDA) を使用して WhisperX を実行する。
+
+**SSH 接続**:
+
+```bash
+ssh naoto24kawa@192.168.1.17
+```
+
+**主要パス (WSL側)**:
+
+- プロジェクト: `~/projects/naoto24kawa/all-day-activity-summarizer`
+- whisperx-venv: `~/.adas/whisperx-venv`
+- 設定: `~/.adas/config.json`
+- 録音データ: `~/.adas/recordings/`
+
+**よく使う操作**:
+
+```bash
+# WSL 側でコードを更新
+ssh naoto24kawa@192.168.1.17 'cd ~/projects/naoto24kawa/all-day-activity-summarizer && git pull'
+
+# CUDA 確認
+ssh naoto24kawa@192.168.1.17 '~/.adas/whisperx-venv/bin/python3 -c "import torch; print(torch.cuda.is_available())"'
+
+# GPU 状態確認
+ssh naoto24kawa@192.168.1.17 '/usr/lib/wsl/lib/nvidia-smi'
+```
+
+**whisperx-venv 再構築** (必要時):
+
+```bash
+ssh naoto24kawa@192.168.1.17 'rm -rf ~/.adas/whisperx-venv && python3 -m venv ~/.adas/whisperx-venv'
+ssh naoto24kawa@192.168.1.17 '~/.adas/whisperx-venv/bin/pip install --upgrade pip'
+ssh naoto24kawa@192.168.1.17 '~/.adas/whisperx-venv/bin/pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128'
+ssh naoto24kawa@192.168.1.17 '~/.adas/whisperx-venv/bin/pip install whisperx'
+```
