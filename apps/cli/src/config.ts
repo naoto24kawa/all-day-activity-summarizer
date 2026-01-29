@@ -36,6 +36,7 @@ export interface AdasConfig {
     enabled: boolean;
     xoxcToken?: string;
     xoxdToken?: string;
+    userId?: string; // Your Slack user ID (e.g., "U12345678") for filtering your own messages
     fetchIntervalMinutes: number;
     parallelWorkers: number;
     channels: string[]; // Channel IDs to monitor
@@ -92,6 +93,7 @@ const defaultConfig: AdasConfig = {
     enabled: false,
     xoxcToken: undefined,
     xoxdToken: undefined,
+    userId: undefined,
     fetchIntervalMinutes: 5,
     parallelWorkers: 3,
     channels: [],

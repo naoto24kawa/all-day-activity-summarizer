@@ -8,7 +8,7 @@ import type { AdasDatabase, NewSlackMessage, SlackQueueJob } from "@repo/db";
 import { schema } from "@repo/db";
 import consola from "consola";
 import { and, eq } from "drizzle-orm";
-import type { SlackClient } from "./client.js";
+import type { SlackClient, SlackMessageAttachment } from "./client.js";
 
 /**
  * Convert a glob pattern to regex (supports * wildcard)
@@ -24,6 +24,48 @@ function globToRegex(pattern: string): RegExp {
  */
 function matchesExcludePattern(name: string, patterns: string[]): boolean {
   return patterns.some((pattern) => globToRegex(pattern).test(name));
+}
+
+/**
+ * Extract text from attachments (for bot messages like GitHub app)
+ */
+function extractAttachmentsText(attachments: SlackMessageAttachment[] | undefined): string {
+  if (!attachments || attachments.length === 0) {
+    return "";
+  }
+
+  const parts: string[] = [];
+  for (const att of attachments) {
+    // Collect non-empty text parts
+    if (att.pretext) parts.push(att.pretext);
+    if (att.title) {
+      if (att.title_link) {
+        parts.push(`${att.title} (${att.title_link})`);
+      } else {
+        parts.push(att.title);
+      }
+    }
+    if (att.text) parts.push(att.text);
+    if (att.fallback && parts.length === 0) parts.push(att.fallback);
+  }
+
+  return parts.join("\n");
+}
+
+/**
+ * Combine message text with attachments text
+ */
+function combineMessageText(
+  text: string | null | undefined,
+  attachments: SlackMessageAttachment[] | undefined,
+): string {
+  const mainText = text?.trim() || "";
+  const attachmentsText = extractAttachmentsText(attachments);
+
+  if (mainText && attachmentsText) {
+    return `${mainText}\n\n${attachmentsText}`;
+  }
+  return mainText || attachmentsText || "";
 }
 
 /**
@@ -294,27 +336,41 @@ async function fetchThreadReplies(
         continue;
       }
 
-      // Skip non-user messages
-      if (message.type !== "message" || !message.user) {
+      // Skip system messages, but allow bot messages
+      if (message.type !== "message" || (!message.user && !message.bot_id)) {
         continue;
       }
 
       fetched++;
 
       const dateStr = tsToDateString(message.ts);
-      const userInfo = await client.getUserInfo(message.user);
+      const userId = message.user || message.bot_id || "unknown";
+
+      // Get user/bot info
+      let userName: string | null = null;
+      if (message.user) {
+        const userInfo = await client.getUserInfo(message.user);
+        userName = userInfo?.real_name || userInfo?.name || null;
+      } else if (message.bot_id) {
+        const botInfo = await client.getBotInfo(message.bot_id);
+        userName = botInfo?.name || "Bot";
+      }
+
       const permalink = await client.getPermalink(channelId, message.ts);
 
+      // Combine message text with attachments
+      const combinedText = combineMessageText(message.text, message.attachments);
+
       // Resolve user mentions in text
-      const resolvedText = await resolveUserMentions(client, message.text);
+      const resolvedText = await resolveUserMentions(client, combinedText);
 
       const inserted = insertMessageIfNotExists(db, {
         date: dateStr,
         messageTs: message.ts,
         channelId,
         channelName,
-        userId: message.user,
-        userName: userInfo?.real_name || userInfo?.name || null,
+        userId,
+        userName,
         messageType: "channel",
         text: resolvedText,
         threadTs: message.thread_ts || null,
@@ -360,8 +416,8 @@ export async function fetchChannel(
     const threadsToFetch: string[] = [];
 
     for (const message of response.messages) {
-      // Skip non-user messages (bot messages, system messages, etc.)
-      if (message.type !== "message" || !message.user) {
+      // Skip system messages, but allow bot messages (e.g., GitHub app)
+      if (message.type !== "message" || (!message.user && !message.bot_id)) {
         continue;
       }
 
@@ -370,22 +426,33 @@ export async function fetchChannel(
 
       const dateStr = tsToDateString(message.ts);
 
-      // Get user info
-      const userInfo = await client.getUserInfo(message.user);
+      // Get user/bot info
+      const userId = message.user || message.bot_id || "unknown";
+      let userName: string | null = null;
+      if (message.user) {
+        const userInfo = await client.getUserInfo(message.user);
+        userName = userInfo?.real_name || userInfo?.name || null;
+      } else if (message.bot_id) {
+        const botInfo = await client.getBotInfo(message.bot_id);
+        userName = botInfo?.name || "Bot";
+      }
 
       // Get permalink
       const permalink = await client.getPermalink(channelId, message.ts);
 
+      // Combine message text with attachments (important for bot messages like GitHub)
+      const combinedText = combineMessageText(message.text, message.attachments);
+
       // Resolve user mentions in text
-      const resolvedText = await resolveUserMentions(client, message.text);
+      const resolvedText = await resolveUserMentions(client, combinedText);
 
       const inserted = insertMessageIfNotExists(db, {
         date: dateStr,
         messageTs: message.ts,
         channelId,
         channelName,
-        userId: message.user,
-        userName: userInfo?.real_name || userInfo?.name || null,
+        userId,
+        userName,
         messageType: "channel",
         text: resolvedText,
         threadTs: message.thread_ts || null,
@@ -441,8 +508,8 @@ export async function fetchDM(
     });
 
     for (const message of response.messages) {
-      // Skip non-user messages
-      if (message.type !== "message" || !message.user) {
+      // Skip system messages, but allow bot messages
+      if (message.type !== "message" || (!message.user && !message.bot_id)) {
         continue;
       }
 
@@ -451,22 +518,33 @@ export async function fetchDM(
 
       const dateStr = tsToDateString(message.ts);
 
-      // Get user info
-      const userInfo = await client.getUserInfo(message.user);
+      // Get user/bot info
+      const userId = message.user || message.bot_id || "unknown";
+      let userName: string | null = null;
+      if (message.user) {
+        const userInfo = await client.getUserInfo(message.user);
+        userName = userInfo?.real_name || userInfo?.name || null;
+      } else if (message.bot_id) {
+        const botInfo = await client.getBotInfo(message.bot_id);
+        userName = botInfo?.name || "Bot";
+      }
 
       // Get permalink
       const permalink = await client.getPermalink(channelId, message.ts);
 
+      // Combine message text with attachments
+      const combinedText = combineMessageText(message.text, message.attachments);
+
       // Resolve user mentions in text
-      const resolvedText = await resolveUserMentions(client, message.text);
+      const resolvedText = await resolveUserMentions(client, combinedText);
 
       const inserted = insertMessageIfNotExists(db, {
         date: dateStr,
         messageTs: message.ts,
         channelId,
-        channelName: userInfo?.real_name || userInfo?.name || null,
-        userId: message.user,
-        userName: userInfo?.real_name || userInfo?.name || null,
+        channelName: userName,
+        userId,
+        userName,
         messageType: "dm",
         text: resolvedText,
         threadTs: message.thread_ts || null,

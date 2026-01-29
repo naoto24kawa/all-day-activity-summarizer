@@ -40,6 +40,7 @@ export interface SlackMessage {
   type: string;
   ts: string;
   user?: string;
+  bot_id?: string;
   text: string;
   thread_ts?: string;
   reply_count?: number;
@@ -96,6 +97,18 @@ export interface UsersInfoResponse {
   error?: string;
 }
 
+export interface SlackBot {
+  id: string;
+  name: string;
+  deleted?: boolean;
+}
+
+export interface BotsInfoResponse {
+  ok: boolean;
+  bot?: SlackBot;
+  error?: string;
+}
+
 export interface AuthTestResponse {
   ok: boolean;
   user_id?: string;
@@ -115,6 +128,7 @@ export class SlackClient {
   private xoxdToken: string;
   private lastRequestTime = 0;
   private userCache = new Map<string, SlackUser>();
+  private botCache = new Map<string, SlackBot>();
 
   constructor(config: SlackClientConfig) {
     this.xoxcToken = config.xoxcToken;
@@ -293,6 +307,32 @@ export class SlackClient {
       return null;
     } catch (error) {
       consola.warn(`Failed to get user info for ${userId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get bot info
+   */
+  async getBotInfo(botId: string): Promise<SlackBot | null> {
+    // Check cache first
+    const cached = this.botCache.get(botId);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const response = await this.apiRequest<BotsInfoResponse>("bots.info", {
+        bot: botId,
+      });
+
+      if (response.bot) {
+        this.botCache.set(botId, response.bot);
+        return response.bot;
+      }
+      return null;
+    } catch (error) {
+      consola.warn(`Failed to get bot info for ${botId}:`, error);
       return null;
     }
   }

@@ -7,6 +7,7 @@ import type {
 } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, between, eq, gte, lte } from "drizzle-orm";
+import { loadConfig } from "../config.js";
 import { generateSummary, getModelName } from "./client.js";
 import { buildDailySummaryPrompt, buildHourlySummaryPrompt } from "./prompts.js";
 
@@ -117,6 +118,12 @@ function fetchActivityData(
     )
     .all();
 
+  // サマリーには自分に関係するメッセージのみ含める
+  // - 自分へのメンション (mention)
+  // - DM (dm)
+  // - 自分が送信したメッセージ (userId が一致)
+  const config = loadConfig();
+  const myUserId = config.slack.userId;
   const slackMessages = db
     .select()
     .from(schema.slackMessages)
@@ -127,7 +134,13 @@ function fetchActivityData(
         lte(schema.slackMessages.createdAt, endTime),
       ),
     )
-    .all();
+    .all()
+    .filter(
+      (m) =>
+        m.messageType === "mention" ||
+        m.messageType === "dm" ||
+        (myUserId && m.userId === myUserId),
+    );
 
   const claudeSessions = db
     .select()

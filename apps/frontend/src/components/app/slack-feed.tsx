@@ -221,7 +221,7 @@ function SlackMessageItem({
           )}
         </div>
       </div>
-      <p className="text-sm">{message.text}</p>
+      <p className="whitespace-pre-wrap text-sm">{message.text}</p>
     </div>
   );
 }
