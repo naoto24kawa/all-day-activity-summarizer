@@ -32,6 +32,22 @@ type: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
 
 ## プロジェクト固有の注意事項
 
+### Bun モジュール解決の注意点
+
+**重要**: Bun はパッケージ内の全ファイルを解析するため、`index.ts` からエクスポートしていなくても、パッケージ内に存在するファイルの依存関係が解決される。
+
+**問題例**:
+```
+error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
+```
+
+Worker は `@repo/core` に依存しているが `@repo/db` には依存していない。しかし `packages/core` 内に `@repo/db` をインポートするファイルがあると、Worker 起動時にエラーになる。
+
+**解決策**:
+- `@repo/db` を使用するコードは `packages/core` ではなく `apps/cli` に配置する
+- Worker と CLI で共有するコードは DB 依存を持たないようにする
+- 現在 `apps/cli/src/feedback-injector.ts` はこの理由で CLI 内に配置されている
+
 ### DB
 
 - **bun:sqlite** を使用すること(better-sqlite3はBun未サポート)
