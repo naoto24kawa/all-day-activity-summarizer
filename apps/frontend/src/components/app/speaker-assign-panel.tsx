@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSpeakers } from "@/hooks/use-speakers";
+import { formatDateJST } from "@/lib/date";
 
 export function SpeakerAssignPanel() {
   const { speakers, loading, error, renameSpeaker, deleteSpeaker } = useSpeakers();
@@ -120,8 +121,7 @@ export function SpeakerAssignPanel() {
                     <Badge variant="outline">{speaker.occurrenceCount}x</Badge>
                     {speaker.firstSeen && speaker.lastSeen && (
                       <span className="ml-auto text-xs text-muted-foreground">
-                        {new Date(speaker.firstSeen).toLocaleDateString()} -{" "}
-                        {new Date(speaker.lastSeen).toLocaleDateString()}
+                        {formatDateJST(speaker.firstSeen)} - {formatDateJST(speaker.lastSeen)}
                       </span>
                     )}
                   </div>

@@ -11,6 +11,7 @@ import { useAudioLevels } from "@/hooks/use-audio-levels";
 import { useBrowserRecording } from "@/hooks/use-browser-recording";
 import { useRecording } from "@/hooks/use-recording";
 import { useStatus } from "@/hooks/use-status";
+import { formatTimeJST } from "@/lib/date";
 import { BrowserLevelMeter } from "./browser-level-meter";
 import { LevelMeter } from "./level-meter";
 import { ScreenShareGuide } from "./screen-share-guide";
@@ -110,7 +111,7 @@ export function StatusPanel() {
           <dt className="text-muted-foreground">Latest</dt>
           <dd>
             {status?.latestTranscriptionTime
-              ? new Date(status.latestTranscriptionTime).toLocaleTimeString()
+              ? formatTimeJST(status.latestTranscriptionTime)
               : "N/A"}
           </dd>
         </dl>
@@ -267,7 +268,7 @@ export function StatusPanel() {
 
           {isBrowserRecording && browserRecording.lastChunkTime && (
             <div className="text-xs text-muted-foreground">
-              Last chunk: {browserRecording.lastChunkTime.toLocaleTimeString()}
+              Last chunk: {formatTimeJST(browserRecording.lastChunkTime)}
             </div>
           )}
 

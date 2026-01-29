@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getTodayDateString } from "@/lib/date";
+import { formatTimeJST, getTodayDateString } from "@/lib/date";
 import { ActivityFeed } from "./activity-feed";
 import { ClaudeCodeFeed } from "./claude-code-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
@@ -29,9 +29,7 @@ export function Dashboard() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold">All Day Activity Summarizer</h1>
-          <span className="font-mono text-lg text-muted-foreground">
-            {now.toLocaleTimeString()}
-          </span>
+          <span className="font-mono text-lg text-muted-foreground">{formatTimeJST(now)}</span>
         </div>
         <Input
           type="date"

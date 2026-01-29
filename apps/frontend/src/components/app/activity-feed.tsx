@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSegmentFeedbacks } from "@/hooks/use-segment-feedback";
 import { useTranscriptions } from "@/hooks/use-transcriptions";
+import { formatTimeJST } from "@/lib/date";
 
 interface ActivityFeedProps {
   date: string;
@@ -164,8 +165,7 @@ function TranscriptionItem({
     <div className="rounded-md border p-3">
       <div className="mb-1 flex items-center gap-2">
         <span className="text-xs font-medium text-muted-foreground">
-          {new Date(segment.startTime).toLocaleTimeString()} -{" "}
-          {new Date(segment.endTime).toLocaleTimeString()}
+          {formatTimeJST(segment.startTime)} - {formatTimeJST(segment.endTime)}
         </span>
         <Badge variant="outline" className="text-xs">
           {segment.language}

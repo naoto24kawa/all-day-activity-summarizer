@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClaudeCodeSessions, useClaudeCodeStats } from "@/hooks/use-claude-code-sessions";
+import { formatTimeShortJST } from "@/lib/date";
 
 interface ClaudeCodeFeedProps {
   date: string;
@@ -145,7 +146,7 @@ function SessionItem({ session }: { session: ClaudeCodeSession }) {
 
   const formatTime = (date: Date | null) => {
     if (!date) return "--:--";
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return formatTimeShortJST(date);
   };
 
   // Calculate duration

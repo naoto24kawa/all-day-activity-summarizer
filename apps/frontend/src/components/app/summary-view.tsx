@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSummaries } from "@/hooks/use-summaries";
+import { formatTimeJST } from "@/lib/date";
 
 interface SummaryViewProps {
   date: string;
@@ -122,8 +123,7 @@ export function SummaryView({ date }: SummaryViewProps) {
                   {[...hourlySummaries].reverse().map((summary) => (
                     <div key={summary.id} className="rounded-md border p-3">
                       <p className="mb-1 text-xs font-medium text-muted-foreground">
-                        {new Date(summary.periodStart).toLocaleTimeString()} -{" "}
-                        {new Date(summary.periodEnd).toLocaleTimeString()}
+                        {formatTimeJST(summary.periodStart)} - {formatTimeJST(summary.periodEnd)}
                       </p>
                       <pre className="whitespace-pre-wrap text-sm">{summary.content}</pre>
                     </div>
@@ -146,8 +146,7 @@ export function SummaryView({ date }: SummaryViewProps) {
                   {[...pomodoroSummaries].reverse().map((summary) => (
                     <div key={summary.id} className="rounded-md border p-3">
                       <p className="mb-1 text-xs font-medium text-muted-foreground">
-                        {new Date(summary.periodStart).toLocaleTimeString()} -{" "}
-                        {new Date(summary.periodEnd).toLocaleTimeString()}
+                        {formatTimeJST(summary.periodStart)} - {formatTimeJST(summary.periodEnd)}
                       </p>
                       <pre className="whitespace-pre-wrap text-sm">{summary.content}</pre>
                     </div>

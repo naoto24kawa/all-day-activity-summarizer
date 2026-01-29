@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEvaluatorLogs } from "@/hooks/use-evaluator-logs";
+import { formatTimeJST } from "@/lib/date";
 
 type Filter = "all" | "hallucination" | "legitimate";
 
@@ -111,7 +112,7 @@ export function EvaluatorLogPanel({ date }: EvaluatorLogPanelProps) {
                       </Badge>
                     )}
                     <span className="ml-auto text-xs text-muted-foreground">
-                      {new Date(log.createdAt).toLocaleTimeString()}
+                      {formatTimeJST(log.createdAt)}
                     </span>
                   </div>
                   <p className="mb-1 text-sm">{log.reason}</p>

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTranscriptions } from "@/hooks/use-transcriptions";
+import { formatTimeJST } from "@/lib/date";
 
 interface TranscriptionListProps {
   date: string;
@@ -59,8 +60,7 @@ export function TranscriptionList({ date }: TranscriptionListProps) {
                 <div key={segment.id} className="rounded-md border p-3">
                   <div className="mb-1 flex items-center gap-2">
                     <span className="text-xs font-medium text-muted-foreground">
-                      {new Date(segment.startTime).toLocaleTimeString()} -{" "}
-                      {new Date(segment.endTime).toLocaleTimeString()}
+                      {formatTimeJST(segment.startTime)} - {formatTimeJST(segment.endTime)}
                     </span>
                     <Badge variant="outline" className="text-xs">
                       {segment.language}

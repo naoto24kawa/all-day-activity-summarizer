@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMemos } from "@/hooks/use-memos";
+import { formatTimeJST } from "@/lib/date";
 
 interface MemoPanelProps {
   date: string;
@@ -281,7 +282,7 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
       <div className="rounded-md border border-blue-300 bg-blue-100 p-3 dark:border-blue-700 dark:bg-blue-900">
         <div className="mb-1">
           <span className="text-xs font-medium text-blue-500 dark:text-blue-300">
-            {new Date(memo.createdAt).toLocaleTimeString()}
+            {formatTimeJST(memo.createdAt)}
           </span>
         </div>
         <textarea
@@ -309,7 +310,7 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
     <div className="group rounded-md border border-blue-300 bg-blue-100 p-3 dark:border-blue-700 dark:bg-blue-900">
       <div className="mb-1 flex items-center justify-between">
         <span className="text-xs font-medium text-blue-500 dark:text-blue-300">
-          {new Date(memo.createdAt).toLocaleTimeString()}
+          {formatTimeJST(memo.createdAt)}
         </span>
         <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <Button

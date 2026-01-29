@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSlackMessages, useSlackUnreadCounts } from "@/hooks/use-slack-messages";
+import { formatSlackTsJST } from "@/lib/date";
 
 interface SlackFeedProps {
   date: string;
@@ -177,9 +178,6 @@ function SlackMessageItem({
   message: SlackMessage;
   onMarkAsRead: (id: number) => void;
 }) {
-  // Convert Slack timestamp to readable time
-  const messageTime = new Date(Number(message.messageTs.split(".")[0]) * 1000);
-
   return (
     <div
       className={`rounded-md border p-3 ${message.isRead ? "opacity-60" : "border-primary/30 bg-primary/5"}`}
@@ -187,7 +185,7 @@ function SlackMessageItem({
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">
-            {messageTime.toLocaleTimeString()}
+            {formatSlackTsJST(message.messageTs)}
           </span>
           {message.channelName && (
             <Badge variant="outline" className="text-xs">
