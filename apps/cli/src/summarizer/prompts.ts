@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { getPromptFilePath, injectFeedbackExamples } from "@repo/core";
+import { getPromptFilePath } from "@repo/core";
+import { injectFeedbackExamples } from "@repo/core/feedback";
 import type { AdasDatabase } from "@repo/db";
 
 function readPrompt(name: string): string {

@@ -1,4 +1,4 @@
-import { getFeedbackPromptSection } from "@repo/core";
+import { getFeedbackPromptSection } from "@repo/core/feedback";
 import type { createDatabase, TranscriptionSegment } from "@repo/db";
 import { schema } from "@repo/db";
 import consola from "consola";
