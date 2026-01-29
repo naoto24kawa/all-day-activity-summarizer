@@ -23,8 +23,9 @@ function slackTsToJstTime(ts: string): string {
   const utcMs = Number(seconds) * 1000;
   // JST = UTC + 9 hours
   const jstDate = new Date(utcMs + 9 * 60 * 60 * 1000);
-  const hours = String(jstDate.getUTCHours()).padStart(2, "0");
-  const minutes = String(jstDate.getUTCMinutes()).padStart(2, "0");
+  // Use get*() instead of getUTC*() because jstDate has JST offset applied
+  const hours = String(jstDate.getHours()).padStart(2, "0");
+  const minutes = String(jstDate.getMinutes()).padStart(2, "0");
   return `${hours}:${minutes}`;
 }
 
@@ -35,9 +36,20 @@ function isoToJstTime(isoString: string): string {
   const date = new Date(isoString);
   // JST = UTC + 9 hours
   const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
-  const hours = String(jstDate.getUTCHours()).padStart(2, "0");
-  const minutes = String(jstDate.getUTCMinutes()).padStart(2, "0");
+  // Use get*() instead of getUTC*() because jstDate has JST offset applied
+  const hours = String(jstDate.getHours()).padStart(2, "0");
+  const minutes = String(jstDate.getMinutes()).padStart(2, "0");
   return `${hours}:${minutes}`;
+}
+
+/**
+ * Convert JST time string (YYYY-MM-DDTHH:MM:SS) to UTC ISO8601 string
+ * DB stores timestamps in UTC, so we need to convert JST query times to UTC
+ */
+function jstToUtcIso(jstTimeString: string): string {
+  // Parse as JST (add +09:00 timezone)
+  const jstDate = new Date(`${jstTimeString}+09:00`);
+  return jstDate.toISOString();
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +136,8 @@ interface ActivityData {
 
 /**
  * 指定期間の活動データ (セグメント、メモ、Slack、Claude Code) を取得する。
+ * startTime/endTime は JST の時刻文字列 (YYYY-MM-DDTHH:MM:SS)
+ * DB は UTC で保存されているため、クエリ時に変換が必要
  */
 function fetchActivityData(
   db: AdasDatabase,
@@ -131,13 +145,17 @@ function fetchActivityData(
   startTime: string,
   endTime: string,
 ): ActivityData {
+  // JST → UTC 変換 (DBはUTCで保存されている)
+  const utcStartTime = jstToUtcIso(startTime);
+  const utcEndTime = jstToUtcIso(endTime);
+
   const segments = db
     .select()
     .from(schema.transcriptionSegments)
     .where(
       and(
         eq(schema.transcriptionSegments.date, date),
-        between(schema.transcriptionSegments.startTime, startTime, endTime),
+        between(schema.transcriptionSegments.startTime, utcStartTime, utcEndTime),
       ),
     )
     .all();
@@ -148,8 +166,8 @@ function fetchActivityData(
     .where(
       and(
         eq(schema.memos.date, date),
-        gte(schema.memos.createdAt, startTime),
-        lte(schema.memos.createdAt, endTime),
+        gte(schema.memos.createdAt, utcStartTime),
+        lte(schema.memos.createdAt, utcEndTime),
       ),
     )
     .all();
@@ -166,8 +184,8 @@ function fetchActivityData(
     .where(
       and(
         eq(schema.slackMessages.date, date),
-        gte(schema.slackMessages.createdAt, startTime),
-        lte(schema.slackMessages.createdAt, endTime),
+        gte(schema.slackMessages.createdAt, utcStartTime),
+        lte(schema.slackMessages.createdAt, utcEndTime),
       ),
     )
     .all()
@@ -184,8 +202,8 @@ function fetchActivityData(
     .where(
       and(
         eq(schema.claudeCodeSessions.date, date),
-        gte(schema.claudeCodeSessions.startTime, startTime),
-        lte(schema.claudeCodeSessions.startTime, endTime),
+        gte(schema.claudeCodeSessions.startTime, utcStartTime),
+        lte(schema.claudeCodeSessions.startTime, utcEndTime),
       ),
     )
     .all();

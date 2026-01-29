@@ -122,9 +122,10 @@ function tsToJstDate(ts: string): Date {
  */
 function tsToDateString(ts: string): string {
   const jstDate = tsToJstDate(ts);
-  const year = jstDate.getUTCFullYear();
-  const month = String(jstDate.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(jstDate.getUTCDate()).padStart(2, "0");
+  // Use get*() instead of getUTC*() because jstDate has JST offset applied
+  const year = jstDate.getFullYear();
+  const month = String(jstDate.getMonth() + 1).padStart(2, "0");
+  const day = String(jstDate.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
