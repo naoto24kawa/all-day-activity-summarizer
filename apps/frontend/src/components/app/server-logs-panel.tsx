@@ -1,9 +1,9 @@
 import { RefreshCw, Server, Terminal } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { LogEntry, LogSource } from "@/hooks/use-server-logs";
 import { useServerLogs } from "@/hooks/use-server-logs";
 
@@ -12,80 +12,115 @@ interface ServerLogsPanelProps {
 }
 
 export function ServerLogsPanel({ date }: ServerLogsPanelProps) {
+  const serveRef = useRef<HTMLDivElement>(null);
+  const workerRef = useRef<HTMLDivElement>(null);
+  const [syncEnabled, setSyncEnabled] = useState(true);
+  const isScrolling = useRef(false);
+
+  const handleScroll = useCallback(
+    (source: "serve" | "worker") => {
+      if (!syncEnabled || isScrolling.current) return;
+
+      const sourceRef = source === "serve" ? serveRef : workerRef;
+      const targetRef = source === "serve" ? workerRef : serveRef;
+
+      if (sourceRef.current && targetRef.current) {
+        isScrolling.current = true;
+        targetRef.current.scrollTop = sourceRef.current.scrollTop;
+        requestAnimationFrame(() => {
+          isScrolling.current = false;
+        });
+      }
+    },
+    [syncEnabled],
+  );
+
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <Terminal className="h-5 w-5" />
           Server Logs
         </CardTitle>
+        <Button
+          variant={syncEnabled ? "default" : "outline"}
+          size="sm"
+          onClick={() => setSyncEnabled(!syncEnabled)}
+        >
+          {syncEnabled ? "Sync ON" : "Sync OFF"}
+        </Button>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="serve">
-          <TabsList>
-            <TabsTrigger value="serve" className="flex items-center gap-1">
-              <Server className="h-3 w-3" />
-              Serve
-            </TabsTrigger>
-            <TabsTrigger value="worker" className="flex items-center gap-1">
-              <Terminal className="h-3 w-3" />
-              Worker
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="serve">
-            <LogView source="serve" date={date} />
-          </TabsContent>
-          <TabsContent value="worker">
-            <LogView source="worker" date={date} />
-          </TabsContent>
-        </Tabs>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <LogView
+            source="serve"
+            date={date}
+            scrollRef={serveRef}
+            onScroll={() => handleScroll("serve")}
+          />
+          <LogView
+            source="worker"
+            date={date}
+            scrollRef={workerRef}
+            onScroll={() => handleScroll("worker")}
+          />
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function LogView({ source, date }: { source: LogSource; date: string }) {
+interface LogViewProps {
+  source: LogSource;
+  date: string;
+  scrollRef?: React.RefObject<HTMLDivElement>;
+  onScroll?: () => void;
+}
+
+function LogView({ source, date, scrollRef, onScroll }: LogViewProps) {
   const { entries, loading, error, refetch } = useServerLogs(source, date);
-
-  if (loading) {
-    return (
-      <div className="space-y-2 pt-4">
-        {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
-          <Skeleton key={id} className="h-8 w-full" />
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="pt-4 text-center text-sm text-muted-foreground">
-        <p>{error}</p>
-      </div>
-    );
-  }
-
-  if (entries.length === 0) {
-    return (
-      <div className="pt-4 text-center text-sm text-muted-foreground">
-        <p>No logs for this date.</p>
-      </div>
-    );
-  }
+  const icon =
+    source === "serve" ? <Server className="h-4 w-4" /> : <Terminal className="h-4 w-4" />;
+  const title = source === "serve" ? "Serve" : "Worker";
 
   return (
-    <div className="pt-4">
+    <div className="flex flex-col">
       <div className="mb-2 flex items-center justify-between">
-        <Badge variant="secondary">{entries.length} entries</Badge>
+        <div className="flex items-center gap-2">
+          {icon}
+          <span className="font-medium">{title}</span>
+          {!loading && <Badge variant="secondary">{entries.length}</Badge>}
+        </div>
         <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
-      <div className="h-[500px] overflow-y-auto rounded-md border bg-muted/30 p-2 font-mono text-xs">
-        {entries.map((entry, index) => (
-          <LogEntryRow key={`${entry.timestamp}-${index}`} entry={entry} />
-        ))}
-      </div>
+
+      {loading ? (
+        <div className="space-y-2">
+          {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
+            <Skeleton key={id} className="h-8 w-full" />
+          ))}
+        </div>
+      ) : error ? (
+        <div className="text-center text-sm text-muted-foreground">
+          <p>{error}</p>
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="text-center text-sm text-muted-foreground">
+          <p>No logs for this date.</p>
+        </div>
+      ) : (
+        <div
+          ref={scrollRef as React.RefObject<HTMLDivElement>}
+          onScroll={onScroll}
+          className="h-[400px] overflow-y-auto rounded-md border bg-muted/30 p-2 font-mono text-xs"
+        >
+          {entries.map((entry, index) => (
+            <LogEntryRow key={`${entry.timestamp}-${index}`} entry={entry} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
