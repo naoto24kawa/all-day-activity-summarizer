@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { createDatabase } from "@repo/db";
 import type { Command } from "commander";
 import consola from "consola";
+import { startClaudeCodeSystem } from "../claude-code/scheduler.js";
 import type { AdasConfig } from "../config.js";
 import { loadConfig } from "../config.js";
 import { createApp } from "../server/app.js";
@@ -81,6 +82,12 @@ export function registerServeCommand(program: Command): void {
       const stopSlack = await startSlackSystem(db, config);
       if (stopSlack) {
         consola.success("Slack integration started");
+      }
+
+      // Start Claude Code system if enabled
+      const stopClaudeCode = await startClaudeCodeSystem(db, config);
+      if (stopClaudeCode) {
+        consola.success("Claude Code integration started");
       }
     });
 }

@@ -182,3 +182,54 @@ export const slackQueue = sqliteTable("slack_queue", {
 
 export type SlackQueueJob = typeof slackQueue.$inferSelect;
 export type NewSlackQueueJob = typeof slackQueue.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Claude Code Sessions
+// ---------------------------------------------------------------------------
+
+export const claudeCodeSessions = sqliteTable("claude_code_sessions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  date: text("date").notNull(), // YYYY-MM-DD
+  sessionId: text("session_id").notNull().unique(), // UUID
+  projectPath: text("project_path").notNull(),
+  projectName: text("project_name"), // パスの最後の部分
+  startTime: text("start_time"), // ISO8601
+  endTime: text("end_time"),
+  userMessageCount: integer("user_message_count").notNull().default(0),
+  assistantMessageCount: integer("assistant_message_count").notNull().default(0),
+  toolUseCount: integer("tool_use_count").notNull().default(0),
+  summary: text("summary"), // 最初のユーザーメッセージ
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type ClaudeCodeSession = typeof claudeCodeSessions.$inferSelect;
+export type NewClaudeCodeSession = typeof claudeCodeSessions.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Claude Code Queue
+// ---------------------------------------------------------------------------
+
+export const claudeCodeQueue = sqliteTable("claude_code_queue", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobType: text("job_type", { enum: ["fetch_sessions"] }).notNull(),
+  projectPath: text("project_path"),
+  status: text("status", { enum: ["pending", "processing", "completed", "failed"] })
+    .notNull()
+    .default("pending"),
+  retryCount: integer("retry_count").notNull().default(0),
+  maxRetries: integer("max_retries").notNull().default(3),
+  errorMessage: text("error_message"),
+  lockedAt: text("locked_at"),
+  runAfter: text("run_after").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type ClaudeCodeQueueJob = typeof claudeCodeQueue.$inferSelect;
+export type NewClaudeCodeQueueJob = typeof claudeCodeQueue.$inferInsert;

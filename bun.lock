@@ -52,6 +52,7 @@
       },
       "dependencies": {
         "@hono/node-server": "^1.19.6",
+        "@modelcontextprotocol/sdk": "^1.0.0",
         "@repo/core": "workspace:*",
         "@repo/db": "workspace:*",
         "@repo/types": "workspace:*",

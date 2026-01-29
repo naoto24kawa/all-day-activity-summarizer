@@ -9,6 +9,7 @@ export type {
   BrowserRecordingChunkMetadata,
   BrowserRecordingChunkResponse,
   BrowserRecordingStatus,
+  ClaudeCodeSession,
   EvaluatorLog,
   GenerateSummaryRequest,
   GenerateSummaryResponse,

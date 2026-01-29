@@ -239,6 +239,24 @@ export interface SlackMessage {
   createdAt: string;
 }
 
+// ========== Claude Code 型定義 ==========
+
+/** Claude Code セッション */
+export interface ClaudeCodeSession {
+  id: number;
+  date: string;
+  sessionId: string;
+  projectPath: string;
+  projectName: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  userMessageCount: number;
+  assistantMessageCount: number;
+  toolUseCount: number;
+  summary: string | null;
+  createdAt: string;
+}
+
 // ========== Storage Metrics 型定義 ==========
 
 /** ストレージフォルダ情報 */

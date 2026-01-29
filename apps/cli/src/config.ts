@@ -40,6 +40,12 @@ export interface AdasConfig {
     parallelWorkers: number;
     channels: string[]; // Channel IDs to monitor
   };
+  claudeCode: {
+    enabled: boolean;
+    fetchIntervalMinutes: number;
+    parallelWorkers: number;
+    projects: string[]; // Project paths to monitor (empty = all)
+  };
 }
 
 const ADAS_HOME = join(homedir(), ".adas");
@@ -83,6 +89,12 @@ const defaultConfig: AdasConfig = {
     parallelWorkers: 3,
     channels: [],
   },
+  claudeCode: {
+    enabled: false,
+    fetchIntervalMinutes: 5,
+    parallelWorkers: 2,
+    projects: [],
+  },
 };
 
 export function getAdasHome(): string {
@@ -117,6 +129,7 @@ export function loadConfig(): AdasConfig {
     worker: { ...defaultConfig.worker, ...userConfig.worker },
     promptImprovement: { ...defaultConfig.promptImprovement, ...userConfig.promptImprovement },
     slack: { ...defaultConfig.slack, ...userConfig.slack },
+    claudeCode: { ...defaultConfig.claudeCode, ...userConfig.claudeCode },
   };
 }
 

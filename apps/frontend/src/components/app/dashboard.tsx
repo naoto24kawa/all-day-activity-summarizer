@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getTodayDateString } from "@/lib/date";
 import { ActivityFeed } from "./activity-feed";
+import { ClaudeCodeFeed } from "./claude-code-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
 import { MemoPanel } from "./memo-panel";
 import { MonitoringPanel } from "./monitoring-panel";
@@ -57,6 +58,7 @@ export function Dashboard() {
               <MemoPanel date={date} />
             </div>
             <SlackFeed date={date} />
+            <ClaudeCodeFeed date={date} />
           </div>
         </TabsContent>
         <TabsContent value="timeline">

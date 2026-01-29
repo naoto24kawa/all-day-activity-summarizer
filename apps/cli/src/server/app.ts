@@ -4,6 +4,7 @@ import { cors } from "hono/cors";
 import type { AudioCapture } from "../audio/capture.js";
 import type { AdasConfig } from "../config.js";
 import { createBrowserRecordingRouter } from "./routes/browser-recording.js";
+import { createClaudeCodeSessionsRouter } from "./routes/claude-code-sessions.js";
 import { createEvaluatorLogsRouter } from "./routes/evaluator-logs.js";
 import { createFeedbacksRouter, createSegmentFeedbackRouter } from "./routes/feedbacks.js";
 import { createMemosRouter } from "./routes/memos.js";
@@ -36,6 +37,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/segments", createSegmentFeedbackRouter(db));
   app.route("/api/speakers", createSpeakersRouter(db));
   app.route("/api/slack-messages", createSlackMessagesRouter(db));
+  app.route("/api/claude-code-sessions", createClaudeCodeSessionsRouter(db, options?.config));
   app.route("/api/status", createStatusRouter(db));
 
   if (options?.micCapture || options?.speakerCapture) {

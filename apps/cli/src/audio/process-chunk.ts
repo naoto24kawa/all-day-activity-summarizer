@@ -81,7 +81,13 @@ export async function processChunkComplete(
       if (!seg.text.trim()) continue;
       const segStart = new Date(startTime.getTime() + seg.start);
       const segEnd = new Date(startTime.getTime() + seg.end);
-      const speaker = seg.speaker && labelMap[seg.speaker] ? labelMap[seg.speaker] : seg.speaker;
+      // マイク音声の場合は speaker を "Me" に強制
+      const speaker =
+        audioSource === "browser-mic"
+          ? "Me"
+          : seg.speaker && labelMap[seg.speaker]
+            ? labelMap[seg.speaker]
+            : seg.speaker;
       db.insert(schema.transcriptionSegments)
         .values({
           date: datePart,
@@ -107,7 +113,8 @@ export async function processChunkComplete(
         transcription: result.text,
         language: result.language,
         confidence: null,
-        speaker: null,
+        // マイク音声の場合は speaker を "Me" に強制
+        speaker: audioSource === "browser-mic" ? "Me" : null,
       })
       .run();
   }

@@ -4,8 +4,12 @@ import * as schema from "./schema.js";
 
 export { schema };
 export type {
+  ClaudeCodeQueueJob,
+  ClaudeCodeSession,
   EvaluatorLog,
   Memo,
+  NewClaudeCodeQueueJob,
+  NewClaudeCodeSession,
   NewEvaluatorLog,
   NewMemo,
   NewPromptImprovement,
@@ -205,6 +209,43 @@ export function createDatabase(dbPath: string) {
 
     CREATE INDEX IF NOT EXISTS idx_slack_queue_status ON slack_queue(status);
     CREATE INDEX IF NOT EXISTS idx_slack_queue_run_after ON slack_queue(run_after);
+
+    -- Claude Code sessions table
+    CREATE TABLE IF NOT EXISTS claude_code_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      session_id TEXT NOT NULL UNIQUE,
+      project_path TEXT NOT NULL,
+      project_name TEXT,
+      start_time TEXT,
+      end_time TEXT,
+      user_message_count INTEGER NOT NULL DEFAULT 0,
+      assistant_message_count INTEGER NOT NULL DEFAULT 0,
+      tool_use_count INTEGER NOT NULL DEFAULT 0,
+      summary TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_claude_code_sessions_date ON claude_code_sessions(date);
+    CREATE INDEX IF NOT EXISTS idx_claude_code_sessions_project ON claude_code_sessions(project_path);
+
+    -- Claude Code queue table
+    CREATE TABLE IF NOT EXISTS claude_code_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_type TEXT NOT NULL CHECK(job_type IN ('fetch_sessions')),
+      project_path TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 3,
+      error_message TEXT,
+      locked_at TEXT,
+      run_after TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_claude_code_queue_status ON claude_code_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_claude_code_queue_run_after ON claude_code_queue(run_after);
   `);
 
   // Migration: update CHECK constraint to allow 'pomodoro' summary_type
