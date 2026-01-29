@@ -5,6 +5,7 @@ export interface SlackUserSummary {
   userId: string;
   slackName: string | null;
   displayName: string | null;
+  speakerNames: string[] | null;
   messageCount: number;
   firstSeen: string | null;
   lastSeen: string | null;
@@ -42,6 +43,14 @@ export function useSlackUsers() {
     [fetchUsers],
   );
 
+  const updateSpeakerNames = useCallback(
+    async (userId: string, speakerNames: string[] | null) => {
+      await patchAdasApi(`/api/slack-users/${encodeURIComponent(userId)}`, { speakerNames });
+      await fetchUsers(true);
+    },
+    [fetchUsers],
+  );
+
   const resetDisplayName = useCallback(
     async (userId: string) => {
       await deleteAdasApi(`/api/slack-users/${encodeURIComponent(userId)}`);
@@ -50,5 +59,13 @@ export function useSlackUsers() {
     [fetchUsers],
   );
 
-  return { users, error, loading, refetch: fetchUsers, updateDisplayName, resetDisplayName };
+  return {
+    users,
+    error,
+    loading,
+    refetch: fetchUsers,
+    updateDisplayName,
+    updateSpeakerNames,
+    resetDisplayName,
+  };
 }

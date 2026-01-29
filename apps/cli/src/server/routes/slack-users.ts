@@ -40,10 +40,19 @@ export function createSlackUsersRouter(db: AdasDatabase) {
     // Merge data
     const result = usersFromMessages.map((msg) => {
       const mapping = mappingMap.get(msg.userId);
+      let speakerNames: string[] | null = null;
+      if (mapping?.speakerNames) {
+        try {
+          speakerNames = JSON.parse(mapping.speakerNames) as string[];
+        } catch {
+          speakerNames = null;
+        }
+      }
       return {
         userId: msg.userId,
         slackName: mapping?.slackName ?? msg.userName,
         displayName: mapping?.displayName ?? null,
+        speakerNames,
         messageCount: msg.messageCount,
         firstSeen: msg.firstSeen,
         lastSeen: msg.lastSeen,
@@ -56,14 +65,19 @@ export function createSlackUsersRouter(db: AdasDatabase) {
   /**
    * PATCH /api/slack-users/:userId
    *
-   * Update display name for a user
-   * Body: { displayName: string | null }
+   * Update display name and/or speaker names for a user
+   * Body: { displayName?: string | null, speakerNames?: string[] | null }
    */
   router.patch("/:userId", async (c) => {
     const userId = c.req.param("userId");
-    const body = await c.req.json<{ displayName: string | null }>();
+    const body = await c.req.json<{
+      displayName?: string | null;
+      speakerNames?: string[] | null;
+    }>();
 
     const displayName = body.displayName?.trim() || null;
+    const speakerNames =
+      body.speakerNames && body.speakerNames.length > 0 ? JSON.stringify(body.speakerNames) : null;
 
     // Check if mapping exists
     const existing = db
@@ -74,10 +88,19 @@ export function createSlackUsersRouter(db: AdasDatabase) {
 
     const now = new Date().toISOString();
 
+    // Build update object only with provided fields
+    const updateFields: Record<string, string | null> = { updatedAt: now };
+    if (body.displayName !== undefined) {
+      updateFields.displayName = displayName;
+    }
+    if (body.speakerNames !== undefined) {
+      updateFields.speakerNames = speakerNames;
+    }
+
     if (existing) {
       // Update existing
       db.update(schema.slackUsers)
-        .set({ displayName, updatedAt: now })
+        .set(updateFields)
         .where(eq(schema.slackUsers.userId, userId))
         .run();
     } else {
@@ -95,13 +118,19 @@ export function createSlackUsersRouter(db: AdasDatabase) {
           userId,
           slackName: msg?.userName ?? null,
           displayName,
+          speakerNames,
           createdAt: now,
           updatedAt: now,
         })
         .run();
     }
 
-    return c.json({ success: true, userId, displayName });
+    return c.json({
+      success: true,
+      userId,
+      displayName,
+      speakerNames: body.speakerNames ?? null,
+    });
   });
 
   /**

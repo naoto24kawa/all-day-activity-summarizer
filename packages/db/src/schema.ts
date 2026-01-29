@@ -162,6 +162,7 @@ export const slackUsers = sqliteTable("slack_users", {
   userId: text("user_id").notNull().unique(),
   slackName: text("slack_name"), // Original name from Slack API
   displayName: text("display_name"), // User-defined display name
+  speakerNames: text("speaker_names"), // JSON array: ["SPEAKER_00", "SPEAKER_01"]
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),

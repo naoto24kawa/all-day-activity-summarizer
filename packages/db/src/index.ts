@@ -131,6 +131,9 @@ export function createDatabase(dbPath: string) {
   addColumnIfNotExists(sqlite, "segment_feedbacks", "target", "TEXT NOT NULL DEFAULT 'interpret'");
   addColumnIfNotExists(sqlite, "segment_feedbacks", "reason", "TEXT");
 
+  // Migration: add speaker_names column to slack_users
+  addColumnIfNotExists(sqlite, "slack_users", "speaker_names", "TEXT");
+
   // Migration: create prompt_improvements table
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS prompt_improvements (
