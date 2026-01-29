@@ -39,6 +39,7 @@ export interface AdasConfig {
     fetchIntervalMinutes: number;
     parallelWorkers: number;
     channels: string[]; // Channel IDs to monitor
+    excludeChannels: string[]; // Channel IDs to exclude (e.g., RSS feed channels)
     mentionGroups: string[]; // Group names to monitor (e.g., "team_製品開発本部_ジョブアンテナ")
     watchKeywords: string[]; // Keywords to monitor (e.g., "ジョブアンテナ", "障害")
   };
@@ -94,6 +95,7 @@ const defaultConfig: AdasConfig = {
     fetchIntervalMinutes: 5,
     parallelWorkers: 3,
     channels: [],
+    excludeChannels: [],
     mentionGroups: [],
     watchKeywords: [],
   },

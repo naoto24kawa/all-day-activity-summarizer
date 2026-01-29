@@ -11,6 +11,22 @@ import { and, eq } from "drizzle-orm";
 import type { SlackClient } from "./client.js";
 
 /**
+ * Convert a glob pattern to regex (supports * wildcard)
+ */
+function globToRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const regexStr = escaped.replace(/\*/g, ".*");
+  return new RegExp(`^${regexStr}$`, "i");
+}
+
+/**
+ * Check if a channel name matches any exclude pattern
+ */
+function matchesExcludePattern(name: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => globToRegex(pattern).test(name));
+}
+
+/**
  * Convert Slack timestamp to Date string (YYYY-MM-DD)
  */
 function tsToDateString(ts: string): string {
@@ -63,7 +79,8 @@ export async function fetchMentions(
   client: SlackClient,
   currentUserId: string,
   mentionGroups: string[] = [],
-): Promise<{ fetched: number; stored: number; lastTs?: string }> {
+  excludePatterns: string[] = [],
+): Promise<{ fetched: number; stored: number; excluded: number; lastTs?: string }> {
   // Build search queries: direct mention + group mentions
   const queries = [`to:@${currentUserId}`];
   for (const group of mentionGroups) {
@@ -72,6 +89,7 @@ export async function fetchMentions(
 
   let fetched = 0;
   let stored = 0;
+  let excluded = 0;
   let lastTs: string | undefined;
 
   try {
@@ -86,6 +104,16 @@ export async function fetchMentions(
       for (const match of response.messages.matches) {
         fetched++;
         lastTs = lastTs ? (match.ts > lastTs ? match.ts : lastTs) : match.ts;
+
+        // Skip if channel matches exclude pattern
+        if (
+          excludePatterns.length > 0 &&
+          match.channel.name &&
+          matchesExcludePattern(match.channel.name, excludePatterns)
+        ) {
+          excluded++;
+          continue;
+        }
 
         const dateStr = tsToDateString(match.ts);
 
@@ -112,13 +140,15 @@ export async function fetchMentions(
       }
     }
 
-    consola.debug(`Mentions: fetched ${fetched}, stored ${stored} (queries: ${queries.length})`);
+    consola.debug(
+      `Mentions: fetched ${fetched}, excluded ${excluded}, stored ${stored} (queries: ${queries.length})`,
+    );
   } catch (error) {
     consola.error("Failed to fetch mentions:", error);
     throw error;
   }
 
-  return { fetched, stored, lastTs };
+  return { fetched, stored, excluded, lastTs };
 }
 
 /**
@@ -128,13 +158,15 @@ export async function fetchKeywords(
   db: AdasDatabase,
   client: SlackClient,
   keywords: string[],
-): Promise<{ fetched: number; stored: number; lastTs?: string }> {
+  excludePatterns: string[] = [],
+): Promise<{ fetched: number; stored: number; excluded: number; lastTs?: string }> {
   if (keywords.length === 0) {
-    return { fetched: 0, stored: 0 };
+    return { fetched: 0, stored: 0, excluded: 0 };
   }
 
   let fetched = 0;
   let stored = 0;
+  let excluded = 0;
   let lastTs: string | undefined;
 
   try {
@@ -148,6 +180,16 @@ export async function fetchKeywords(
       for (const match of response.messages.matches) {
         fetched++;
         lastTs = lastTs ? (match.ts > lastTs ? match.ts : lastTs) : match.ts;
+
+        // Skip if channel matches exclude pattern
+        if (
+          excludePatterns.length > 0 &&
+          match.channel.name &&
+          matchesExcludePattern(match.channel.name, excludePatterns)
+        ) {
+          excluded++;
+          continue;
+        }
 
         const dateStr = tsToDateString(match.ts);
         const userInfo = match.user ? await client.getUserInfo(match.user) : null;
@@ -172,13 +214,15 @@ export async function fetchKeywords(
       }
     }
 
-    consola.debug(`Keywords: fetched ${fetched}, stored ${stored} (keywords: ${keywords.length})`);
+    consola.debug(
+      `Keywords: fetched ${fetched}, excluded ${excluded}, stored ${stored} (keywords: ${keywords.length})`,
+    );
   } catch (error) {
     consola.error("Failed to fetch keywords:", error);
     throw error;
   }
 
-  return { fetched, stored, lastTs };
+  return { fetched, stored, excluded, lastTs };
 }
 
 /**
@@ -400,15 +444,16 @@ export async function processSlackJob(
   currentUserId: string,
   mentionGroups: string[] = [],
   watchKeywords: string[] = [],
+  excludePatterns: string[] = [],
 ): Promise<string | undefined> {
   switch (job.jobType) {
     case "fetch_mentions": {
-      const result = await fetchMentions(db, client, currentUserId, mentionGroups);
+      const result = await fetchMentions(db, client, currentUserId, mentionGroups, excludePatterns);
       return result.lastTs;
     }
 
     case "fetch_keywords": {
-      const result = await fetchKeywords(db, client, watchKeywords);
+      const result = await fetchKeywords(db, client, watchKeywords, excludePatterns);
       return result.lastTs;
     }
 

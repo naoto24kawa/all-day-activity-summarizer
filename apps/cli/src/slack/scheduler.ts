@@ -12,11 +12,16 @@ import { createSlackClient } from "./client.js";
 import { enqueueSlackJob, getSlackQueueStats } from "./queue.js";
 import { startSlackWorker } from "./worker.js";
 
+interface ChannelInfo {
+  id: string;
+  name: string;
+}
+
 /**
  * Fetch all joined channels from Slack
  */
-async function fetchAllJoinedChannels(client: SlackClient): Promise<string[]> {
-  const channelIds: string[] = [];
+async function fetchAllJoinedChannels(client: SlackClient): Promise<ChannelInfo[]> {
+  const channels: ChannelInfo[] = [];
   let cursor: string | undefined;
 
   do {
@@ -29,14 +34,30 @@ async function fetchAllJoinedChannels(client: SlackClient): Promise<string[]> {
     for (const channel of response.channels) {
       // Only include channels where user is a member
       if (channel.is_member) {
-        channelIds.push(channel.id);
+        channels.push({ id: channel.id, name: channel.name ?? channel.id });
       }
     }
 
     cursor = response.response_metadata?.next_cursor;
   } while (cursor);
 
-  return channelIds;
+  return channels;
+}
+
+/**
+ * Convert a glob pattern to regex (supports * wildcard)
+ */
+function globToRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const regexStr = escaped.replace(/\*/g, ".*");
+  return new RegExp(`^${regexStr}$`, "i");
+}
+
+/**
+ * Check if a channel name matches any exclude pattern
+ */
+function matchesExcludePattern(name: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => globToRegex(pattern).test(name));
 }
 
 /**
@@ -126,21 +147,42 @@ export async function startSlackSystem(
   }
 
   // Determine which channels to monitor
-  let channelIds: string[];
+  let channels: ChannelInfo[];
   if (config.slack.channels.length > 0) {
-    // Use configured channels
-    channelIds = config.slack.channels;
-    consola.info(`[Slack] Using ${channelIds.length} configured channels`);
+    // Use configured channels (no name info available)
+    channels = config.slack.channels.map((id) => ({ id, name: id }));
+    consola.info(`[Slack] Using ${channels.length} configured channels`);
   } else {
     // Fetch all joined channels
     try {
-      channelIds = await fetchAllJoinedChannels(client);
-      consola.info(`[Slack] Auto-detected ${channelIds.length} joined channels`);
+      channels = await fetchAllJoinedChannels(client);
+      consola.info(`[Slack] Auto-detected ${channels.length} joined channels`);
     } catch (error) {
       consola.error("[Slack] Failed to fetch channel list:", error);
-      channelIds = [];
+      channels = [];
     }
   }
+
+  // Apply exclusion filter (supports glob patterns like "rss-*", "*-bot")
+  const excludePatterns = config.slack.excludeChannels ?? [];
+  if (excludePatterns.length > 0) {
+    const before = channels.length;
+    const excluded: string[] = [];
+    channels = channels.filter((ch) => {
+      if (matchesExcludePattern(ch.name, excludePatterns)) {
+        excluded.push(ch.name);
+        return false;
+      }
+      return true;
+    });
+    if (excluded.length > 0) {
+      consola.info(
+        `[Slack] Excluded ${excluded.length} channels: ${excluded.slice(0, 5).join(", ")}${excluded.length > 5 ? "..." : ""}`,
+      );
+    }
+  }
+
+  const channelIds = channels.map((ch) => ch.id);
 
   // Log queue stats
   const stats = getSlackQueueStats(db);

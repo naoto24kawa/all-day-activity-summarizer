@@ -194,7 +194,7 @@ export function createDatabase(dbPath: string) {
     -- Slack queue table
     CREATE TABLE IF NOT EXISTS slack_queue (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_type TEXT NOT NULL CHECK(job_type IN ('fetch_mentions', 'fetch_channel', 'fetch_dm')),
+      job_type TEXT NOT NULL CHECK(job_type IN ('fetch_mentions', 'fetch_channel', 'fetch_dm', 'fetch_keywords')),
       channel_id TEXT,
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
       retry_count INTEGER NOT NULL DEFAULT 0,

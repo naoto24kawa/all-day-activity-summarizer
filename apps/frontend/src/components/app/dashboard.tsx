@@ -49,24 +49,35 @@ export function Dashboard() {
         <TabsList>
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="slack">Slack</TabsTrigger>
+          <TabsTrigger value="claude">Claude</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
         <TabsContent value="activity">
-          <div className="space-y-6 pt-4">
+          <div className="pt-4">
             <div className="grid gap-6 lg:grid-cols-2">
-              <ActivityFeed date={date} />
+              <SummaryView date={date} />
               <MemoPanel date={date} />
-            </div>
-            <div className="grid gap-6 lg:grid-cols-2">
-              <SlackFeed date={date} />
-              <ClaudeCodeFeed date={date} />
             </div>
           </div>
         </TabsContent>
-        <TabsContent value="timeline">
+        <TabsContent value="claude">
           <div className="pt-4">
-            <Timeline date={date} />
+            <ClaudeCodeFeed date={date} />
+          </div>
+        </TabsContent>
+        <TabsContent value="timeline">
+          <div className="space-y-6 pt-4">
+            <div className="grid gap-6 lg:grid-cols-2">
+              <ActivityFeed date={date} />
+              <Timeline date={date} />
+            </div>
+          </div>
+        </TabsContent>
+        <TabsContent value="slack">
+          <div className="pt-4">
+            <SlackFeed date={date} />
           </div>
         </TabsContent>
         <TabsContent value="settings">

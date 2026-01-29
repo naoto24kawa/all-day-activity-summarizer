@@ -30,6 +30,7 @@ export function startSlackWorker(
   const parallelWorkers = config.slack.parallelWorkers;
   const mentionGroups = config.slack.mentionGroups || [];
   const watchKeywords = config.slack.watchKeywords || [];
+  const excludePatterns = config.slack.excludeChannels || [];
 
   const processQueue = async () => {
     if (isProcessing) {
@@ -60,6 +61,7 @@ export function startSlackWorker(
                 currentUserId,
                 mentionGroups,
                 watchKeywords,
+                excludePatterns,
               );
               markSlackJobCompleted(db, job.id, lastTs);
               consola.debug(`[Slack] Job ${job.id} (${job.jobType}) completed`);

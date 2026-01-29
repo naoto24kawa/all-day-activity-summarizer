@@ -37,7 +37,7 @@ export function ActivityFeed({ date }: ActivityFeedProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Activity Feed</CardTitle>
+          <CardTitle>Transcribe</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
@@ -52,7 +52,7 @@ export function ActivityFeed({ date }: ActivityFeedProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Activity Feed</CardTitle>
+          <CardTitle>Transcribe</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">{error}</p>
@@ -68,7 +68,7 @@ export function ActivityFeed({ date }: ActivityFeedProps) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>
-            Activity Feed
+            Transcribe
             <Badge variant="secondary" className="ml-2">
               {segments.length}
             </Badge>
