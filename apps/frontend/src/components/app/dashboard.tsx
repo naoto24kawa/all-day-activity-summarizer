@@ -9,6 +9,7 @@ import { MemoPanel } from "./memo-panel";
 import { MonitoringPanel } from "./monitoring-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
+import { SlackUsersPanel } from "./slack-users-panel";
 import { SpeakerAssignPanel } from "./speaker-assign-panel";
 import { StatusPanel } from "./status-panel";
 import { SummaryView } from "./summary-view";
@@ -83,6 +84,7 @@ export function Dashboard() {
         <TabsContent value="settings">
           <div className="grid gap-6 pt-4 lg:grid-cols-2">
             <SpeakerAssignPanel />
+            <SlackUsersPanel />
             <MonitoringPanel />
           </div>
         </TabsContent>

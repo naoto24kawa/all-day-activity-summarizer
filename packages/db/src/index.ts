@@ -101,7 +101,7 @@ export function createDatabase(dbPath: string) {
       date TEXT NOT NULL,
       audio_file_path TEXT NOT NULL,
       transcription_text TEXT NOT NULL,
-      judgment TEXT NOT NULL CHECK(judgment IN ('hallucination', 'legitimate')),
+      judgment TEXT NOT NULL CHECK(judgment IN ('hallucination', 'legitimate', 'mixed')),
       confidence REAL NOT NULL,
       reason TEXT NOT NULL,
       suggested_pattern TEXT,
@@ -178,7 +178,7 @@ export function createDatabase(dbPath: string) {
       channel_name TEXT,
       user_id TEXT NOT NULL,
       user_name TEXT,
-      message_type TEXT NOT NULL CHECK(message_type IN ('mention', 'channel', 'dm')),
+      message_type TEXT NOT NULL CHECK(message_type IN ('mention', 'channel', 'dm', 'keyword')),
       text TEXT NOT NULL,
       thread_ts TEXT,
       permalink TEXT,
@@ -190,6 +190,18 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_slack_messages_channel ON slack_messages(channel_id);
     CREATE INDEX IF NOT EXISTS idx_slack_messages_type ON slack_messages(message_type);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_slack_messages_unique ON slack_messages(channel_id, message_ts);
+
+    -- Slack users table (for display name mapping)
+    CREATE TABLE IF NOT EXISTS slack_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL UNIQUE,
+      slack_name TEXT,
+      display_name TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_slack_users_user_id ON slack_users(user_id);
 
     -- Slack queue table
     CREATE TABLE IF NOT EXISTS slack_queue (
@@ -274,6 +286,74 @@ export function createDatabase(dbPath: string) {
         DROP TABLE summaries_old;
         CREATE INDEX IF NOT EXISTS idx_summaries_date ON summaries(date);
         CREATE INDEX IF NOT EXISTS idx_summaries_type ON summaries(summary_type);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: update evaluator_logs CHECK constraint to allow 'mixed' judgment
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='evaluator_logs'",
+      )
+      .get();
+    if (row && !row.sql.includes("'mixed'")) {
+      sqlite.exec(`
+        ALTER TABLE evaluator_logs RENAME TO evaluator_logs_old;
+        CREATE TABLE evaluator_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          audio_file_path TEXT NOT NULL,
+          transcription_text TEXT NOT NULL,
+          judgment TEXT NOT NULL CHECK(judgment IN ('hallucination', 'legitimate', 'mixed')),
+          confidence REAL NOT NULL,
+          reason TEXT NOT NULL,
+          suggested_pattern TEXT,
+          pattern_applied INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        );
+        INSERT INTO evaluator_logs SELECT * FROM evaluator_logs_old;
+        DROP TABLE evaluator_logs_old;
+        CREATE INDEX IF NOT EXISTS idx_evaluator_logs_date ON evaluator_logs(date);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: update slack_messages CHECK constraint to allow 'keyword' message_type
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='slack_messages'",
+      )
+      .get();
+    if (row && !row.sql.includes("'keyword'")) {
+      sqlite.exec(`
+        ALTER TABLE slack_messages RENAME TO slack_messages_old;
+        CREATE TABLE slack_messages (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          message_ts TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          channel_name TEXT,
+          user_id TEXT NOT NULL,
+          user_name TEXT,
+          message_type TEXT NOT NULL CHECK(message_type IN ('mention', 'channel', 'dm', 'keyword')),
+          text TEXT NOT NULL,
+          thread_ts TEXT,
+          permalink TEXT,
+          is_read INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        );
+        INSERT INTO slack_messages SELECT * FROM slack_messages_old;
+        DROP TABLE slack_messages_old;
+        CREATE INDEX IF NOT EXISTS idx_slack_messages_date ON slack_messages(date);
+        CREATE INDEX IF NOT EXISTS idx_slack_messages_channel ON slack_messages(channel_id);
+        CREATE INDEX IF NOT EXISTS idx_slack_messages_type ON slack_messages(message_type);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_slack_messages_unique ON slack_messages(channel_id, message_ts);
       `);
     }
   } catch {

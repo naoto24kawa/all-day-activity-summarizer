@@ -154,6 +154,26 @@ export type SlackMessage = typeof slackMessages.$inferSelect;
 export type NewSlackMessage = typeof slackMessages.$inferInsert;
 
 // ---------------------------------------------------------------------------
+// Slack Users (display name mapping)
+// ---------------------------------------------------------------------------
+
+export const slackUsers = sqliteTable("slack_users", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").notNull().unique(),
+  slackName: text("slack_name"), // Original name from Slack API
+  displayName: text("display_name"), // User-defined display name
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type SlackUser = typeof slackUsers.$inferSelect;
+export type NewSlackUser = typeof slackUsers.$inferInsert;
+
+// ---------------------------------------------------------------------------
 // Slack Queue
 // ---------------------------------------------------------------------------
 

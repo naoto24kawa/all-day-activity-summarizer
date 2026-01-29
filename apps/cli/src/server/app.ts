@@ -11,6 +11,7 @@ import { createMemosRouter } from "./routes/memos.js";
 import { createRecordingRouter } from "./routes/recording.js";
 import { createServerLogsRouter } from "./routes/server-logs.js";
 import { createSlackMessagesRouter } from "./routes/slack-messages.js";
+import { createSlackUsersRouter } from "./routes/slack-users.js";
 import { createSpeakersRouter } from "./routes/speakers.js";
 import { createStatusRouter } from "./routes/status.js";
 import { createStorageRouter } from "./routes/storage.js";
@@ -38,6 +39,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/segments", createSegmentFeedbackRouter(db));
   app.route("/api/speakers", createSpeakersRouter(db));
   app.route("/api/slack-messages", createSlackMessagesRouter(db));
+  app.route("/api/slack-users", createSlackUsersRouter(db));
   app.route("/api/claude-code-sessions", createClaudeCodeSessionsRouter(db, options?.config));
   app.route("/api/server-logs", createServerLogsRouter(options?.config));
   app.route("/api/status", createStatusRouter(db));
