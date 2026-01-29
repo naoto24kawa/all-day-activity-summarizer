@@ -69,3 +69,17 @@ export function formatSlackTsJST(messageTs: string): string {
     minute: "2-digit",
   });
 }
+
+/**
+ * GitHub の ISO8601 日時文字列を JST の日付時刻文字列 (MM/DD HH:MM) に変換する
+ */
+export function formatGitHubDateJST(isoString: string): string {
+  const date = new Date(isoString);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const time = date.toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${month}/${day} ${time}`;
+}

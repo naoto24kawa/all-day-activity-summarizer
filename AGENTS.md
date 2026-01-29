@@ -113,6 +113,8 @@ CLI と Worker の間に直接依存はなく、HTTP(RPC)で通信。
 | `summaries` | id, date, period_start, period_end, summary_type(pomodoro/hourly/daily), content, segment_ids, model, created_at |
 | `memos` | id, date, content, created_at |
 | `evaluator_logs` | id, date, audio_file_path, transcription_text, judgment, confidence, reason, suggested_pattern, pattern_applied, created_at |
+| `segment_feedbacks` | id, segment_id, rating, target, reason, issues, corrected_text, created_at |
+| `feedbacks` | id, target_type, target_id, rating, issues, reason, corrected_text, correct_judgment, created_at |
 
 ### APIエンドポイント
 
@@ -130,6 +132,10 @@ CLI と Worker の間に直接依存はなく、HTTP(RPC)で通信。
 | GET | `/api/evaluator-logs?date=` | 評価ログ一覧 |
 | GET | `/api/speakers` | 登録済み話者一覧 |
 | GET | `/api/speakers/unknown` | 未知話者一覧 |
+| POST | `/api/segment-feedbacks` | interpret フィードバック送信 |
+| GET | `/api/segment-feedbacks?date=` | interpret フィードバック取得 |
+| POST | `/api/feedbacks/v2` | summarize/evaluate フィードバック送信 |
+| GET | `/api/feedbacks/v2?targetType=&date=` | summarize/evaluate フィードバック取得 |
 
 **Worker RPCサーバー(:3100)**
 

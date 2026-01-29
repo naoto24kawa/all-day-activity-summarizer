@@ -1,4 +1,4 @@
-import type { TranscriptionSegment } from "@repo/types";
+import type { InterpretIssueType, TranscriptionSegment } from "@repo/types";
 import { RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState } from "react";
 import { FeedbackDialog } from "@/components/app/feedback-dialog";
@@ -13,9 +13,10 @@ import { formatTimeJST } from "@/lib/date";
 
 interface ActivityFeedProps {
   date: string;
+  className?: string;
 }
 
-export function ActivityFeed({ date }: ActivityFeedProps) {
+export function ActivityFeed({ date, className }: ActivityFeedProps) {
   const { segments, loading, error, refetch } = useTranscriptions(date);
   const { getFeedback, postFeedback } = useSegmentFeedbacks(date);
   const [pendingFeedback, setPendingFeedback] = useState<{
@@ -27,9 +28,20 @@ export function ActivityFeed({ date }: ActivityFeedProps) {
     setPendingFeedback({ segmentId, rating });
   };
 
-  const handleFeedbackSubmit = (reason: string) => {
+  const handleFeedbackSubmit = (data: {
+    reason?: string;
+    issues?: InterpretIssueType[];
+    correctedText?: string;
+  }) => {
     if (pendingFeedback) {
-      postFeedback(pendingFeedback.segmentId, pendingFeedback.rating, "interpret", reason);
+      postFeedback(
+        pendingFeedback.segmentId,
+        pendingFeedback.rating,
+        "interpret",
+        data.reason,
+        data.issues,
+        data.correctedText,
+      );
       setPendingFeedback(null);
     }
   };
@@ -66,8 +78,8 @@ export function ActivityFeed({ date }: ActivityFeedProps) {
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+      <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
+        <CardHeader className="flex shrink-0 flex-row items-center justify-between">
           <CardTitle>
             Transcribe
             <Badge variant="secondary" className="ml-2">
@@ -78,16 +90,16 @@ export function ActivityFeed({ date }: ActivityFeedProps) {
             <RefreshCw className="h-4 w-4" />
           </Button>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex min-h-0 flex-1 flex-col">
           {segments.length === 0 ? (
             <p className="text-sm text-muted-foreground">No activity for this date.</p>
           ) : (
-            <Tabs defaultValue="ai">
-              <TabsList>
+            <Tabs defaultValue="ai" className="flex min-h-0 flex-1 flex-col">
+              <TabsList className="shrink-0">
                 <TabsTrigger value="ai">AI</TabsTrigger>
                 <TabsTrigger value="raw">Raw</TabsTrigger>
               </TabsList>
-              <TabsContent value="ai">
+              <TabsContent value="ai" className="min-h-0 flex-1">
                 <SegmentList
                   segments={sortedSegments}
                   mode="ai"
@@ -95,7 +107,7 @@ export function ActivityFeed({ date }: ActivityFeedProps) {
                   onFeedbackClick={handleFeedbackClick}
                 />
               </TabsContent>
-              <TabsContent value="raw">
+              <TabsContent value="raw" className="min-h-0 flex-1">
                 <SegmentList
                   segments={sortedSegments}
                   mode="raw"
@@ -131,7 +143,7 @@ function SegmentList({
   onFeedbackClick: (segmentId: number, rating: "good" | "bad") => void;
 }) {
   return (
-    <div className="h-[400px] overflow-y-auto">
+    <div className="h-full overflow-y-auto">
       <div className="space-y-3">
         {segments.map((segment) => (
           <TranscriptionItem

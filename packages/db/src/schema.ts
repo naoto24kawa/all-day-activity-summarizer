@@ -57,6 +57,8 @@ export const segmentFeedbacks = sqliteTable("segment_feedbacks", {
     .notNull()
     .default("interpret"),
   reason: text("reason"),
+  issues: text("issues"), // JSON array of issue types
+  correctedText: text("corrected_text"),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -64,6 +66,33 @@ export const segmentFeedbacks = sqliteTable("segment_feedbacks", {
 
 export type SegmentFeedback = typeof segmentFeedbacks.$inferSelect;
 export type NewSegmentFeedback = typeof segmentFeedbacks.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Feedbacks (汎用フィードバック: summary, evaluator_log 用)
+// ---------------------------------------------------------------------------
+
+export const feedbacks = sqliteTable("feedbacks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  targetType: text("target_type", {
+    enum: ["summary", "evaluator_log"],
+  }).notNull(),
+  targetId: integer("target_id").notNull(),
+  rating: text("rating", {
+    enum: ["good", "neutral", "bad"],
+  }).notNull(),
+  issues: text("issues"), // JSON array of issue types
+  reason: text("reason"),
+  correctedText: text("corrected_text"),
+  correctJudgment: text("correct_judgment", {
+    enum: ["hallucination", "legitimate", "mixed"],
+  }),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type Feedback = typeof feedbacks.$inferSelect;
+export type NewFeedback = typeof feedbacks.$inferInsert;
 
 export const promptImprovements = sqliteTable("prompt_improvements", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -254,3 +283,116 @@ export const claudeCodeQueue = sqliteTable("claude_code_queue", {
 
 export type ClaudeCodeQueueJob = typeof claudeCodeQueue.$inferSelect;
 export type NewClaudeCodeQueueJob = typeof claudeCodeQueue.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// GitHub Items (Issues & PRs)
+// ---------------------------------------------------------------------------
+
+export const githubItems = sqliteTable("github_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  date: text("date").notNull(), // YYYY-MM-DD (JST)
+  itemType: text("item_type", { enum: ["issue", "pull_request"] }).notNull(),
+  repoOwner: text("repo_owner").notNull(),
+  repoName: text("repo_name").notNull(),
+  number: integer("number").notNull(),
+  title: text("title").notNull(),
+  state: text("state").notNull(), // "open" | "closed" | "merged"
+  url: text("url").notNull(),
+  authorLogin: text("author_login"),
+  assigneeLogin: text("assignee_login"),
+  labels: text("labels"), // JSON array
+  body: text("body"),
+  githubCreatedAt: text("github_created_at"),
+  githubUpdatedAt: text("github_updated_at"),
+  closedAt: text("closed_at"),
+  mergedAt: text("merged_at"),
+  isDraft: integer("is_draft", { mode: "boolean" }),
+  reviewDecision: text("review_decision"), // "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED"
+  isReviewRequested: integer("is_review_requested", { mode: "boolean" }).default(false),
+  commentCount: integer("comment_count").default(0),
+  isRead: integer("is_read", { mode: "boolean" }).default(false),
+  syncedAt: text("synced_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type GitHubItem = typeof githubItems.$inferSelect;
+export type NewGitHubItem = typeof githubItems.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// GitHub Comments (Issue comments, PR comments, Reviews)
+// ---------------------------------------------------------------------------
+
+export const githubComments = sqliteTable("github_comments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  date: text("date").notNull(), // YYYY-MM-DD (JST)
+  commentType: text("comment_type", {
+    enum: ["issue_comment", "review_comment", "review"],
+  }).notNull(),
+  repoOwner: text("repo_owner").notNull(),
+  repoName: text("repo_name").notNull(),
+  itemNumber: integer("item_number").notNull(),
+  commentId: text("comment_id").notNull(), // GitHub's comment ID
+  authorLogin: text("author_login"),
+  body: text("body").notNull(),
+  url: text("url").notNull(),
+  reviewState: text("review_state"), // "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED"
+  githubCreatedAt: text("github_created_at"),
+  isRead: integer("is_read", { mode: "boolean" }).default(false),
+  syncedAt: text("synced_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type GitHubComment = typeof githubComments.$inferSelect;
+export type NewGitHubComment = typeof githubComments.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// GitHub Queue
+// ---------------------------------------------------------------------------
+
+export const githubQueue = sqliteTable("github_queue", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobType: text("job_type", {
+    enum: ["fetch_issues", "fetch_prs", "fetch_review_requests"],
+  }).notNull(),
+  status: text("status", { enum: ["pending", "processing", "completed", "failed"] })
+    .notNull()
+    .default("pending"),
+  retryCount: integer("retry_count").notNull().default(0),
+  maxRetries: integer("max_retries").notNull().default(3),
+  errorMessage: text("error_message"),
+  lockedAt: text("locked_at"),
+  runAfter: text("run_after").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type GitHubQueueJob = typeof githubQueue.$inferSelect;
+export type NewGitHubQueueJob = typeof githubQueue.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Vocabulary (用語辞書 - initial_prompt 用)
+// ---------------------------------------------------------------------------
+
+export const vocabulary = sqliteTable("vocabulary", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  term: text("term").notNull().unique(), // 用語
+  reading: text("reading"), // 読み仮名(任意)
+  category: text("category"), // カテゴリ(任意)
+  source: text("source", { enum: ["manual", "transcribe", "feedback"] }).notNull(), // 登録元
+  usageCount: integer("usage_count").notNull().default(0),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type Vocabulary = typeof vocabulary.$inferSelect;
+export type NewVocabulary = typeof vocabulary.$inferInsert;

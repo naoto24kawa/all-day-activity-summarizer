@@ -22,9 +22,10 @@ import { formatTimeShortJST } from "@/lib/date";
 
 interface ClaudeCodeFeedProps {
   date: string;
+  className?: string;
 }
 
-export function ClaudeCodeFeed({ date }: ClaudeCodeFeedProps) {
+export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
   const { sessions, loading, error, syncSessions } = useClaudeCodeSessions(date);
   const { stats } = useClaudeCodeStats(date);
 
@@ -89,8 +90,8 @@ export function ClaudeCodeFeed({ date }: ClaudeCodeFeedProps) {
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+    <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
+      <CardHeader className="flex shrink-0 flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <Code className="h-5 w-5" />
           Claude Code
@@ -105,7 +106,7 @@ export function ClaudeCodeFeed({ date }: ClaudeCodeFeedProps) {
           Sync
         </Button>
       </CardHeader>
-      <CardContent>
+      <CardContent className="min-h-0 flex-1 overflow-auto">
         {sessions.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Claude Code sessions for this date.</p>
         ) : (

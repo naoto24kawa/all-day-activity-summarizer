@@ -7,10 +7,18 @@ export type {
   ClaudeCodeQueueJob,
   ClaudeCodeSession,
   EvaluatorLog,
+  Feedback,
+  GitHubComment,
+  GitHubItem,
+  GitHubQueueJob,
   Memo,
   NewClaudeCodeQueueJob,
   NewClaudeCodeSession,
   NewEvaluatorLog,
+  NewFeedback,
+  NewGitHubComment,
+  NewGitHubItem,
+  NewGitHubQueueJob,
   NewMemo,
   NewPromptImprovement,
   NewSegmentFeedback,
@@ -130,6 +138,25 @@ export function createDatabase(dbPath: string) {
   // Migration: add columns to segment_feedbacks
   addColumnIfNotExists(sqlite, "segment_feedbacks", "target", "TEXT NOT NULL DEFAULT 'interpret'");
   addColumnIfNotExists(sqlite, "segment_feedbacks", "reason", "TEXT");
+  addColumnIfNotExists(sqlite, "segment_feedbacks", "issues", "TEXT");
+  addColumnIfNotExists(sqlite, "segment_feedbacks", "corrected_text", "TEXT");
+
+  // Migration: create feedbacks table (for summary and evaluator_log feedback)
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS feedbacks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      target_type TEXT NOT NULL CHECK(target_type IN ('summary', 'evaluator_log')),
+      target_id INTEGER NOT NULL,
+      rating TEXT NOT NULL CHECK(rating IN ('good', 'neutral', 'bad')),
+      issues TEXT,
+      reason TEXT,
+      corrected_text TEXT,
+      correct_judgment TEXT CHECK(correct_judgment IN ('hallucination', 'legitimate', 'mixed')),
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_feedbacks_target ON feedbacks(target_type, target_id);
+    CREATE INDEX IF NOT EXISTS idx_feedbacks_rating ON feedbacks(rating);
+  `);
 
   // Migration: add speaker_names column to slack_users
   addColumnIfNotExists(sqlite, "slack_users", "speaker_names", "TEXT");
@@ -261,6 +288,78 @@ export function createDatabase(dbPath: string) {
 
     CREATE INDEX IF NOT EXISTS idx_claude_code_queue_status ON claude_code_queue(status);
     CREATE INDEX IF NOT EXISTS idx_claude_code_queue_run_after ON claude_code_queue(run_after);
+
+    -- GitHub Items table (Issues & PRs)
+    CREATE TABLE IF NOT EXISTS github_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      item_type TEXT NOT NULL CHECK(item_type IN ('issue', 'pull_request')),
+      repo_owner TEXT NOT NULL,
+      repo_name TEXT NOT NULL,
+      number INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      state TEXT NOT NULL,
+      url TEXT NOT NULL,
+      author_login TEXT,
+      assignee_login TEXT,
+      labels TEXT,
+      body TEXT,
+      github_created_at TEXT,
+      github_updated_at TEXT,
+      closed_at TEXT,
+      merged_at TEXT,
+      is_draft INTEGER,
+      review_decision TEXT,
+      is_review_requested INTEGER DEFAULT 0,
+      comment_count INTEGER DEFAULT 0,
+      is_read INTEGER DEFAULT 0,
+      synced_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_github_items_date ON github_items(date);
+    CREATE INDEX IF NOT EXISTS idx_github_items_type ON github_items(item_type);
+    CREATE INDEX IF NOT EXISTS idx_github_items_state ON github_items(state);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_github_items_unique ON github_items(repo_owner, repo_name, number);
+
+    -- GitHub Comments table
+    CREATE TABLE IF NOT EXISTS github_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      comment_type TEXT NOT NULL CHECK(comment_type IN ('issue_comment', 'review_comment', 'review')),
+      repo_owner TEXT NOT NULL,
+      repo_name TEXT NOT NULL,
+      item_number INTEGER NOT NULL,
+      comment_id TEXT NOT NULL,
+      author_login TEXT,
+      body TEXT NOT NULL,
+      url TEXT NOT NULL,
+      review_state TEXT,
+      github_created_at TEXT,
+      is_read INTEGER DEFAULT 0,
+      synced_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_github_comments_date ON github_comments(date);
+    CREATE INDEX IF NOT EXISTS idx_github_comments_type ON github_comments(comment_type);
+    CREATE INDEX IF NOT EXISTS idx_github_comments_item ON github_comments(repo_owner, repo_name, item_number);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_github_comments_unique ON github_comments(repo_owner, repo_name, comment_id);
+
+    -- GitHub Queue table
+    CREATE TABLE IF NOT EXISTS github_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_type TEXT NOT NULL CHECK(job_type IN ('fetch_issues', 'fetch_prs', 'fetch_review_requests')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 3,
+      error_message TEXT,
+      locked_at TEXT,
+      run_after TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_github_queue_status ON github_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_github_queue_run_after ON github_queue(run_after);
   `);
 
   // Migration: update CHECK constraint to allow 'pomodoro' summary_type

@@ -68,7 +68,7 @@ export interface EvaluatorLog {
   date: string;
   audioFilePath: string;
   transcriptionText: string;
-  judgment: "hallucination" | "legitimate";
+  judgment: "hallucination" | "legitimate" | "mixed";
   confidence: number;
   reason: string;
   suggestedPattern: string | null;
@@ -90,7 +90,7 @@ export interface GenerateSummaryResponse {
 export interface RpcTranscribeConfig {
   language: string;
   engine: "whisperx" | "whisper-cpp";
-  hfToken?: string;
+  initialPrompt?: string;
 }
 
 /** RPC Transcribe レスポンス */
@@ -100,10 +100,8 @@ export interface RpcTranscribeResponse {
     start: number;
     end: number;
     text: string;
-    speaker?: string;
   }>;
   language: string;
-  speakerEmbeddings?: Record<string, number[]>;
 }
 
 /** RPC Summarize リクエスト */
@@ -120,7 +118,7 @@ export interface RpcSummarizeResponse {
 /** RPC Evaluate リクエスト */
 export interface RpcEvaluateRequest {
   text: string;
-  segments: Array<{ text: string; start: number; end: number; speaker?: string }>;
+  segments: Array<{ text: string; start: number; end: number }>;
 }
 
 /** セグメント単位の評価結果 */
@@ -158,13 +156,51 @@ export interface RpcInterpretResponse {
 /** プロンプト改善ターゲット */
 export type PromptTarget = "interpret" | "evaluate" | "summarize-hourly" | "summarize-daily";
 
-/** セグメント評価 */
+/** セグメントフィードバック (interpret 用) */
 export interface SegmentFeedback {
   id: number;
   segmentId: number;
   rating: "good" | "bad";
   target: PromptTarget;
   reason: string | null;
+  issues: string | null; // JSON array of issue types
+  correctedText: string | null;
+  createdAt: string;
+}
+
+/** interpret フィードバックの問題点タイプ */
+export type InterpretIssueType =
+  | "meaning_changed" // 意味が変わった
+  | "info_lost" // 情報が消えた
+  | "wrong_conversion" // 誤変換
+  | "filler_remaining"; // フィラー残り
+
+/** フィードバックターゲットタイプ */
+export type FeedbackTargetType = "summary" | "evaluator_log";
+
+/** フィードバック評価 */
+export type FeedbackRating = "good" | "neutral" | "bad";
+
+/** サマリーフィードバックの問題点タイプ */
+export type SummaryIssueType =
+  | "info_missing" // 情報不足
+  | "too_verbose" // 冗長
+  | "incorrect" // 誤り
+  | "bad_structure"; // 構成が悪い
+
+/** Evaluator 判定タイプ */
+export type EvaluatorJudgment = "hallucination" | "legitimate" | "mixed";
+
+/** 汎用フィードバック (summary, evaluator_log 用) */
+export interface Feedback {
+  id: number;
+  targetType: FeedbackTargetType;
+  targetId: number;
+  rating: FeedbackRating;
+  issues: string | null; // JSON array of issue types
+  reason: string | null;
+  correctedText: string | null;
+  correctJudgment: EvaluatorJudgment | null;
   createdAt: string;
 }
 
@@ -257,6 +293,69 @@ export interface ClaudeCodeSession {
   createdAt: string;
 }
 
+// ========== GitHub 型定義 ==========
+
+/** GitHub Item (Issue/PR) */
+export interface GitHubItem {
+  id: number;
+  date: string;
+  itemType: "issue" | "pull_request";
+  repoOwner: string;
+  repoName: string;
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  authorLogin: string | null;
+  assigneeLogin: string | null;
+  labels: string | null;
+  body: string | null;
+  githubCreatedAt: string | null;
+  githubUpdatedAt: string | null;
+  closedAt: string | null;
+  mergedAt: string | null;
+  isDraft: boolean | null;
+  reviewDecision: string | null;
+  isReviewRequested: boolean | null;
+  commentCount: number | null;
+  isRead: boolean | null;
+  syncedAt: string;
+}
+
+/** GitHub Comment */
+export interface GitHubComment {
+  id: number;
+  date: string;
+  commentType: "issue_comment" | "review_comment" | "review";
+  repoOwner: string;
+  repoName: string;
+  itemNumber: number;
+  commentId: string;
+  authorLogin: string | null;
+  body: string;
+  url: string;
+  reviewState: string | null;
+  githubCreatedAt: string | null;
+  isRead: boolean | null;
+  syncedAt: string;
+}
+
+/** GitHub unread counts */
+export interface GitHubUnreadCounts {
+  total: number;
+  issue: number;
+  pullRequest: number;
+  reviewRequest: number;
+}
+
+/** GitHub comments unread counts */
+export interface GitHubCommentsUnreadCounts {
+  total: number;
+  issueComment: number;
+  reviewComment: number;
+  review: number;
+}
+
 // ========== Storage Metrics 型定義 ==========
 
 /** ストレージフォルダ情報 */
@@ -288,4 +387,21 @@ export interface StorageMetrics {
     bytes: number;
     formatted: string;
   };
+}
+
+// ========== Vocabulary 型定義 ==========
+
+/** 用語登録元 */
+export type VocabularySource = "manual" | "transcribe" | "feedback";
+
+/** 用語辞書エントリ */
+export interface Vocabulary {
+  id: number;
+  term: string;
+  reading: string | null;
+  category: string | null;
+  source: VocabularySource;
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
 }

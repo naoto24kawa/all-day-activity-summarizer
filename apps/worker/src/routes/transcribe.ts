@@ -28,13 +28,6 @@ export function createTranscribeRouter() {
 
       const config = JSON.parse(configStr) as RpcTranscribeConfig;
 
-      // embeddings は任意
-      let embeddings: Record<string, number[]> | undefined;
-      const embeddingsStr = body.embeddings;
-      if (typeof embeddingsStr === "string" && embeddingsStr.trim()) {
-        embeddings = JSON.parse(embeddingsStr) as Record<string, number[]>;
-      }
-
       // 一時ファイルに保存
       if (!existsSync(TMP_DIR)) {
         mkdirSync(TMP_DIR, { recursive: true });
@@ -43,15 +36,8 @@ export function createTranscribeRouter() {
       const arrayBuf = await audioFile.arrayBuffer();
       await Bun.write(tmpPath, arrayBuf);
 
-      // 一時 embeddings ファイル(指定された場合)
-      let tmpEmbeddingsPath: string | undefined;
-      if (embeddings && Object.keys(embeddings).length > 0) {
-        tmpEmbeddingsPath = join(TMP_DIR, `${crypto.randomUUID()}_embeddings.json`);
-        await Bun.write(tmpEmbeddingsPath, JSON.stringify(embeddings));
-      }
-
       try {
-        const result = await runWhisperX(tmpPath, config, tmpEmbeddingsPath);
+        const result = await runWhisperX(tmpPath, config);
         return c.json(result);
       } finally {
         // 一時ファイル削除
@@ -59,13 +45,6 @@ export function createTranscribeRouter() {
           unlinkSync(tmpPath);
         } catch {
           /* ignore */
-        }
-        if (tmpEmbeddingsPath) {
-          try {
-            unlinkSync(tmpEmbeddingsPath);
-          } catch {
-            /* ignore */
-          }
         }
       }
     } catch (err) {
@@ -80,7 +59,6 @@ export function createTranscribeRouter() {
 async function runWhisperX(
   audioPath: string,
   config: RpcTranscribeConfig,
-  embeddingsPath?: string,
 ): Promise<RpcTranscribeResponse> {
   const pythonPath = join(WHISPERX_VENV_DIR, "bin", "python3");
   if (!existsSync(pythonPath)) {
@@ -96,14 +74,13 @@ async function runWhisperX(
 
   const args = [pythonPath, scriptPath, audioPath, "--language", config.language];
 
-  if (embeddingsPath) {
-    args.push("--embeddings-path", embeddingsPath);
+  // initial_prompt を追加(存在する場合)
+  if (config.initialPrompt) {
+    args.push("--initial-prompt", config.initialPrompt);
   }
 
   const env: Record<string, string> = { ...process.env } as Record<string, string>;
-  if (config.hfToken) {
-    env.HF_TOKEN = config.hfToken;
-  }
+  // HF_TOKEN は diarization 用なので削除
 
   consola.info(`[worker/transcribe] Running whisperX on ${audioPath}`);
 
@@ -133,8 +110,7 @@ async function runWhisperX(
   interface WhisperXOutput {
     text: string;
     language: string;
-    segments: Array<{ start: number; end: number; text: string; speaker?: string }>;
-    speaker_embeddings?: Record<string, number[]>;
+    segments: Array<{ start: number; end: number; text: string }>;
   }
 
   const json = JSON.parse(jsonStr) as WhisperXOutput;
@@ -145,9 +121,7 @@ async function runWhisperX(
       start: seg.start,
       end: seg.end,
       text: seg.text,
-      speaker: seg.speaker,
     })),
     language: json.language,
-    speakerEmbeddings: json.speaker_embeddings,
   };
 }

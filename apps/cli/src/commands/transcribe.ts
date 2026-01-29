@@ -11,7 +11,7 @@ import { runAsyncEvaluation } from "../transcription/evaluation-pipeline.js";
 import { getDateString, getTodayDateString } from "../utils/date.js";
 import { transcribeAudio } from "../whisper/client.js";
 import { isHallucination } from "../whisper/hallucination-filter.js";
-import { accumulateSpeakerEmbeddings, loadRegisteredEmbeddings } from "../whisper/speaker-store.js";
+import { buildInitialPrompt } from "./vocab.js";
 
 export function registerTranscribeCommand(program: Command): void {
   program
@@ -90,7 +90,9 @@ async function transcribeFile(
 
   consola.start(`Transcribing: ${basename(filePath)}`);
 
-  const result = await transcribeAudio(filePath, config);
+  // vocabulary から initial_prompt を生成
+  const initialPrompt = buildInitialPrompt(db);
+  const result = await transcribeAudio(filePath, config, initialPrompt);
 
   if (isHallucination(result.text)) {
     consola.warn(`No speech detected in ${basename(filePath)}`);
@@ -113,43 +115,15 @@ async function transcribeFile(
   // 音声ソースタイプを判定 (マイク or スピーカー)
   const isMicSource = fileName.endsWith("_mic");
 
-  // 話者 embedding を処理し、ラベルを登録名に差替え(DB 挿入前に実行)
-  let labelMap: Record<string, string> = {};
-  if (result.speakerEmbeddings && Object.keys(result.speakerEmbeddings).length > 0) {
-    try {
-      const speakerTexts: Record<string, string[]> = {};
-      for (const seg of result.segments) {
-        if (seg.speaker && seg.text.trim()) {
-          if (!speakerTexts[seg.speaker]) {
-            speakerTexts[seg.speaker] = [];
-          }
-          speakerTexts[seg.speaker]?.push(seg.text.trim());
-        }
-      }
-      const registeredEmbeddings = loadRegisteredEmbeddings();
-      labelMap = accumulateSpeakerEmbeddings(
-        result.speakerEmbeddings,
-        speakerTexts,
-        registeredEmbeddings,
-      );
-    } catch (err) {
-      consola.warn(`Failed to accumulate speaker embeddings: ${err}`);
-    }
-  }
+  // マイク音声は "Me" に固定
+  const speaker = isMicSource ? "Me" : null;
 
-  const hasSpeakers = result.segments.some((s) => s.speaker);
-
-  if (hasSpeakers) {
+  // セグメント単位で保存
+  if (result.segments.length > 0) {
     for (const seg of result.segments) {
       if (isHallucination(seg.text)) continue;
       const segStart = new Date(startTime.getTime() + seg.start);
       const segEnd = new Date(startTime.getTime() + seg.end);
-      // マイク音声は "Me" に固定、それ以外はラベルを登録名に差替え
-      const speaker = isMicSource
-        ? "Me"
-        : seg.speaker && labelMap[seg.speaker]
-          ? labelMap[seg.speaker]
-          : seg.speaker;
       db.insert(schema.transcriptionSegments)
         .values({
           date: datePart,
@@ -160,7 +134,7 @@ async function transcribeFile(
           transcription: seg.text,
           language: result.language,
           confidence: null,
-          speaker: speaker ?? null,
+          speaker,
         })
         .run();
     }
@@ -175,7 +149,7 @@ async function transcribeFile(
         transcription: result.text,
         language: result.language,
         confidence: null,
-        speaker: isMicSource ? "Me" : null,
+        speaker,
       })
       .run();
   }
@@ -196,7 +170,7 @@ async function transcribeFile(
  */
 async function runAsyncEvaluationAndInterpret(
   text: string,
-  segments: { text: string; start: number; end: number; speaker?: string }[],
+  segments: { text: string; start: number; end: number }[],
   filePath: string,
   config: ReturnType<typeof loadConfig>,
   db: ReturnType<typeof createDatabase>,

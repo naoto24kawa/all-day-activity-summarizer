@@ -3,17 +3,19 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatTimeJST, getTodayDateString } from "@/lib/date";
 import { ActivityFeed } from "./activity-feed";
+import { BrowserRecordingPanel } from "./browser-recording-panel";
 import { ClaudeCodeFeed } from "./claude-code-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
+import { GitHubFeed } from "./github-feed";
 import { MemoPanel } from "./memo-panel";
 import { MonitoringPanel } from "./monitoring-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
 import { SlackUsersPanel } from "./slack-users-panel";
-import { SpeakerAssignPanel } from "./speaker-assign-panel";
 import { StatusPanel } from "./status-panel";
 import { SummaryView } from "./summary-view";
 import { Timeline } from "./timeline";
+import { VocabularyPanel } from "./vocabulary-panel";
 
 export function Dashboard() {
   const [date, setDate] = useState(getTodayDateString());
@@ -25,8 +27,8 @@ export function Dashboard() {
   }, []);
 
   return (
-    <div className="container mx-auto max-w-6xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
+    <div className="flex h-screen flex-col overflow-hidden p-4">
+      <div className="flex shrink-0 items-center justify-between">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold">All Day Activity Summarizer</h1>
           <span className="font-mono text-lg text-muted-foreground">{formatTimeJST(now)}</span>
@@ -39,55 +41,51 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="mt-4 grid shrink-0 gap-4 lg:grid-cols-2">
         <StatusPanel />
-        <SummaryView date={date} />
+        <BrowserRecordingPanel />
       </div>
 
-      <Tabs defaultValue="activity">
-        <TabsList>
+      <Tabs defaultValue="activity" className="mt-4 flex min-h-0 flex-1 flex-col">
+        <TabsList className="shrink-0">
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="slack">Slack</TabsTrigger>
+          <TabsTrigger value="github">GitHub</TabsTrigger>
           <TabsTrigger value="claude">Claude</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
-        <TabsContent value="activity">
-          <div className="pt-4">
-            <div className="grid gap-6 lg:grid-cols-2">
-              <SummaryView date={date} />
-              <MemoPanel date={date} />
-            </div>
+        <TabsContent value="activity" className="min-h-0 flex-1">
+          <div className="grid h-full gap-4 lg:grid-cols-2">
+            <SummaryView date={date} className="h-full" />
+            <MemoPanel date={date} className="h-full" />
           </div>
         </TabsContent>
-        <TabsContent value="claude">
-          <div className="pt-4">
-            <ClaudeCodeFeed date={date} />
+        <TabsContent value="claude" className="min-h-0 flex-1">
+          <ClaudeCodeFeed date={date} className="h-full" />
+        </TabsContent>
+        <TabsContent value="timeline" className="min-h-0 flex-1">
+          <div className="grid h-full gap-4 lg:grid-cols-2">
+            <ActivityFeed date={date} className="h-full" />
+            <Timeline date={date} className="h-full" />
           </div>
         </TabsContent>
-        <TabsContent value="timeline">
-          <div className="space-y-6 pt-4">
-            <div className="grid gap-6 lg:grid-cols-2">
-              <ActivityFeed date={date} />
-              <Timeline date={date} />
-            </div>
-          </div>
+        <TabsContent value="slack" className="min-h-0 flex-1">
+          <SlackFeed date={date} className="h-full" />
         </TabsContent>
-        <TabsContent value="slack">
-          <div className="pt-4">
-            <SlackFeed date={date} />
-          </div>
+        <TabsContent value="github" className="min-h-0 flex-1">
+          <GitHubFeed date={date} className="h-full" />
         </TabsContent>
-        <TabsContent value="settings">
-          <div className="grid gap-6 pt-4 lg:grid-cols-2">
-            <SpeakerAssignPanel />
+        <TabsContent value="settings" className="min-h-0 flex-1 overflow-auto">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <VocabularyPanel />
             <SlackUsersPanel />
             <MonitoringPanel />
           </div>
         </TabsContent>
-        <TabsContent value="logs">
-          <div className="space-y-6 pt-4">
+        <TabsContent value="logs" className="min-h-0 flex-1 overflow-auto">
+          <div className="space-y-4">
             <ServerLogsPanel date={date} />
             <EvaluatorLogPanel date={date} />
           </div>

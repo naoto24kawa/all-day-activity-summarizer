@@ -1,4 +1,4 @@
-import type { InterpretIssueType } from "@repo/types";
+import type { FeedbackRating, SummaryIssueType } from "@repo/types";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,33 +13,38 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-const ISSUE_OPTIONS: { value: InterpretIssueType; label: string }[] = [
-  { value: "meaning_changed", label: "意味が変わった" },
-  { value: "info_lost", label: "情報が消えた" },
-  { value: "wrong_conversion", label: "誤変換" },
-  { value: "filler_remaining", label: "フィラー残り" },
+const ISSUE_OPTIONS: { value: SummaryIssueType; label: string }[] = [
+  { value: "info_missing", label: "情報不足" },
+  { value: "too_verbose", label: "冗長" },
+  { value: "incorrect", label: "誤り" },
+  { value: "bad_structure", label: "構成が悪い" },
 ];
 
-interface FeedbackDialogProps {
+interface SummaryFeedbackDialogProps {
   open: boolean;
-  rating: "good" | "bad";
+  rating: FeedbackRating;
   onSubmit: (data: {
+    issues?: SummaryIssueType[];
     reason?: string;
-    issues?: InterpretIssueType[];
     correctedText?: string;
   }) => void;
   onCancel: () => void;
 }
 
-export function FeedbackDialog({ open, rating, onSubmit, onCancel }: FeedbackDialogProps) {
+export function SummaryFeedbackDialog({
+  open,
+  rating,
+  onSubmit,
+  onCancel,
+}: SummaryFeedbackDialogProps) {
+  const [selectedIssues, setSelectedIssues] = useState<SummaryIssueType[]>([]);
   const [reason, setReason] = useState("");
-  const [selectedIssues, setSelectedIssues] = useState<InterpretIssueType[]>([]);
   const [correctedText, setCorrectedText] = useState("");
 
   const handleSubmit = () => {
     onSubmit({
-      reason: reason || undefined,
       issues: selectedIssues.length > 0 ? selectedIssues : undefined,
+      reason: reason || undefined,
       correctedText: correctedText || undefined,
     });
     resetForm();
@@ -51,31 +56,49 @@ export function FeedbackDialog({ open, rating, onSubmit, onCancel }: FeedbackDia
   };
 
   const resetForm = () => {
-    setReason("");
     setSelectedIssues([]);
+    setReason("");
     setCorrectedText("");
   };
 
-  const toggleIssue = (issue: InterpretIssueType) => {
+  const toggleIssue = (issue: SummaryIssueType) => {
     setSelectedIssues((prev) =>
       prev.includes(issue) ? prev.filter((i) => i !== issue) : [...prev, issue],
     );
   };
 
+  const getRatingLabel = () => {
+    switch (rating) {
+      case "good":
+        return "Good";
+      case "neutral":
+        return "普通";
+      case "bad":
+        return "Bad";
+    }
+  };
+
+  const getRatingDescription = () => {
+    switch (rating) {
+      case "good":
+        return "この要約の良かった点を教えてください";
+      case "neutral":
+        return "この要約についてのフィードバックを入力してください";
+      case "bad":
+        return "この要約の問題点を教えてください";
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleCancel()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{rating === "good" ? "Good" : "Bad"} Feedback</DialogTitle>
-          <DialogDescription>
-            {rating === "good"
-              ? "この解釈の良かった点を教えてください"
-              : "この解釈の問題点を教えてください"}
-          </DialogDescription>
+          <DialogTitle>{getRatingLabel()} フィードバック</DialogTitle>
+          <DialogDescription>{getRatingDescription()}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {rating === "bad" && (
+          {rating !== "good" && (
             <div className="space-y-2">
               <Label>問題点 (複数選択可)</Label>
               <div className="flex flex-wrap gap-3">
@@ -106,15 +129,15 @@ export function FeedbackDialog({ open, rating, onSubmit, onCancel }: FeedbackDia
             />
           </div>
 
-          {rating === "bad" && (
+          {rating !== "good" && (
             <div className="space-y-2">
               <Label htmlFor="corrected">修正版テキスト (任意)</Label>
               <Textarea
                 id="corrected"
-                placeholder="正しい解釈を入力..."
+                placeholder="あるべき内容を入力..."
                 value={correctedText}
                 onChange={(e) => setCorrectedText(e.target.value)}
-                rows={2}
+                rows={3}
               />
             </div>
           )}

@@ -10,7 +10,6 @@ export interface AdasConfig {
     language: string;
     installDir: string;
     engine: "whisperx" | "whisper-cpp";
-    hfToken?: string;
   };
   audio: {
     sampleRate: number;
@@ -50,9 +49,10 @@ export interface AdasConfig {
     parallelWorkers: number;
     projects: string[]; // Project paths to monitor (empty = all)
   };
-  speaker: {
-    similarityThreshold: number; // 話者照合の閾値 (0.0-1.0, デフォルト 0.6)
-    mergeAcrossChunks: boolean; // チャンク間での話者統合を有効にする
+  github: {
+    enabled: boolean; // GitHub 統合を有効にする
+    fetchIntervalMinutes: number; // 取得間隔(分)
+    parallelWorkers: number; // 並列ワーカー数
   };
 }
 
@@ -67,7 +67,6 @@ const defaultConfig: AdasConfig = {
     language: "ja",
     installDir: join(ADAS_HOME, "whisper.cpp"),
     engine: "whisperx",
-    hfToken: undefined,
   },
   audio: {
     sampleRate: 16000,
@@ -107,9 +106,10 @@ const defaultConfig: AdasConfig = {
     parallelWorkers: 2,
     projects: [],
   },
-  speaker: {
-    similarityThreshold: 0.6,
-    mergeAcrossChunks: true,
+  github: {
+    enabled: false,
+    fetchIntervalMinutes: 10,
+    parallelWorkers: 2,
   },
 };
 
@@ -146,7 +146,7 @@ export function loadConfig(): AdasConfig {
     promptImprovement: { ...defaultConfig.promptImprovement, ...userConfig.promptImprovement },
     slack: { ...defaultConfig.slack, ...userConfig.slack },
     claudeCode: { ...defaultConfig.claudeCode, ...userConfig.claudeCode },
-    speaker: { ...defaultConfig.speaker, ...userConfig.speaker },
+    github: { ...defaultConfig.github, ...userConfig.github },
   };
 }
 

@@ -10,9 +10,10 @@ import { formatTimeJST } from "@/lib/date";
 
 interface MemoPanelProps {
   date: string;
+  className?: string;
 }
 
-export function MemoPanel({ date }: MemoPanelProps) {
+export function MemoPanel({ date, className }: MemoPanelProps) {
   const { memos, loading, error, postMemo, updateMemo, deleteMemo, refetch } = useMemos(date);
   const [refreshing, setRefreshing] = useState(false);
   const [input, setInput] = useState("");
@@ -153,8 +154,8 @@ export function MemoPanel({ date }: MemoPanelProps) {
   };
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+    <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
+      <CardHeader className="flex shrink-0 flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center">
           メモ
           <Badge variant="secondary" className="ml-2">
@@ -171,11 +172,11 @@ export function MemoPanel({ date }: MemoPanelProps) {
           <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
         </Button>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex min-h-0 flex-1 flex-col">
         <div
           ref={scrollRef}
           onScroll={checkNearBottom}
-          className="h-[400px] overflow-y-auto rounded-[inherit]"
+          className="min-h-0 flex-1 overflow-y-auto rounded-[inherit]"
         >
           {memos.length === 0 ? (
             <p className="text-sm text-muted-foreground">メモはまだありません。</p>
@@ -188,7 +189,7 @@ export function MemoPanel({ date }: MemoPanelProps) {
           )}
         </div>
 
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex shrink-0 gap-2">
           <textarea
             ref={textareaRef}
             value={input}

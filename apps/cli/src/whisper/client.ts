@@ -2,25 +2,23 @@ import { readFileSync } from "node:fs";
 import type { RpcTranscribeConfig, RpcTranscribeResponse } from "@repo/types";
 import consola from "consola";
 import type { AdasConfig } from "../config.js";
-import { loadRegisteredEmbeddings } from "./speaker-store.js";
 
 export interface WhisperSegment {
   start: number; // ms
   end: number; // ms
   text: string;
-  speaker?: string;
 }
 
 export interface WhisperResult {
   text: string;
   segments: WhisperSegment[];
   language: string;
-  speakerEmbeddings?: Record<string, number[]>;
 }
 
 export async function transcribeAudio(
   audioPath: string,
   config: AdasConfig,
+  initialPrompt?: string,
 ): Promise<WhisperResult> {
   const { url, timeout } = config.worker;
 
@@ -37,15 +35,9 @@ export async function transcribeAudio(
   const rpcConfig: RpcTranscribeConfig = {
     language: config.whisper.language,
     engine: config.whisper.engine,
-    hfToken: config.whisper.hfToken,
+    initialPrompt,
   };
   formData.append("config", JSON.stringify(rpcConfig));
-
-  // embeddings
-  const embeddings = loadRegisteredEmbeddings();
-  if (Object.keys(embeddings).length > 0) {
-    formData.append("embeddings", JSON.stringify(embeddings));
-  }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -70,10 +62,8 @@ export async function transcribeAudio(
         start: seg.start,
         end: seg.end,
         text: seg.text,
-        speaker: seg.speaker,
       })),
       language: result.language,
-      speakerEmbeddings: result.speakerEmbeddings,
     };
   } finally {
     clearTimeout(timeoutId);

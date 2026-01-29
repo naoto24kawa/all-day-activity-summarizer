@@ -6,9 +6,10 @@ import { useTranscriptions } from "@/hooks/use-transcriptions";
 
 interface TimelineProps {
   date: string;
+  className?: string;
 }
 
-export function Timeline({ date }: TimelineProps) {
+export function Timeline({ date, className }: TimelineProps) {
   const { segments, refetch } = useTranscriptions(date);
 
   const START_HOUR = 9;
@@ -31,14 +32,14 @@ export function Timeline({ date }: TimelineProps) {
   const maxChars = Math.max(...hourlyData.map((d) => d.totalChars), 1);
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+    <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
+      <CardHeader className="flex shrink-0 flex-row items-center justify-between">
         <CardTitle>Activity Timeline</CardTitle>
         <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
           <RefreshCw className="h-4 w-4" />
         </Button>
       </CardHeader>
-      <CardContent>
+      <CardContent className="min-h-0 flex-1 overflow-auto">
         <div className="space-y-1">
           {hourlyData.map(({ hour, count, totalChars }) => (
             <div key={hour} className="flex items-center gap-2">

@@ -10,6 +10,7 @@ CLIツール + Worker(文字起こし/評価) + Web UIダッシュボードの3�
 - [セットアップ](#セットアップ)
 - [CLIコマンド](#cliコマンド)
 - [APIエンドポイント](#apiエンドポイント)
+- [外部サービス統合](#外部サービス統合)
 - [アーキテクチャ](#アーキテクチャ)
 - [開発ワークフロー](#開発ワークフロー)
 - [トラブルシューティング](#トラブルシューティング)
@@ -27,6 +28,9 @@ CLIツール + Worker(文字起こし/評価) + Web UIダッシュボードの3�
 - SQLite(bun:sqlite + Drizzle ORM)によるデータ永続化
 - Hono ローカルAPIサーバー + メモ機能
 - React + shadcn/ui ダッシュボードUI
+- **Slack 統合**: メンション・チャンネル・DM の自動取得
+- **GitHub 統合**: 自分に関連する Issue/PR/レビューリクエストの自動取得
+- **Claude Code 統合**: セッション履歴の自動取得・表示
 
 ## 技術スタック
 
@@ -172,6 +176,18 @@ bun run cli -- serve
 | GET | `/api/evaluator-logs?date=YYYY-MM-DD` | 評価ログ一覧 |
 | GET | `/api/speakers` | 登録済み話者一覧 |
 | GET | `/api/speakers/unknown` | 未知話者一覧 |
+| GET | `/api/slack-messages?date=YYYY-MM-DD` | Slack メッセージ一覧 |
+| GET | `/api/slack-messages/unread-count` | Slack 未読カウント |
+| GET | `/api/github-items?date=YYYY-MM-DD` | GitHub Issue/PR 一覧 |
+| GET | `/api/github-items/unread-count` | GitHub 未読カウント |
+| PATCH | `/api/github-items/:id/read` | 既読にする |
+| POST | `/api/github-items/mark-all-read` | 一括既読 |
+| GET | `/api/github-comments?date=YYYY-MM-DD` | GitHub コメント一覧 |
+| GET | `/api/claude-code-sessions?date=YYYY-MM-DD` | Claude Code セッション一覧 |
+| POST | `/api/segment-feedbacks` | interpret フィードバック送信 |
+| GET | `/api/segment-feedbacks?date=YYYY-MM-DD` | interpret フィードバック取得 |
+| POST | `/api/feedbacks/v2` | summarize/evaluate フィードバック送信 |
+| GET | `/api/feedbacks/v2?targetType=summary&date=YYYY-MM-DD` | フィードバック取得 |
 
 ### Worker RPCサーバー(:3100)
 
@@ -182,6 +198,198 @@ bun run cli -- serve
 | POST | `/rpc/summarize` | Claude 要約実行 |
 | POST | `/rpc/interpret` | AI テキスト解釈 |
 | POST | `/rpc/evaluate` | ハルシネーション評価 |
+
+## 外部サービス統合
+
+ADAS は Slack、GitHub、Claude Code と連携して、日々のアクティビティを一元管理できます。
+
+### GitHub 統合
+
+GitHub CLI (`gh`) を使用して、自分に関連する Issue/PR/レビューリクエストを自動取得します。
+
+#### セットアップ
+
+1. **GitHub CLI のインストールと認証**
+
+```bash
+# macOS
+brew install gh
+
+# Ubuntu/Debian
+sudo apt install gh
+
+# 認証
+gh auth login
+```
+
+2. **設定の有効化**
+
+`~/.adas/config.json` を編集:
+
+```json
+{
+  "github": {
+    "enabled": true,
+    "fetchIntervalMinutes": 10,
+    "parallelWorkers": 2
+  }
+}
+```
+
+3. **サーバー起動**
+
+```bash
+bun run cli -- serve
+```
+
+起動時に `[GitHub] Authenticated as <username>` と表示されれば成功です。
+
+#### 取得されるデータ
+
+- **Issues**: 自分にアサインされた Issue
+- **Pull Requests**: 自分にアサインされた PR
+- **Review Requests**: 自分にレビューリクエストされた PR
+- **Comments**: 上記の Issue/PR に付いたコメント・レビュー
+
+#### ダッシュボード
+
+Web UI の「GitHub」タブで、取得したデータを確認できます:
+- Issues / PRs / Reviews / Comments のタブ切り替え
+- 未読バッジ表示
+- 既読管理(個別・一括)
+- 外部リンクからGitHubへ直接アクセス
+
+### Slack 統合
+
+Slack のメンション・チャンネル・DM を自動取得します(xoxc/xoxd トークン使用)。
+
+#### セットアップ
+
+`~/.adas/config.json` を編集:
+
+```json
+{
+  "slack": {
+    "enabled": true,
+    "xoxcToken": "xoxc-...",
+    "xoxdToken": "xoxd-...",
+    "fetchIntervalMinutes": 5,
+    "channels": [],
+    "excludeChannels": ["rss-*"],
+    "mentionGroups": [],
+    "watchKeywords": []
+  }
+}
+```
+
+トークンは Slack Web アプリの DevTools > Network から取得できます。
+
+### Claude Code 統合
+
+Claude Code CLI のセッション履歴を自動取得・表示します。
+
+#### セットアップ
+
+`~/.adas/config.json` を編集:
+
+```json
+{
+  "claudeCode": {
+    "enabled": true,
+    "fetchIntervalMinutes": 5,
+    "projects": []
+  }
+}
+```
+
+`projects` が空の場合、全プロジェクトのセッションを取得します。
+
+## フィードバックループシステム
+
+ADAS は AI 出力の品質を継続的に改善するフィードバックループを実装しています。ユーザーが出力を評価すると、そのフィードバックが次回の AI 呼び出し時に few-shot examples としてプロンプトに動的挿入されます。
+
+### フィードバック対象
+
+| 対象 | UI | フィードバック内容 |
+|------|-----|-------------------|
+| **Interpret** (AI 解釈) | Activity タブ | Good/Bad + 問題点 + 修正版テキスト |
+| **Summarize** (要約) | Summary タブ | Good/Neutral/Bad + 問題点 + 修正版テキスト |
+| **Evaluate** (ハルシネーション評価) | Evaluator タブ | 正しい/誤検知/見逃し + 正解の判定 |
+
+### フィードバックフロー
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        フィードバックループ                      │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. AI出力         2. ユーザー評価      3. DB保存               │
+│  ┌─────────┐      ┌─────────────┐     ┌─────────┐              │
+│  │ Claude  │ ───> │  👍 / 👎   │ ───> │ SQLite  │              │
+│  │ 出力    │      │  + 理由     │     │ 保存    │              │
+│  └─────────┘      └─────────────┘     └────┬────┘              │
+│       ▲                                     │                   │
+│       │                                     │                   │
+│       │    5. 改善された出力                │                   │
+│  ┌────┴────┐                          ┌────▼────┐              │
+│  │ Claude  │ <─── few-shot examples ──│ 次回    │              │
+│  │ 呼び出し │      として動的挿入       │ 呼び出し │              │
+│  └─────────┘                          └─────────┘              │
+│                                                                 │
+│  4. プロンプト拡張                                              │
+│     - 良い出力例 (最新5件)                                      │
+│     - 避けるべき出力例 (最新3件) + 修正版                        │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Few-shot Examples とは
+
+Few-shot learning は、少数の例をプロンプトに含めることで AI の出力を誘導する手法です。
+
+```
+# 例: interpret プロンプトへの動的挿入
+
+## 良い出力例 (参考にしてください)
+
+入力: えーと、まあ、その、タスク管理のあれですね、完了しました
+出力: タスク管理の作業が完了しました
+
+## 避けるべき出力例 (これらの問題を避けてください)
+
+入力: はい、そうですね、あの案件の件で
+問題のある出力: 案件の件について話しています
+修正版: (具体的な案件名)について確認しました
+問題点: 「案件」が何を指すか不明瞭
+```
+
+### DBスキーマ
+
+| テーブル | 用途 |
+|---------|------|
+| `segment_feedbacks` | interpret 用フィードバック (segmentId, rating, target, reason, issues, corrected_text) |
+| `feedbacks` | summarize/evaluate 用汎用フィードバック (targetType, targetId, rating, issues, reason, correctedText, correctJudgment) |
+
+### APIエンドポイント
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| POST | `/api/segment-feedbacks` | interpret フィードバック送信 |
+| GET | `/api/segment-feedbacks?date=YYYY-MM-DD` | interpret フィードバック取得 |
+| POST | `/api/feedbacks/v2` | summarize/evaluate フィードバック送信 |
+| GET | `/api/feedbacks/v2?targetType=summary&date=YYYY-MM-DD` | summarize/evaluate フィードバック取得 |
+
+### 実装ファイル
+
+| ファイル | 役割 |
+|---------|------|
+| `packages/core/src/feedback-injector.ts` | フィードバック取得 + プロンプト挿入ロジック |
+| `apps/cli/src/summarizer/prompts.ts` | summarize プロンプト構築 (フィードバック挿入対応) |
+| `apps/cli/src/interpreter/run.ts` | interpret 実行 (フィードバック例を Worker に渡す) |
+| `apps/worker/src/routes/interpret.ts` | interpret RPC (フィードバック例をプロンプトに追加) |
+| `apps/frontend/src/components/app/feedback-dialog.tsx` | interpret フィードバック UI |
+| `apps/frontend/src/components/app/summary-feedback-dialog.tsx` | summarize フィードバック UI |
+| `apps/frontend/src/components/app/evaluator-feedback-dialog.tsx` | evaluate フィードバック UI |
 
 ## アーキテクチャ
 
@@ -251,6 +459,10 @@ CLI と Worker の間に直接依存はなく、HTTP(RPC)で通信。Worker は�
 | `summaries` | id, date, period_start, period_end, summary_type(pomodoro/hourly/daily), content, segment_ids, model, created_at |
 | `memos` | id, date, content, created_at |
 | `evaluator_logs` | id, date, audio_file_path, transcription_text, judgment, confidence, reason, suggested_pattern, pattern_applied, created_at |
+| `slack_messages` | id, date, message_ts, channel_id, channel_name, user_id, user_name, message_type, text, thread_ts, permalink, is_read, created_at |
+| `github_items` | id, date, item_type, repo_owner, repo_name, number, title, state, url, author_login, labels, review_decision, is_review_requested, is_read, synced_at |
+| `github_comments` | id, date, comment_type, repo_owner, repo_name, item_number, comment_id, author_login, body, url, review_state, is_read, synced_at |
+| `claude_code_sessions` | id, date, session_id, project_path, project_name, start_time, end_time, user_message_count, assistant_message_count, tool_use_count, summary, created_at |
 
 ### データフロー
 
@@ -290,6 +502,21 @@ CLI と Worker の間に直接依存はなく、HTTP(RPC)で通信。Worker は�
   "worker": {
     "url": "http://localhost:3100",
     "timeout": 120000
+  },
+  "slack": {
+    "enabled": false,
+    "xoxcToken": "xoxc-...",
+    "xoxdToken": "xoxd-...",
+    "fetchIntervalMinutes": 5
+  },
+  "github": {
+    "enabled": false,
+    "fetchIntervalMinutes": 10,
+    "parallelWorkers": 2
+  },
+  "claudeCode": {
+    "enabled": false,
+    "fetchIntervalMinutes": 5
   }
 }
 ```

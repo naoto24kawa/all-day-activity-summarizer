@@ -25,9 +25,10 @@ import { formatSlackTsJST } from "@/lib/date";
 
 interface SlackFeedProps {
   date: string;
+  className?: string;
 }
 
-export function SlackFeed({ date }: SlackFeedProps) {
+export function SlackFeed({ date, className }: SlackFeedProps) {
   const { messages, loading, error, refetch, markAsRead, markAllAsRead } = useSlackMessages(date);
   const { counts } = useSlackUnreadCounts(date);
 
@@ -65,8 +66,8 @@ export function SlackFeed({ date }: SlackFeedProps) {
   const keywordMessages = messages.filter((m) => m.messageType === "keyword");
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+    <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
+      <CardHeader className="flex shrink-0 flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           Slack
           {counts.total > 0 && (
@@ -87,12 +88,12 @@ export function SlackFeed({ date }: SlackFeedProps) {
           </Button>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex min-h-0 flex-1 flex-col">
         {messages.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Slack messages for this date.</p>
         ) : (
-          <Tabs defaultValue="mention">
-            <TabsList>
+          <Tabs defaultValue="mention" className="flex min-h-0 flex-1 flex-col">
+            <TabsList className="shrink-0">
               <TabsTrigger value="mention" className="flex items-center gap-1">
                 <AtSign className="h-3 w-3" />
                 Mentions
@@ -130,16 +131,16 @@ export function SlackFeed({ date }: SlackFeedProps) {
                 )}
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="mention">
+            <TabsContent value="mention" className="min-h-0 flex-1">
               <MessageList messages={mentionMessages} onMarkAsRead={markAsRead} />
             </TabsContent>
-            <TabsContent value="channel">
+            <TabsContent value="channel" className="min-h-0 flex-1">
               <MessageList messages={channelMessages} onMarkAsRead={markAsRead} />
             </TabsContent>
-            <TabsContent value="dm">
+            <TabsContent value="dm" className="min-h-0 flex-1">
               <MessageList messages={dmMessages} onMarkAsRead={markAsRead} />
             </TabsContent>
-            <TabsContent value="keyword">
+            <TabsContent value="keyword" className="min-h-0 flex-1">
               <MessageList messages={keywordMessages} onMarkAsRead={markAsRead} />
             </TabsContent>
           </Tabs>
@@ -161,7 +162,7 @@ function MessageList({
   }
 
   return (
-    <div className="h-[400px] overflow-y-auto">
+    <div className="h-full overflow-y-auto">
       <div className="space-y-3">
         {messages.map((message) => (
           <SlackMessageItem key={message.id} message={message} onMarkAsRead={onMarkAsRead} />

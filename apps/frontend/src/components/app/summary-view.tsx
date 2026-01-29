@@ -1,19 +1,22 @@
-import { RefreshCw } from "lucide-react";
+import type { FeedbackRating, Summary, SummaryIssueType } from "@repo/types";
+import { Minus, RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState } from "react";
+import { SummaryFeedbackDialog } from "@/components/app/summary-feedback-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useFeedbacks } from "@/hooks/use-feedbacks";
 import { useSummaries } from "@/hooks/use-summaries";
 import { formatTimeJST } from "@/lib/date";
 
 interface SummaryViewProps {
   date: string;
+  className?: string;
 }
 
-export function SummaryView({ date }: SummaryViewProps) {
+export function SummaryView({ date, className }: SummaryViewProps) {
   const {
     summaries: pomodoroSummaries,
     loading: pomodoroLoading,
@@ -33,7 +36,12 @@ export function SummaryView({ date }: SummaryViewProps) {
     refetch: refetchDaily,
   } = useSummaries(date, "daily");
   const { generateSummary } = useSummaries(date);
+  const { getFeedback, postFeedback } = useFeedbacks("summary", date);
   const [generating, setGenerating] = useState(false);
+  const [pendingFeedback, setPendingFeedback] = useState<{
+    summaryId: number;
+    rating: FeedbackRating;
+  } | null>(null);
 
   const handleRefresh = async () => {
     await Promise.all([refetchPomodoro(), refetchHourly(), refetchDaily()]);
@@ -48,8 +56,29 @@ export function SummaryView({ date }: SummaryViewProps) {
     }
   };
 
+  const handleFeedbackClick = (summaryId: number, rating: FeedbackRating) => {
+    setPendingFeedback({ summaryId, rating });
+  };
+
+  const handleFeedbackSubmit = async (data: {
+    issues?: SummaryIssueType[];
+    reason?: string;
+    correctedText?: string;
+  }) => {
+    if (pendingFeedback) {
+      await postFeedback({
+        targetId: pendingFeedback.summaryId,
+        rating: pendingFeedback.rating,
+        issues: data.issues,
+        reason: data.reason,
+        correctedText: data.correctedText,
+      });
+      setPendingFeedback(null);
+    }
+  };
+
   return (
-    <Card>
+    <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Summaries</CardTitle>
@@ -63,9 +92,9 @@ export function SummaryView({ date }: SummaryViewProps) {
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <Tabs defaultValue="daily">
-          <TabsList className="mb-4">
+      <CardContent className="flex min-h-0 flex-1 flex-col">
+        <Tabs defaultValue="daily" className="flex min-h-0 flex-1 flex-col">
+          <TabsList className="mb-2 shrink-0">
             <TabsTrigger value="daily">
               Daily
               {dailySummaries.length > 0 && (
@@ -92,7 +121,7 @@ export function SummaryView({ date }: SummaryViewProps) {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="daily">
+          <TabsContent value="daily" className="min-h-0 flex-1 overflow-auto">
             {dailyLoading ? (
               <Skeleton className="h-32 w-full" />
             ) : dailyError ? (
@@ -100,17 +129,21 @@ export function SummaryView({ date }: SummaryViewProps) {
             ) : dailySummaries.length === 0 ? (
               <p className="text-sm text-muted-foreground">No daily summary yet.</p>
             ) : (
-              <ScrollArea className="h-[300px]">
+              <div className="space-y-4">
                 {dailySummaries.map((summary) => (
-                  <div key={summary.id} className="prose prose-sm dark:prose-invert max-w-none">
-                    <pre className="whitespace-pre-wrap text-sm">{summary.content}</pre>
-                  </div>
+                  <SummaryItem
+                    key={summary.id}
+                    summary={summary}
+                    feedback={getFeedback(summary.id)?.rating ?? null}
+                    onFeedback={(rating) => handleFeedbackClick(summary.id, rating)}
+                    showTimeRange={false}
+                  />
                 ))}
-              </ScrollArea>
+              </div>
             )}
           </TabsContent>
 
-          <TabsContent value="hourly">
+          <TabsContent value="hourly" className="min-h-0 flex-1 overflow-auto">
             {hourlyLoading ? (
               <Skeleton className="h-32 w-full" />
             ) : hourlyError ? (
@@ -118,22 +151,21 @@ export function SummaryView({ date }: SummaryViewProps) {
             ) : hourlySummaries.length === 0 ? (
               <p className="text-sm text-muted-foreground">No hourly summaries yet.</p>
             ) : (
-              <ScrollArea className="h-[300px]">
-                <div className="space-y-4">
-                  {[...hourlySummaries].reverse().map((summary) => (
-                    <div key={summary.id} className="rounded-md border p-3">
-                      <p className="mb-1 text-xs font-medium text-muted-foreground">
-                        {formatTimeJST(summary.periodStart)} - {formatTimeJST(summary.periodEnd)}
-                      </p>
-                      <pre className="whitespace-pre-wrap text-sm">{summary.content}</pre>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
+              <div className="space-y-4">
+                {[...hourlySummaries].reverse().map((summary) => (
+                  <SummaryItem
+                    key={summary.id}
+                    summary={summary}
+                    feedback={getFeedback(summary.id)?.rating ?? null}
+                    onFeedback={(rating) => handleFeedbackClick(summary.id, rating)}
+                    showTimeRange
+                  />
+                ))}
+              </div>
             )}
           </TabsContent>
 
-          <TabsContent value="pomodoro">
+          <TabsContent value="pomodoro" className="min-h-0 flex-1 overflow-auto">
             {pomodoroLoading ? (
               <Skeleton className="h-32 w-full" />
             ) : pomodoroError ? (
@@ -141,22 +173,88 @@ export function SummaryView({ date }: SummaryViewProps) {
             ) : pomodoroSummaries.length === 0 ? (
               <p className="text-sm text-muted-foreground">No pomodoro summaries yet.</p>
             ) : (
-              <ScrollArea className="h-[300px]">
-                <div className="space-y-4">
-                  {[...pomodoroSummaries].reverse().map((summary) => (
-                    <div key={summary.id} className="rounded-md border p-3">
-                      <p className="mb-1 text-xs font-medium text-muted-foreground">
-                        {formatTimeJST(summary.periodStart)} - {formatTimeJST(summary.periodEnd)}
-                      </p>
-                      <pre className="whitespace-pre-wrap text-sm">{summary.content}</pre>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
+              <div className="space-y-4">
+                {[...pomodoroSummaries].reverse().map((summary) => (
+                  <SummaryItem
+                    key={summary.id}
+                    summary={summary}
+                    feedback={getFeedback(summary.id)?.rating ?? null}
+                    onFeedback={(rating) => handleFeedbackClick(summary.id, rating)}
+                    showTimeRange
+                  />
+                ))}
+              </div>
             )}
           </TabsContent>
         </Tabs>
       </CardContent>
+      {pendingFeedback && (
+        <SummaryFeedbackDialog
+          open={!!pendingFeedback}
+          rating={pendingFeedback.rating}
+          onSubmit={handleFeedbackSubmit}
+          onCancel={() => setPendingFeedback(null)}
+        />
+      )}
     </Card>
+  );
+}
+
+function SummaryItem({
+  summary,
+  feedback,
+  onFeedback,
+  showTimeRange,
+}: {
+  summary: Summary;
+  feedback: FeedbackRating | null;
+  onFeedback: (rating: FeedbackRating) => void;
+  showTimeRange: boolean;
+}) {
+  return (
+    <div className="rounded-md border p-3">
+      <div className="mb-1 flex items-center justify-between">
+        {showTimeRange ? (
+          <p className="text-xs font-medium text-muted-foreground">
+            {formatTimeJST(summary.periodStart)} - {formatTimeJST(summary.periodEnd)}
+          </p>
+        ) : (
+          <span />
+        )}
+        <div className="flex shrink-0 gap-1">
+          <Button
+            variant={feedback === "good" ? "default" : "ghost"}
+            size="icon"
+            className="h-6 w-6"
+            onClick={() => onFeedback("good")}
+            disabled={!!feedback}
+            title="Good"
+          >
+            <ThumbsUp className="h-3 w-3" />
+          </Button>
+          <Button
+            variant={feedback === "neutral" ? "secondary" : "ghost"}
+            size="icon"
+            className="h-6 w-6"
+            onClick={() => onFeedback("neutral")}
+            disabled={!!feedback}
+            title="普通"
+          >
+            <Minus className="h-3 w-3" />
+          </Button>
+          <Button
+            variant={feedback === "bad" ? "destructive" : "ghost"}
+            size="icon"
+            className="h-6 w-6"
+            onClick={() => onFeedback("bad")}
+            disabled={!!feedback}
+            title="Bad"
+          >
+            <ThumbsDown className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+      <pre className="whitespace-pre-wrap text-sm">{summary.content}</pre>
+    </div>
   );
 }

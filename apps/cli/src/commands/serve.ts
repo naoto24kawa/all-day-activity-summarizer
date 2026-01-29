@@ -6,6 +6,7 @@ import consola from "consola";
 import { startClaudeCodeSystem } from "../claude-code/scheduler.js";
 import type { AdasConfig } from "../config.js";
 import { loadConfig } from "../config.js";
+import { startGitHubSystem } from "../github/scheduler.js";
 import { createApp } from "../server/app.js";
 import { startSlackSystem } from "../slack/scheduler.js";
 import { startScheduler } from "../summarizer/scheduler.js";
@@ -92,6 +93,12 @@ export function registerServeCommand(program: Command): void {
       const stopClaudeCode = await startClaudeCodeSystem(db, config);
       if (stopClaudeCode) {
         consola.success("Claude Code integration started");
+      }
+
+      // Start GitHub system if enabled
+      const stopGitHub = await startGitHubSystem(db, config);
+      if (stopGitHub) {
+        consola.success("GitHub integration started");
       }
     });
 }

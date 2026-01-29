@@ -7,16 +7,19 @@ import { createBrowserRecordingRouter } from "./routes/browser-recording.js";
 import { createClaudeCodeSessionsRouter } from "./routes/claude-code-sessions.js";
 import { createEvaluatorLogsRouter } from "./routes/evaluator-logs.js";
 import { createFeedbacksRouter, createSegmentFeedbackRouter } from "./routes/feedbacks.js";
+import { createFeedbacksV2Router } from "./routes/feedbacks-v2.js";
+import { createGitHubCommentsRouter } from "./routes/github-comments.js";
+import { createGitHubItemsRouter } from "./routes/github-items.js";
 import { createMemosRouter } from "./routes/memos.js";
 import { createRecordingRouter } from "./routes/recording.js";
 import { createServerLogsRouter } from "./routes/server-logs.js";
 import { createSlackMessagesRouter } from "./routes/slack-messages.js";
 import { createSlackUsersRouter } from "./routes/slack-users.js";
-import { createSpeakersRouter } from "./routes/speakers.js";
 import { createStatusRouter } from "./routes/status.js";
 import { createStorageRouter } from "./routes/storage.js";
 import { createSummariesRouter } from "./routes/summaries.js";
 import { createTranscriptionsRouter } from "./routes/transcriptions.js";
+import { createVocabularyRouter } from "./routes/vocabulary.js";
 
 interface CreateAppOptions {
   micCapture?: AudioCapture;
@@ -36,13 +39,16 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/memos", createMemosRouter(db));
   app.route("/api/evaluator-logs", createEvaluatorLogsRouter(db));
   app.route("/api/feedbacks", createFeedbacksRouter(db));
+  app.route("/api/feedbacks/v2", createFeedbacksV2Router(db));
   app.route("/api/segments", createSegmentFeedbackRouter(db));
-  app.route("/api/speakers", createSpeakersRouter(db));
   app.route("/api/slack-messages", createSlackMessagesRouter(db));
   app.route("/api/slack-users", createSlackUsersRouter(db));
+  app.route("/api/github-items", createGitHubItemsRouter(db));
+  app.route("/api/github-comments", createGitHubCommentsRouter(db));
   app.route("/api/claude-code-sessions", createClaudeCodeSessionsRouter(db, options?.config));
   app.route("/api/server-logs", createServerLogsRouter(options?.config));
   app.route("/api/status", createStatusRouter(db));
+  app.route("/api/vocabulary", createVocabularyRouter(db));
 
   if (options?.micCapture || options?.speakerCapture) {
     app.route(

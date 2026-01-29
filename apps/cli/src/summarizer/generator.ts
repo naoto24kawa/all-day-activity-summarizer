@@ -269,7 +269,7 @@ export async function generatePomodoroSummary(
   }
 
   const activityText = buildActivityText(segments, memos, slackMessages, claudeSessions);
-  const prompt = buildHourlySummaryPrompt(activityText);
+  const prompt = await buildHourlySummaryPrompt(activityText, db);
   const content = await generateSummary(prompt);
   const segmentIds = segments.map((s) => s.id);
 
@@ -341,7 +341,7 @@ export async function generateHourlySummary(
       .map((s) => `### ${s.periodStart} - ${s.periodEnd}\n${s.content}`)
       .join("\n\n");
 
-    const prompt = buildHourlySummaryPrompt(summariesText);
+    const prompt = await buildHourlySummaryPrompt(summariesText, db);
     const content = await generateSummary(prompt);
     const allSegmentIds = pomodoroSummaries.flatMap((s) => JSON.parse(s.segmentIds) as number[]);
 
@@ -391,7 +391,7 @@ export async function generateHourlySummary(
   }
 
   const activityText = buildActivityText(segments, memos, slackMessages, claudeSessions);
-  const prompt = buildHourlySummaryPrompt(activityText);
+  const prompt = await buildHourlySummaryPrompt(activityText, db);
   const content = await generateSummary(prompt);
   const segmentIds = segments.map((s) => s.id);
 
@@ -449,7 +449,7 @@ export async function generateDailySummary(db: AdasDatabase, date: string): Prom
     .map((s) => `### ${s.periodStart} - ${s.periodEnd}\n${s.content}`)
     .join("\n\n");
 
-  const prompt = buildDailySummaryPrompt(summariesText);
+  const prompt = await buildDailySummaryPrompt(summariesText, db);
   const content = await generateSummary(prompt);
   const allSegmentIds = hourlySummaries.flatMap((s) => JSON.parse(s.segmentIds) as number[]);
 

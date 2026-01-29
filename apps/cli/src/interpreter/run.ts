@@ -1,3 +1,4 @@
+import { getFeedbackPromptSection } from "@repo/core";
 import type { createDatabase, TranscriptionSegment } from "@repo/db";
 import { schema } from "@repo/db";
 import consola from "consola";
@@ -22,6 +23,18 @@ export async function interpretSegments(
   let success = 0;
   let fail = 0;
   let processed = 0;
+
+  // フィードバック例を事前に取得 (全セグメントで共有)
+  let feedbackExamples: string | undefined;
+  try {
+    const examples = await getFeedbackPromptSection(db, "interpret");
+    if (examples) {
+      feedbackExamples = examples;
+      consola.info(`[interpret] Loaded feedback examples (${examples.length} chars)`);
+    }
+  } catch (err) {
+    consola.debug("[interpret] Failed to load feedback examples:", err);
+  }
 
   const queue = [...segments];
 
@@ -55,6 +68,7 @@ export async function interpretSegments(
             text: segment.transcription,
             speaker: segment.speaker ?? undefined,
             context,
+            feedbackExamples,
           }),
           signal: controller.signal,
         });

@@ -1,22 +1,34 @@
 import { getPromptFilePath, runClaude } from "@repo/core";
-import type { RpcInterpretRequest, RpcInterpretResponse } from "@repo/types";
+import type { RpcInterpretResponse } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
 
 const INTERPRET_MODEL = "sonnet";
+
+interface InterpretRequestBody {
+  text: string;
+  speaker?: string;
+  context?: string;
+  feedbackExamples?: string;
+}
 
 export function createInterpretRouter() {
   const router = new Hono();
 
   router.post("/", async (c) => {
     try {
-      const body = await c.req.json<RpcInterpretRequest>();
+      const body = await c.req.json<InterpretRequestBody>();
 
       if (!body.text) {
         return c.json({ error: "text is required" }, 400);
       }
 
-      const result = await interpretWithClaude(body.text, body.speaker, body.context);
+      const result = await interpretWithClaude(
+        body.text,
+        body.speaker,
+        body.context,
+        body.feedbackExamples,
+      );
       return c.json(result);
     } catch (err) {
       consola.error("[worker/interpret] Error:", err);
@@ -31,9 +43,11 @@ async function interpretWithClaude(
   text: string,
   speaker?: string,
   context?: string,
+  feedbackExamples?: string,
 ): Promise<RpcInterpretResponse> {
   const speakerInfo = speaker ? `\n話者: ${speaker}` : "";
   const contextInfo = context ? `\n前後の文脈:\n${context}` : "";
+  const feedbackSection = feedbackExamples ?? "";
 
   const prompt = `音声認識エンジンが出力した生テキストを、読みやすく自然な日本語に整えてください。
 
@@ -45,7 +59,7 @@ async function interpretWithClaude(
 - 元の発言の意味や意図を変えないこと
 - 情報を追加・削除しないこと
 - 整えたテキストのみを出力すること(説明や引用符は不要)
-${speakerInfo}${contextInfo}
+${speakerInfo}${contextInfo}${feedbackSection}
 
 文字起こしテキスト:
 ${text}`;
