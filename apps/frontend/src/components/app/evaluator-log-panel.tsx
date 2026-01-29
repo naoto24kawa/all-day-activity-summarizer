@@ -1,3 +1,4 @@
+import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ interface EvaluatorLogPanelProps {
 }
 
 export function EvaluatorLogPanel({ date }: EvaluatorLogPanelProps) {
-  const { logs, loading, error } = useEvaluatorLogs(date);
+  const { logs, loading, error, refetch } = useEvaluatorLogs(date);
   const [filter, setFilter] = useState<Filter>("all");
 
   const sorted = [...logs].sort(
@@ -54,13 +55,16 @@ export function EvaluatorLogPanel({ date }: EvaluatorLogPanelProps) {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>
           実行ログ
           <Badge variant="secondary" className="ml-2">
             {logs.length}
           </Badge>
         </CardTitle>
+        <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
+          <RefreshCw className="h-4 w-4" />
+        </Button>
       </CardHeader>
       <CardContent>
         <div className="mb-3 flex gap-1">

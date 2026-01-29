@@ -1,4 +1,4 @@
-import { HelpCircle, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { HelpCircle, Mic, MicOff, RefreshCw, Volume2, VolumeX } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { LevelMeter } from "./level-meter";
 import { ScreenShareGuide } from "./screen-share-guide";
 
 export function StatusPanel() {
-  const { status, error, loading } = useStatus();
+  const { status, error, loading, refetch } = useStatus();
   const { micRecording, speakerRecording, togglingMic, togglingSpeaker, toggleMic, toggleSpeaker } =
     useRecording();
   const { levels } = useAudioLevels({
@@ -90,11 +90,14 @@ export function StatusPanel() {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           Status
           <Badge variant="default">Online</Badge>
         </CardTitle>
+        <Button variant="ghost" size="icon" onClick={refetch} title="Refresh">
+          <RefreshCw className="h-4 w-4" />
+        </Button>
       </CardHeader>
       <CardContent className="space-y-4">
         <dl className="grid grid-cols-2 gap-2 text-sm">

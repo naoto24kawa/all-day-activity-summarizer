@@ -1,3 +1,4 @@
+import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,19 +17,26 @@ export function SummaryView({ date }: SummaryViewProps) {
     summaries: pomodoroSummaries,
     loading: pomodoroLoading,
     error: pomodoroError,
+    refetch: refetchPomodoro,
   } = useSummaries(date, "pomodoro");
   const {
     summaries: hourlySummaries,
     loading: hourlyLoading,
     error: hourlyError,
+    refetch: refetchHourly,
   } = useSummaries(date, "hourly");
   const {
     summaries: dailySummaries,
     loading: dailyLoading,
     error: dailyError,
+    refetch: refetchDaily,
   } = useSummaries(date, "daily");
   const { generateSummary } = useSummaries(date);
   const [generating, setGenerating] = useState(false);
+
+  const handleRefresh = async () => {
+    await Promise.all([refetchPomodoro(), refetchHourly(), refetchDaily()]);
+  };
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -44,9 +52,14 @@ export function SummaryView({ date }: SummaryViewProps) {
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>Summaries</CardTitle>
-          <Button size="sm" variant="outline" onClick={handleGenerate} disabled={generating}>
-            {generating ? "Generating..." : "Generate"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={handleGenerate} disabled={generating}>
+              {generating ? "Generating..." : "Generate"}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={handleRefresh} title="Refresh">
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>

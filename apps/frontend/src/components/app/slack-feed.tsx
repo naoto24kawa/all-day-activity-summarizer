@@ -5,7 +5,15 @@
  */
 
 import type { SlackMessage } from "@repo/types";
-import { AtSign, Check, CheckCheck, ExternalLink, Hash, MessageSquare } from "lucide-react";
+import {
+  AtSign,
+  Check,
+  CheckCheck,
+  ExternalLink,
+  Hash,
+  MessageSquare,
+  RefreshCw,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +26,7 @@ interface SlackFeedProps {
 }
 
 export function SlackFeed({ date }: SlackFeedProps) {
-  const { messages, loading, error, markAsRead, markAllAsRead } = useSlackMessages(date);
+  const { messages, loading, error, refetch, markAsRead, markAllAsRead } = useSlackMessages(date);
   const { counts } = useSlackUnreadCounts(date);
 
   if (loading) {
@@ -64,12 +72,17 @@ export function SlackFeed({ date }: SlackFeedProps) {
             </Badge>
           )}
         </CardTitle>
-        {counts.total > 0 && (
-          <Button variant="outline" size="sm" onClick={() => markAllAsRead({ date })}>
-            <CheckCheck className="mr-1 h-3 w-3" />
-            Mark all read
+        <div className="flex items-center gap-2">
+          {counts.total > 0 && (
+            <Button variant="outline" size="sm" onClick={() => markAllAsRead({ date })}>
+              <CheckCheck className="mr-1 h-3 w-3" />
+              Mark all read
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
+            <RefreshCw className="h-4 w-4" />
           </Button>
-        )}
+        </div>
       </CardHeader>
       <CardContent>
         {messages.length === 0 ? (

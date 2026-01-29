@@ -1,3 +1,5 @@
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useTranscriptions } from "@/hooks/use-transcriptions";
@@ -7,7 +9,7 @@ interface TimelineProps {
 }
 
 export function Timeline({ date }: TimelineProps) {
-  const { segments } = useTranscriptions(date);
+  const { segments, refetch } = useTranscriptions(date);
 
   const START_HOUR = 9;
   const END_HOUR = 19;
@@ -30,8 +32,11 @@ export function Timeline({ date }: TimelineProps) {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Activity Timeline</CardTitle>
+        <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
+          <RefreshCw className="h-4 w-4" />
+        </Button>
       </CardHeader>
       <CardContent>
         <div className="space-y-1">

@@ -1,5 +1,5 @@
 import type { TranscriptionSegment } from "@repo/types";
-import { ThumbsDown, ThumbsUp } from "lucide-react";
+import { RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState } from "react";
 import { FeedbackDialog } from "@/components/app/feedback-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,7 @@ interface ActivityFeedProps {
 }
 
 export function ActivityFeed({ date }: ActivityFeedProps) {
-  const { segments, loading, error } = useTranscriptions(date);
+  const { segments, loading, error, refetch } = useTranscriptions(date);
   const { getFeedback, postFeedback } = useSegmentFeedbacks(date);
   const [pendingFeedback, setPendingFeedback] = useState<{
     segmentId: number;
@@ -66,13 +66,16 @@ export function ActivityFeed({ date }: ActivityFeedProps) {
   return (
     <>
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>
             Activity Feed
             <Badge variant="secondary" className="ml-2">
               {segments.length}
             </Badge>
           </CardTitle>
+          <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
+            <RefreshCw className="h-4 w-4" />
+          </Button>
         </CardHeader>
         <CardContent>
           {segments.length === 0 ? (
