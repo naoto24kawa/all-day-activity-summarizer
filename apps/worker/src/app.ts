@@ -4,6 +4,7 @@ import { timingMiddleware } from "./middleware/timing.js";
 import { createEvaluateRouter } from "./routes/evaluate.js";
 import { createHealthRouter } from "./routes/health.js";
 import { createInterpretRouter } from "./routes/interpret.js";
+import { createLogsRouter } from "./routes/logs.js";
 import { createSummarizeRouter } from "./routes/summarize.js";
 import { createTranscribeRouter } from "./routes/transcribe.js";
 
@@ -17,6 +18,7 @@ export function createWorkerApp() {
   app.route("/rpc/summarize", createSummarizeRouter());
   app.route("/rpc/evaluate", createEvaluateRouter());
   app.route("/rpc/interpret", createInterpretRouter());
+  app.route("/rpc/logs", createLogsRouter());
   app.route("/rpc/health", createHealthRouter());
 
   return app;

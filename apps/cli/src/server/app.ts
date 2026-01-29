@@ -39,7 +39,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/speakers", createSpeakersRouter(db));
   app.route("/api/slack-messages", createSlackMessagesRouter(db));
   app.route("/api/claude-code-sessions", createClaudeCodeSessionsRouter(db, options?.config));
-  app.route("/api/server-logs", createServerLogsRouter());
+  app.route("/api/server-logs", createServerLogsRouter(options?.config));
   app.route("/api/status", createStatusRouter(db));
 
   if (options?.micCapture || options?.speakerCapture) {
