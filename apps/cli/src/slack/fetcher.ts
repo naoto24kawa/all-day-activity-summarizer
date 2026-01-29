@@ -108,14 +108,23 @@ async function resolveUserMentions(
 }
 
 /**
- * Convert Slack timestamp to Date string (YYYY-MM-DD)
+ * Convert Slack timestamp to JST Date object
+ */
+function tsToJstDate(ts: string): Date {
+  const [seconds] = ts.split(".");
+  const utcMs = Number(seconds) * 1000;
+  // JST = UTC + 9 hours
+  return new Date(utcMs + 9 * 60 * 60 * 1000);
+}
+
+/**
+ * Convert Slack timestamp to Date string (YYYY-MM-DD) in JST
  */
 function tsToDateString(ts: string): string {
-  const [seconds] = ts.split(".");
-  const date = new Date(Number(seconds) * 1000);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const jstDate = tsToJstDate(ts);
+  const year = jstDate.getUTCFullYear();
+  const month = String(jstDate.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(jstDate.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 

@@ -12,6 +12,35 @@ import { generateSummary, getModelName } from "./client.js";
 import { buildDailySummaryPrompt, buildHourlySummaryPrompt } from "./prompts.js";
 
 // ---------------------------------------------------------------------------
+// Time utilities (JST)
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert Slack messageTs to JST time string (HH:MM, 24-hour format)
+ */
+function slackTsToJstTime(ts: string): string {
+  const [seconds] = ts.split(".");
+  const utcMs = Number(seconds) * 1000;
+  // JST = UTC + 9 hours
+  const jstDate = new Date(utcMs + 9 * 60 * 60 * 1000);
+  const hours = String(jstDate.getUTCHours()).padStart(2, "0");
+  const minutes = String(jstDate.getUTCMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+/**
+ * Convert ISO8601 timestamp to JST time string (HH:MM, 24-hour format)
+ */
+function isoToJstTime(isoString: string): string {
+  const date = new Date(isoString);
+  // JST = UTC + 9 hours
+  const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const hours = String(jstDate.getUTCHours()).padStart(2, "0");
+  const minutes = String(jstDate.getUTCMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+// ---------------------------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------------------------
 
@@ -28,16 +57,23 @@ function buildActivityText(
   const sections: string[] = [];
 
   // 1. 音声文字起こし + メモ
-  const segmentEntries = segments.map((s) => ({
-    time: s.startTime,
-    text: s.speaker
-      ? `[${s.startTime}] ${s.speaker}: ${s.transcription}`
-      : `[${s.startTime}] ${s.transcription}`,
-  }));
-  const memoEntries = memos.map((m) => ({
-    time: m.createdAt,
-    text: `[メモ] [${m.createdAt}] ${m.content}`,
-  }));
+  const segmentEntries = segments.map((s) => {
+    // startTime is already in JST format (YYYY-MM-DDTHH:MM:SS)
+    const time = s.startTime.split("T")[1]?.slice(0, 5) || "";
+    return {
+      time: s.startTime,
+      text: s.speaker
+        ? `[${time}] ${s.speaker}: ${s.transcription}`
+        : `[${time}] ${s.transcription}`,
+    };
+  });
+  const memoEntries = memos.map((m) => {
+    const time = isoToJstTime(m.createdAt);
+    return {
+      time: m.createdAt,
+      text: `[メモ] [${time}] ${m.content}`,
+    };
+  });
   const transcriptionData = [...segmentEntries, ...memoEntries]
     .sort((a, b) => a.time.localeCompare(b.time))
     .map((e) => e.text)
@@ -54,7 +90,7 @@ function buildActivityText(
         const typeLabel =
           m.messageType === "mention" ? "メンション" : m.messageType === "dm" ? "DM" : "チャネル";
         const channel = m.channelName || m.channelId;
-        const time = m.createdAt.split("T")[1]?.slice(0, 5) || "";
+        const time = slackTsToJstTime(m.messageTs);
         return `[${time}] [${typeLabel}] #${channel} ${m.userName || m.userId}: ${m.text}`;
       })
       .join("\n");
@@ -65,12 +101,12 @@ function buildActivityText(
   if (claudeSessions.length > 0) {
     const claudeText = claudeSessions
       .map((s) => {
-        const startTime = s.startTime?.split("T")[1]?.slice(0, 5) || "??:??";
+        const time = s.startTime ? isoToJstTime(s.startTime) : "??:??";
         const project = s.projectName || s.projectPath.split("/").pop() || "unknown";
         const summary = s.summary
           ? `: ${s.summary.slice(0, 100)}${s.summary.length > 100 ? "..." : ""}`
           : "";
-        return `[${startTime}] ${project} (user: ${s.userMessageCount}, tool: ${s.toolUseCount})${summary}`;
+        return `[${time}] ${project} (user: ${s.userMessageCount}, tool: ${s.toolUseCount})${summary}`;
       })
       .join("\n");
     sections.push(`### Claude Code\n${claudeText}`);
