@@ -166,7 +166,7 @@ export function readLogFile(
     }
   }
 
-  // 新しい順にソートしてからページング
-  entries.reverse();
+  // タイムスタンプで新しい順にソートしてからページング
+  entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   return entries.slice(offset, offset + limit);
 }
