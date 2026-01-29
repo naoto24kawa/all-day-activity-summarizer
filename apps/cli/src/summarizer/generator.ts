@@ -1,4 +1,10 @@
-import type { AdasDatabase, Memo, TranscriptionSegment } from "@repo/db";
+import type {
+  AdasDatabase,
+  ClaudeCodeSession,
+  Memo,
+  SlackMessage,
+  TranscriptionSegment,
+} from "@repo/db";
 import { schema } from "@repo/db";
 import { and, between, eq, gte, lte } from "drizzle-orm";
 import { generateSummary, getModelName } from "./client.js";
@@ -9,14 +15,18 @@ import { buildDailySummaryPrompt, buildHourlySummaryPrompt } from "./prompts.js"
 // ---------------------------------------------------------------------------
 
 /**
- * 文字起こしセグメントとメモを時系列でマージして、
+ * 活動データ (セグメント、メモ、Slack、Claude Code) を時系列でマージして、
  * プロンプト用のテキストを生成する。
- *
- * @param segments - 文字起こしセグメントの配列
- * @param memos - メモの配列
- * @returns マージされたテキスト
  */
-function buildTranscriptionText(segments: TranscriptionSegment[], memos: Memo[]): string {
+function buildActivityText(
+  segments: TranscriptionSegment[],
+  memos: Memo[],
+  slackMessages: SlackMessage[],
+  claudeSessions: ClaudeCodeSession[],
+): string {
+  const sections: string[] = [];
+
+  // 1. 音声文字起こし + メモ
   const segmentEntries = segments.map((s) => ({
     time: s.startTime,
     text: s.speaker
@@ -27,21 +37,63 @@ function buildTranscriptionText(segments: TranscriptionSegment[], memos: Memo[])
     time: m.createdAt,
     text: `[メモ] [${m.createdAt}] ${m.content}`,
   }));
-  return [...segmentEntries, ...memoEntries]
+  const transcriptionData = [...segmentEntries, ...memoEntries]
     .sort((a, b) => a.time.localeCompare(b.time))
     .map((e) => e.text)
     .join("\n\n");
+
+  if (transcriptionData) {
+    sections.push(`### 音声・メモ\n${transcriptionData}`);
+  }
+
+  // 2. Slack メッセージ
+  if (slackMessages.length > 0) {
+    const slackText = slackMessages
+      .map((m) => {
+        const typeLabel =
+          m.messageType === "mention" ? "メンション" : m.messageType === "dm" ? "DM" : "チャネル";
+        const channel = m.channelName || m.channelId;
+        const time = m.createdAt.split("T")[1]?.slice(0, 5) || "";
+        return `[${time}] [${typeLabel}] #${channel} ${m.userName || m.userId}: ${m.text}`;
+      })
+      .join("\n");
+    sections.push(`### Slack\n${slackText}`);
+  }
+
+  // 3. Claude Code セッション
+  if (claudeSessions.length > 0) {
+    const claudeText = claudeSessions
+      .map((s) => {
+        const startTime = s.startTime?.split("T")[1]?.slice(0, 5) || "??:??";
+        const project = s.projectName || s.projectPath.split("/").pop() || "unknown";
+        const summary = s.summary
+          ? `: ${s.summary.slice(0, 100)}${s.summary.length > 100 ? "..." : ""}`
+          : "";
+        return `[${startTime}] ${project} (user: ${s.userMessageCount}, tool: ${s.toolUseCount})${summary}`;
+      })
+      .join("\n");
+    sections.push(`### Claude Code\n${claudeText}`);
+  }
+
+  return sections.join("\n\n");
+}
+
+interface ActivityData {
+  segments: TranscriptionSegment[];
+  memos: Memo[];
+  slackMessages: SlackMessage[];
+  claudeSessions: ClaudeCodeSession[];
 }
 
 /**
- * 指定期間のセグメントとメモを取得する。
+ * 指定期間の活動データ (セグメント、メモ、Slack、Claude Code) を取得する。
  */
-function fetchSegmentsAndMemos(
+function fetchActivityData(
   db: AdasDatabase,
   date: string,
   startTime: string,
   endTime: string,
-): { segments: TranscriptionSegment[]; memos: Memo[] } {
+): ActivityData {
   const segments = db
     .select()
     .from(schema.transcriptionSegments)
@@ -65,7 +117,31 @@ function fetchSegmentsAndMemos(
     )
     .all();
 
-  return { segments, memos };
+  const slackMessages = db
+    .select()
+    .from(schema.slackMessages)
+    .where(
+      and(
+        eq(schema.slackMessages.date, date),
+        gte(schema.slackMessages.createdAt, startTime),
+        lte(schema.slackMessages.createdAt, endTime),
+      ),
+    )
+    .all();
+
+  const claudeSessions = db
+    .select()
+    .from(schema.claudeCodeSessions)
+    .where(
+      and(
+        eq(schema.claudeCodeSessions.date, date),
+        gte(schema.claudeCodeSessions.startTime, startTime),
+        lte(schema.claudeCodeSessions.startTime, endTime),
+      ),
+    )
+    .all();
+
+  return { segments, memos, slackMessages, claudeSessions };
 }
 
 /** period index (0-47) から startTime/endTime を返す */
@@ -108,14 +184,25 @@ export async function generatePomodoroSummary(
   startTime: string,
   endTime: string,
 ): Promise<string | null> {
-  const { segments, memos } = fetchSegmentsAndMemos(db, date, startTime, endTime);
+  const { segments, memos, slackMessages, claudeSessions } = fetchActivityData(
+    db,
+    date,
+    startTime,
+    endTime,
+  );
 
-  if (segments.length === 0 && memos.length === 0) {
+  const hasData =
+    segments.length > 0 ||
+    memos.length > 0 ||
+    slackMessages.length > 0 ||
+    claudeSessions.length > 0;
+
+  if (!hasData) {
     return null;
   }
 
-  const transcription = buildTranscriptionText(segments, memos);
-  const prompt = buildHourlySummaryPrompt(transcription);
+  const activityText = buildActivityText(segments, memos, slackMessages, claudeSessions);
+  const prompt = buildHourlySummaryPrompt(activityText);
   const content = await generateSummary(prompt);
   const segmentIds = segments.map((s) => s.id);
 
@@ -218,15 +305,26 @@ export async function generateHourlySummary(
     return content;
   }
 
-  // Fallback: generate directly from transcription segments
-  const { segments, memos } = fetchSegmentsAndMemos(db, date, startTime, endTime);
+  // Fallback: generate directly from activity data
+  const { segments, memos, slackMessages, claudeSessions } = fetchActivityData(
+    db,
+    date,
+    startTime,
+    endTime,
+  );
 
-  if (segments.length === 0 && memos.length === 0) {
+  const hasData =
+    segments.length > 0 ||
+    memos.length > 0 ||
+    slackMessages.length > 0 ||
+    claudeSessions.length > 0;
+
+  if (!hasData) {
     return null;
   }
 
-  const transcription = buildTranscriptionText(segments, memos);
-  const prompt = buildHourlySummaryPrompt(transcription);
+  const activityText = buildActivityText(segments, memos, slackMessages, claudeSessions);
+  const prompt = buildHourlySummaryPrompt(activityText);
   const content = await generateSummary(prompt);
   const segmentIds = segments.map((s) => s.id);
 

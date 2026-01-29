@@ -71,8 +71,10 @@ def main() -> None:
 
     import whisperx
 
-    device = "cpu"
-    compute_type = "int8"
+    # GPU が使える場合は CUDA を使用 (大幅に高速化)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    compute_type = "float16" if device == "cuda" else "int8"
+    print(f"Using device: {device} (compute_type: {compute_type})", file=sys.stderr)
 
     # 1. Transcribe with whisperX
     model = whisperx.load_model(args.model, device, compute_type=compute_type, language=args.language)
