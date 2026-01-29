@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { getPromptFilePath } from "@repo/core";
-import { injectFeedbackExamples } from "@repo/core/feedback";
 import type { AdasDatabase } from "@repo/db";
+import { injectFeedbackExamples } from "../feedback-injector.js";
 
 function readPrompt(name: string): string {
   return readFileSync(getPromptFilePath(name), "utf-8");

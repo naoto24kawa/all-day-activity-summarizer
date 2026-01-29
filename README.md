@@ -420,7 +420,7 @@ Few-shot learning は、少数の例をプロンプトに含めることで AI �
 
 | ファイル | 役割 |
 |---------|------|
-| `packages/core/src/feedback-injector.ts` | フィードバック取得 + プロンプト挿入ロジック |
+| `apps/cli/src/feedback-injector.ts` | フィードバック取得 + プロンプト挿入ロジック |
 | `apps/cli/src/summarizer/prompts.ts` | summarize プロンプト構築 (フィードバック挿入対応) |
 | `apps/cli/src/interpreter/run.ts` | interpret 実行 (フィードバック例を Worker に渡す) |
 | `apps/worker/src/routes/interpret.ts` | interpret RPC (フィードバック例をプロンプトに追加) |

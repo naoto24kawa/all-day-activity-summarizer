@@ -1,9 +1,9 @@
-import { getFeedbackPromptSection } from "@repo/core/feedback";
 import type { createDatabase, TranscriptionSegment } from "@repo/db";
 import { schema } from "@repo/db";
 import consola from "consola";
 import { eq } from "drizzle-orm";
 import type { loadConfig } from "../config.js";
+import { getFeedbackPromptSection } from "../feedback-injector.js";
 
 const CONCURRENCY = 3;
 
