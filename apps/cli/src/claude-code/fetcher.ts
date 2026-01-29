@@ -26,17 +26,20 @@ function extractDateString(timestamp: string | null): string {
 /**
  * Get the first user message as summary
  */
-function extractSummary(messages: Array<{ role: string; content: string }>): string | null {
-  const firstUserMessage = messages.find((m) => m.role === "user");
+function extractSummary(messages: Array<{ role: string; text: string }>): string | null {
+  // Find first non-empty user message
+  const firstUserMessage = messages.find(
+    (m) => m.role === "user" && m.text && m.text.trim().length > 0,
+  );
   if (!firstUserMessage) {
     return null;
   }
   // Truncate to 200 chars
-  const content = firstUserMessage.content;
-  if (content.length > 200) {
-    return `${content.slice(0, 197)}...`;
+  const text = firstUserMessage.text;
+  if (text.length > 200) {
+    return `${text.slice(0, 197)}...`;
   }
-  return content;
+  return text;
 }
 
 /**
@@ -94,7 +97,7 @@ export async function fetchProjectSessions(
 
   for (const sessionInfo of sessions) {
     try {
-      const detail = await client.getSessionDetail(projectPath, sessionInfo.sessionId);
+      const detail = await client.getSessionDetail(projectPath, sessionInfo.id);
       fetched++;
 
       const date = extractDateString(detail.summary.startTime);
@@ -102,7 +105,7 @@ export async function fetchProjectSessions(
 
       const inserted = upsertSession(db, {
         date,
-        sessionId: sessionInfo.sessionId,
+        sessionId: sessionInfo.id,
         projectPath,
         projectName,
         startTime: detail.summary.startTime,
@@ -117,7 +120,7 @@ export async function fetchProjectSessions(
         stored++;
       }
     } catch (error) {
-      consola.error(`[ClaudeCode] Failed to fetch session ${sessionInfo.sessionId}:`, error);
+      consola.error(`[ClaudeCode] Failed to fetch session ${sessionInfo.id}:`, error);
     }
   }
 

@@ -14,12 +14,13 @@ export interface ClaudeCodeProject {
 }
 
 export interface ClaudeCodeSessionInfo {
-  sessionId: string;
-  updatedAt: string;
+  id: string;
+  modifiedAt: string;
 }
 
 export interface ClaudeCodeSessionDetail {
   sessionId: string;
+  projectPath: string;
   summary: {
     userMessageCount: number;
     assistantMessageCount: number;
@@ -29,9 +30,8 @@ export interface ClaudeCodeSessionDetail {
   };
   messages: Array<{
     role: "user" | "assistant";
-    content: string;
+    text: string;
     timestamp?: string;
-    toolUse?: Array<{ name: string }>;
   }>;
 }
 
@@ -165,6 +165,10 @@ export class ClaudeCodeClient {
         throw new Error("No text content in response");
       }
 
+      // Handle both stringified JSON and already-parsed objects
+      if (typeof textContent.text === "object") {
+        return textContent.text as ClaudeCodeSessionDetail;
+      }
       return JSON.parse(textContent.text);
     } catch (error) {
       consola.error(`[ClaudeCode] Failed to get session detail for ${sessionId}:`, error);
