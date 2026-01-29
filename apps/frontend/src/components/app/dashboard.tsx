@@ -24,9 +24,8 @@ export function Dashboard() {
         />
       </div>
 
-      <StatusPanel />
-
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-3">
+        <StatusPanel />
         <Timeline date={date} />
         <SummaryView date={date} />
       </div>
