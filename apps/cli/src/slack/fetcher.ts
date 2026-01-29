@@ -27,6 +27,45 @@ function matchesExcludePattern(name: string, patterns: string[]): boolean {
 }
 
 /**
+ * Resolve user mentions in message text
+ * Converts <@U12345678> format to @username format
+ */
+async function resolveUserMentions(
+  client: SlackClient,
+  text: string | null | undefined,
+): Promise<string | null> {
+  if (!text) {
+    return text ?? null;
+  }
+
+  // Find all user mentions in the format <@UXXXXXXXXX>
+  const mentionPattern = /<@(U[A-Z0-9]+)>/g;
+  const matches = text.matchAll(mentionPattern);
+  const userIds = [...new Set([...matches].map((m) => m[1]))];
+
+  if (userIds.length === 0) {
+    return text;
+  }
+
+  // Resolve all user IDs to names
+  const userMap = new Map<string, string>();
+  for (const userId of userIds) {
+    const userInfo = await client.getUserInfo(userId);
+    if (userInfo) {
+      userMap.set(userId, userInfo.real_name || userInfo.name);
+    }
+  }
+
+  // Replace mentions with names
+  let resolvedText = text;
+  for (const [userId, userName] of userMap) {
+    resolvedText = resolvedText.replace(new RegExp(`<@${userId}>`, "g"), `@${userName}`);
+  }
+
+  return resolvedText;
+}
+
+/**
  * Convert Slack timestamp to Date string (YYYY-MM-DD)
  */
 function tsToDateString(ts: string): string {
@@ -120,6 +159,9 @@ export async function fetchMentions(
         // Get user info
         const userInfo = match.user ? await client.getUserInfo(match.user) : null;
 
+        // Resolve user mentions in text
+        const resolvedText = await resolveUserMentions(client, match.text);
+
         const inserted = insertMessageIfNotExists(db, {
           date: dateStr,
           messageTs: match.ts,
@@ -128,7 +170,7 @@ export async function fetchMentions(
           userId: match.user || "unknown",
           userName: userInfo?.real_name || userInfo?.name || null,
           messageType: "mention",
-          text: match.text,
+          text: resolvedText,
           threadTs: match.thread_ts || null,
           permalink: match.permalink,
           isRead: false,
@@ -194,6 +236,9 @@ export async function fetchKeywords(
         const dateStr = tsToDateString(match.ts);
         const userInfo = match.user ? await client.getUserInfo(match.user) : null;
 
+        // Resolve user mentions in text
+        const resolvedText = await resolveUserMentions(client, match.text);
+
         const inserted = insertMessageIfNotExists(db, {
           date: dateStr,
           messageTs: match.ts,
@@ -202,7 +247,7 @@ export async function fetchKeywords(
           userId: match.user || "unknown",
           userName: userInfo?.real_name || userInfo?.name || null,
           messageType: "keyword",
-          text: match.text,
+          text: resolvedText,
           threadTs: match.thread_ts || null,
           permalink: match.permalink,
           isRead: false,
@@ -260,6 +305,9 @@ async function fetchThreadReplies(
       const userInfo = await client.getUserInfo(message.user);
       const permalink = await client.getPermalink(channelId, message.ts);
 
+      // Resolve user mentions in text
+      const resolvedText = await resolveUserMentions(client, message.text);
+
       const inserted = insertMessageIfNotExists(db, {
         date: dateStr,
         messageTs: message.ts,
@@ -268,7 +316,7 @@ async function fetchThreadReplies(
         userId: message.user,
         userName: userInfo?.real_name || userInfo?.name || null,
         messageType: "channel",
-        text: message.text,
+        text: resolvedText,
         threadTs: message.thread_ts || null,
         permalink,
         isRead: false,
@@ -328,6 +376,9 @@ export async function fetchChannel(
       // Get permalink
       const permalink = await client.getPermalink(channelId, message.ts);
 
+      // Resolve user mentions in text
+      const resolvedText = await resolveUserMentions(client, message.text);
+
       const inserted = insertMessageIfNotExists(db, {
         date: dateStr,
         messageTs: message.ts,
@@ -336,7 +387,7 @@ export async function fetchChannel(
         userId: message.user,
         userName: userInfo?.real_name || userInfo?.name || null,
         messageType: "channel",
-        text: message.text,
+        text: resolvedText,
         threadTs: message.thread_ts || null,
         permalink,
         isRead: false,
@@ -406,6 +457,9 @@ export async function fetchDM(
       // Get permalink
       const permalink = await client.getPermalink(channelId, message.ts);
 
+      // Resolve user mentions in text
+      const resolvedText = await resolveUserMentions(client, message.text);
+
       const inserted = insertMessageIfNotExists(db, {
         date: dateStr,
         messageTs: message.ts,
@@ -414,7 +468,7 @@ export async function fetchDM(
         userId: message.user,
         userName: userInfo?.real_name || userInfo?.name || null,
         messageType: "dm",
-        text: message.text,
+        text: resolvedText,
         threadTs: message.thread_ts || null,
         permalink,
         isRead: false,
