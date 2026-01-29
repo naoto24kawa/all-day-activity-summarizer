@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { setupFileLogger } from "@repo/core";
 import { createDatabase } from "@repo/db";
 import type { Command } from "commander";
 import consola from "consola";
@@ -8,6 +9,9 @@ import { loadConfig } from "../config.js";
 import { createApp } from "../server/app.js";
 import { startSlackSystem } from "../slack/scheduler.js";
 import { startScheduler } from "../summarizer/scheduler.js";
+
+// ファイルログを有効化
+setupFileLogger("serve");
 
 /**
  * Worker への接続確認を行う

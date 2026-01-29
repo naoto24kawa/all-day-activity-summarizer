@@ -7,6 +7,7 @@ import { ClaudeCodeFeed } from "./claude-code-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
 import { MemoPanel } from "./memo-panel";
 import { MonitoringPanel } from "./monitoring-panel";
+import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
 import { SpeakerAssignPanel } from "./speaker-assign-panel";
 import { StatusPanel } from "./status-panel";
@@ -57,8 +58,10 @@ export function Dashboard() {
               <ActivityFeed date={date} />
               <MemoPanel date={date} />
             </div>
-            <SlackFeed date={date} />
-            <ClaudeCodeFeed date={date} />
+            <div className="grid gap-6 lg:grid-cols-2">
+              <SlackFeed date={date} />
+              <ClaudeCodeFeed date={date} />
+            </div>
           </div>
         </TabsContent>
         <TabsContent value="timeline">
@@ -73,7 +76,8 @@ export function Dashboard() {
           </div>
         </TabsContent>
         <TabsContent value="logs">
-          <div className="pt-4">
+          <div className="space-y-6 pt-4">
+            <ServerLogsPanel date={date} />
             <EvaluatorLogPanel date={date} />
           </div>
         </TabsContent>
