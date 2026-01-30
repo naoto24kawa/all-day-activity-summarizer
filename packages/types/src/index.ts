@@ -16,6 +16,8 @@ export type {
   Feedback,
   FeedbackRating,
   FeedbackTargetType,
+  GenerateProfileSuggestionsRequest,
+  GenerateProfileSuggestionsResponse,
   GenerateSummaryRequest,
   GenerateSummaryResponse,
   GitHubComment,
@@ -27,6 +29,9 @@ export type {
   LearningCategory,
   LearningSourceType,
   Memo,
+  ProfileSuggestion,
+  ProfileSuggestionSourceType,
+  ProfileSuggestionType,
   PromptImprovement,
   PromptTarget,
   RecordingSourceResponse,
@@ -51,6 +56,8 @@ export type {
   Summary,
   SummaryIssueType,
   TranscriptionSegment,
+  UpdateProfileRequest,
+  UserProfile,
 } from "./adas";
 // API型定義
 export type { ApiError, ApiResponse, Post } from "./api";

@@ -10,6 +10,7 @@ import { GitHubFeed } from "./github-feed";
 import { LearningsFeed } from "./learnings-feed";
 import { MemoPanel } from "./memo-panel";
 import { MonitoringPanel } from "./monitoring-panel";
+import { ProfilePanel } from "./profile-panel";
 import { PromptImprovementsPanel } from "./prompt-improvements-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
@@ -91,10 +92,11 @@ export function Dashboard() {
         <TabsContent value="settings" className="min-h-0 flex-1 overflow-auto">
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-4">
+              <ProfilePanel />
               <VocabularyPanel />
-              <SlackUsersPanel />
             </div>
             <div className="space-y-4">
+              <SlackUsersPanel />
               <PromptImprovementsPanel />
               <MonitoringPanel />
             </div>

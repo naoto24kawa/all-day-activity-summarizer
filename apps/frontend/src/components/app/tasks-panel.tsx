@@ -4,16 +4,24 @@
  * Slack メッセージから抽出したタスクの表示・管理
  */
 
-import type { Task, TaskStatus } from "@repo/types";
+import type { Task, TaskSourceType, TaskStatus } from "@repo/types";
 import {
+  Bell,
+  BellOff,
   Check,
   CheckCircle2,
   ChevronDown,
   Circle,
+  FileText,
+  Filter,
+  Github,
   ListTodo,
+  MessageSquare,
+  MessageSquareMore,
   RefreshCw,
   Sparkles,
   Trash2,
+  Wand2,
   X,
   XCircle,
 } from "lucide-react";
@@ -34,6 +42,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useNotifications } from "@/hooks/use-notifications";
 import { useTaskStats, useTasks } from "@/hooks/use-tasks";
 
 interface TasksPanelProps {
@@ -42,14 +51,122 @@ interface TasksPanelProps {
 }
 
 export function TasksPanel({ date, className }: TasksPanelProps) {
-  const { tasks, loading, error, refetch, updateTask, deleteTask, extractTasks } = useTasks(date);
+  const {
+    tasks,
+    loading,
+    error,
+    refetch,
+    updateTask,
+    deleteTask,
+    extractTasks,
+    extractGitHubTasks,
+    extractGitHubCommentTasks,
+    extractMemoTasks,
+  } = useTasks(date);
   const { stats } = useTaskStats(date);
+  const { permission, requestPermission, notifyHighPriorityTask } = useNotifications();
   const [extracting, setExtracting] = useState(false);
 
-  const handleExtract = async () => {
+  const [sourceFilter, setSourceFilter] = useState<TaskSourceType | "all">("all");
+
+  const getSourceLabel = (sourceType: string) => {
+    switch (sourceType) {
+      case "github":
+        return "GitHub";
+      case "github-comment":
+        return "GitHub Comment";
+      case "memo":
+        return "Memo";
+      case "prompt-improvement":
+        return "改善";
+      default:
+        return "Slack";
+    }
+  };
+
+  // Filter tasks by source type
+  const filterBySource = (taskList: Task[]) => {
+    if (sourceFilter === "all") return taskList;
+    // GitHub filter includes both github and github-comment
+    if (sourceFilter === "github") {
+      return taskList.filter((t) => t.sourceType === "github" || t.sourceType === "github-comment");
+    }
+    return taskList.filter((t) => t.sourceType === sourceFilter);
+  };
+
+  const notifyHighPriorityTasks = (extractedTasks: Task[]) => {
+    const highPriorityTasks = extractedTasks.filter((t) => t.priority === "high");
+    for (const task of highPriorityTasks) {
+      notifyHighPriorityTask(task.title, getSourceLabel(task.sourceType));
+    }
+  };
+
+  const handleExtractSlack = async () => {
     setExtracting(true);
     try {
-      await extractTasks({ date });
+      const result = await extractTasks({ date });
+      if (result.tasks.length > 0) {
+        notifyHighPriorityTasks(result.tasks);
+      }
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const handleExtractGitHub = async () => {
+    setExtracting(true);
+    try {
+      const result = await extractGitHubTasks({ date });
+      if (result.tasks.length > 0) {
+        notifyHighPriorityTasks(result.tasks);
+      }
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const handleExtractGitHubComments = async () => {
+    setExtracting(true);
+    try {
+      const result = await extractGitHubCommentTasks({ date });
+      if (result.tasks.length > 0) {
+        notifyHighPriorityTasks(result.tasks);
+      }
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const handleExtractMemos = async () => {
+    setExtracting(true);
+    try {
+      const result = await extractMemoTasks({ date });
+      if (result.tasks.length > 0) {
+        notifyHighPriorityTasks(result.tasks);
+      }
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const handleExtractAll = async () => {
+    setExtracting(true);
+    try {
+      const [slackResult, githubResult, githubCommentResult, memoResult] = await Promise.all([
+        extractTasks({ date }),
+        extractGitHubTasks({ date }),
+        extractGitHubCommentTasks({ date }),
+        extractMemoTasks({ date }),
+      ]);
+      const allTasks = [
+        ...slackResult.tasks,
+        ...githubResult.tasks,
+        ...githubCommentResult.tasks,
+        ...memoResult.tasks,
+      ];
+      if (allTasks.length > 0) {
+        notifyHighPriorityTasks(allTasks);
+      }
     } finally {
       setExtracting(false);
     }
@@ -83,10 +200,20 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     );
   }
 
-  const pendingTasks = tasks.filter((t) => t.status === "pending");
-  const acceptedTasks = tasks.filter((t) => t.status === "accepted");
-  const completedTasks = tasks.filter((t) => t.status === "completed");
-  const rejectedTasks = tasks.filter((t) => t.status === "rejected");
+  const pendingTasks = filterBySource(tasks.filter((t) => t.status === "pending"));
+  const acceptedTasks = filterBySource(tasks.filter((t) => t.status === "accepted"));
+  const completedTasks = filterBySource(tasks.filter((t) => t.status === "completed"));
+  const rejectedTasks = filterBySource(tasks.filter((t) => t.status === "rejected"));
+
+  // Count tasks by source for filter badges
+  const sourceCount = {
+    all: tasks.length,
+    slack: tasks.filter((t) => t.sourceType === "slack").length,
+    github: tasks.filter((t) => t.sourceType === "github" || t.sourceType === "github-comment")
+      .length,
+    "prompt-improvement": tasks.filter((t) => t.sourceType === "prompt-improvement").length,
+    memo: tasks.filter((t) => t.sourceType === "memo").length,
+  };
 
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
@@ -100,23 +227,137 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
             </Badge>
           )}
         </CardTitle>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <Button
             variant="outline"
             size="sm"
-            onClick={handleExtract}
+            onClick={handleExtractAll}
             disabled={extracting}
-            title="Extract tasks from Slack"
+            title="Extract tasks from Slack and GitHub"
           >
             <Sparkles className={`mr-1 h-3 w-3 ${extracting ? "animate-pulse" : ""}`} />
-            {extracting ? "Extracting..." : "Extract"}
+            {extracting ? "..." : "Extract"}
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleExtractSlack}
+            disabled={extracting}
+            title="Extract from Slack"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleExtractGitHub}
+            disabled={extracting}
+            title="Extract from GitHub Items"
+          >
+            <Github className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleExtractGitHubComments}
+            disabled={extracting}
+            title="Extract from GitHub Comments"
+          >
+            <MessageSquareMore className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleExtractMemos}
+            disabled={extracting}
+            title="Extract from Memos"
+          >
+            <FileText className="h-4 w-4" />
+          </Button>
+          {permission === "default" && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={requestPermission}
+              title="Enable notifications"
+            >
+              <BellOff className="h-4 w-4" />
+            </Button>
+          )}
+          {permission === "granted" && (
+            <Button variant="ghost" size="icon" disabled title="Notifications enabled">
+              <Bell className="h-4 w-4 text-green-500" />
+            </Button>
+          )}
           <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col">
+        {/* Source Filter Buttons */}
+        {tasks.length > 0 && (
+          <div className="mb-3 flex shrink-0 items-center gap-1">
+            <Filter className="mr-1 h-3 w-3 text-muted-foreground" />
+            <Button
+              variant={sourceFilter === "all" ? "default" : "outline"}
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={() => setSourceFilter("all")}
+            >
+              全て {sourceCount.all > 0 && `(${sourceCount.all})`}
+            </Button>
+            {sourceCount.slack > 0 && (
+              <Button
+                variant={sourceFilter === "slack" ? "default" : "outline"}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setSourceFilter("slack")}
+              >
+                <MessageSquare className="mr-1 h-3 w-3" />
+                Slack ({sourceCount.slack})
+              </Button>
+            )}
+            {sourceCount.github > 0 && (
+              <Button
+                variant={
+                  sourceFilter === "github" || sourceFilter === "github-comment"
+                    ? "default"
+                    : "outline"
+                }
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setSourceFilter("github")}
+              >
+                <Github className="mr-1 h-3 w-3" />
+                GitHub ({sourceCount.github})
+              </Button>
+            )}
+            {sourceCount["prompt-improvement"] > 0 && (
+              <Button
+                variant={sourceFilter === "prompt-improvement" ? "default" : "outline"}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setSourceFilter("prompt-improvement")}
+              >
+                <Wand2 className="mr-1 h-3 w-3" />
+                改善 ({sourceCount["prompt-improvement"]})
+              </Button>
+            )}
+            {sourceCount.memo > 0 && (
+              <Button
+                variant={sourceFilter === "memo" ? "default" : "outline"}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setSourceFilter("memo")}
+              >
+                <FileText className="mr-1 h-3 w-3" />
+                Memo ({sourceCount.memo})
+              </Button>
+            )}
+          </div>
+        )}
+
         {tasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <ListTodo className="mb-2 h-8 w-8 text-muted-foreground" />
@@ -313,6 +554,22 @@ function TaskItem({
                 {task.sourceType === "github" && (
                   <Badge variant="secondary" className="text-xs">
                     GitHub
+                  </Badge>
+                )}
+                {task.sourceType === "github-comment" && (
+                  <Badge variant="secondary" className="text-xs">
+                    GitHub Comment
+                  </Badge>
+                )}
+                {task.sourceType === "memo" && (
+                  <Badge variant="secondary" className="text-xs">
+                    Memo
+                  </Badge>
+                )}
+                {task.sourceType === "prompt-improvement" && (
+                  <Badge variant="default" className="text-xs bg-purple-500">
+                    <Wand2 className="mr-1 h-3 w-3" />
+                    改善
                   </Badge>
                 )}
               </div>

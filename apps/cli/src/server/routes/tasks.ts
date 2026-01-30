@@ -11,6 +11,7 @@ import { schema } from "@repo/db";
 import type { TaskStatus } from "@repo/types";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
+import { loadConfig } from "../../config";
 import { getTodayDateString } from "../../utils/date";
 
 interface ExtractedTask {
@@ -298,6 +299,16 @@ export function createTasksRouter(db: AdasDatabase) {
   router.post("/extract-github", async (c) => {
     const body = await c.req.json<{ date?: string }>();
     const date = body.date ?? getTodayDateString();
+    const config = loadConfig();
+    const githubUsername = config.github.username;
+
+    if (!githubUsername) {
+      return c.json({
+        extracted: 0,
+        tasks: [],
+        warning: "GitHub username not configured. Set github.username in ~/.adas/config.json",
+      });
+    }
 
     // レビュー依頼された PR を取得
     const reviewRequestedPRs = db
@@ -322,6 +333,7 @@ export function createTasksRouter(db: AdasDatabase) {
           eq(schema.githubItems.date, date),
           eq(schema.githubItems.itemType, "issue"),
           eq(schema.githubItems.state, "open"),
+          eq(schema.githubItems.assigneeLogin, githubUsername),
         ),
       )
       .all();
@@ -366,8 +378,8 @@ export function createTasksRouter(db: AdasDatabase) {
         }
       }
 
-      // アサインされた Issue
-      if (item.itemType === "issue" && item.assigneeLogin) {
+      // アサインされた Issue (既にフィルタ済み)
+      if (item.itemType === "issue") {
         const title = `Fix Issue: ${item.repoName}#${item.number}`;
         if (!existingTaskTitles.includes(title)) {
           const task = db
@@ -387,6 +399,200 @@ export function createTasksRouter(db: AdasDatabase) {
           createdTasks.push(task);
           existingTaskTitles.push(title);
         }
+      }
+    }
+
+    return c.json({
+      extracted: createdTasks.length,
+      tasks: createdTasks,
+    });
+  });
+
+  /**
+   * POST /api/tasks/extract-github-comments
+   *
+   * GitHub Comments からタスクを抽出
+   * - レビューコメントで対応が必要なもの
+   * - Issue コメントで質問や依頼があるもの
+   * Body: { date?: string }
+   */
+  router.post("/extract-github-comments", async (c) => {
+    const body = await c.req.json<{ date?: string }>();
+    const date = body.date ?? getTodayDateString();
+    const config = loadConfig();
+    const githubUsername = config.github.username;
+
+    if (!githubUsername) {
+      return c.json({
+        extracted: 0,
+        tasks: [],
+        warning: "GitHub username not configured. Set github.username in ~/.adas/config.json",
+      });
+    }
+
+    // GitHub コメントを取得 (自分以外が書いたコメントのみ)
+    const allComments = db
+      .select()
+      .from(schema.githubComments)
+      .where(eq(schema.githubComments.date, date))
+      .all();
+
+    // 自分宛てのコメントをフィルタ:
+    // 1. 自分が書いたコメントは除外
+    // 2. コメント内で @username がメンションされている
+    const mentionPattern = new RegExp(`@${githubUsername}\\b`, "i");
+    const comments = allComments.filter(
+      (c) => c.authorLogin !== githubUsername && mentionPattern.test(c.body),
+    );
+
+    if (comments.length === 0) {
+      return c.json({ extracted: 0, tasks: [] });
+    }
+
+    // Few-shot examples を構築
+    const fewShotExamples = buildFewShotExamples(db);
+
+    // プロンプト読み込み
+    const systemPrompt = readFileSync(getPromptFilePath("task-extract"), "utf-8");
+
+    // 既存タスクのタイトルを取得 (重複チェック用)
+    const existingTaskTitles = new Set(
+      db
+        .select({ title: schema.tasks.title })
+        .from(schema.tasks)
+        .where(eq(schema.tasks.date, date))
+        .all()
+        .map((t) => t.title),
+    );
+
+    const createdTasks = [];
+
+    for (const comment of comments) {
+      const userPrompt = buildGitHubCommentPrompt(comment, fewShotExamples);
+
+      try {
+        const response = await runClaude(userPrompt, {
+          model: "haiku",
+          systemPrompt,
+          disableTools: true,
+        });
+
+        const parsed = parseExtractResult(response);
+
+        if (parsed.tasks.length > 0) {
+          for (const extractedTask of parsed.tasks) {
+            // 重複チェック
+            if (existingTaskTitles.has(extractedTask.title)) {
+              continue;
+            }
+
+            const task = db
+              .insert(schema.tasks)
+              .values({
+                date,
+                slackMessageId: null,
+                sourceType: "github-comment",
+                title: extractedTask.title,
+                description:
+                  (extractedTask.description ?? "") +
+                  `\n\n${comment.repoOwner}/${comment.repoName}#${comment.itemNumber}\n${comment.url}`,
+                priority: extractedTask.priority ?? null,
+                confidence: extractedTask.confidence ?? null,
+                dueDate: extractedTask.dueDate ?? null,
+              })
+              .returning()
+              .get();
+
+            createdTasks.push(task);
+            existingTaskTitles.add(extractedTask.title);
+          }
+        }
+      } catch (error) {
+        console.error(`Failed to extract tasks from comment ${comment.id}:`, error);
+      }
+    }
+
+    return c.json({
+      extracted: createdTasks.length,
+      tasks: createdTasks,
+    });
+  });
+
+  /**
+   * POST /api/tasks/extract-memos
+   *
+   * メモからタスクを抽出
+   * Body: { date?: string }
+   */
+  router.post("/extract-memos", async (c) => {
+    const body = await c.req.json<{ date?: string }>();
+    const date = body.date ?? getTodayDateString();
+
+    // メモを取得
+    const memos = db.select().from(schema.memos).where(eq(schema.memos.date, date)).all();
+
+    if (memos.length === 0) {
+      return c.json({ extracted: 0, tasks: [] });
+    }
+
+    // Few-shot examples を構築
+    const fewShotExamples = buildFewShotExamples(db);
+
+    // プロンプト読み込み
+    const systemPrompt = readFileSync(getPromptFilePath("task-extract"), "utf-8");
+
+    // 既存タスクのタイトルを取得 (重複チェック用)
+    const existingTaskTitles = new Set(
+      db
+        .select({ title: schema.tasks.title })
+        .from(schema.tasks)
+        .where(eq(schema.tasks.date, date))
+        .all()
+        .map((t) => t.title),
+    );
+
+    const createdTasks = [];
+
+    for (const memo of memos) {
+      const userPrompt = buildMemoPrompt(memo, fewShotExamples);
+
+      try {
+        const response = await runClaude(userPrompt, {
+          model: "haiku",
+          systemPrompt,
+          disableTools: true,
+        });
+
+        const parsed = parseExtractResult(response);
+
+        if (parsed.tasks.length > 0) {
+          for (const extractedTask of parsed.tasks) {
+            // 重複チェック
+            if (existingTaskTitles.has(extractedTask.title)) {
+              continue;
+            }
+
+            const task = db
+              .insert(schema.tasks)
+              .values({
+                date,
+                slackMessageId: null,
+                sourceType: "memo",
+                title: extractedTask.title,
+                description: extractedTask.description ?? null,
+                priority: extractedTask.priority ?? null,
+                confidence: extractedTask.confidence ?? null,
+                dueDate: extractedTask.dueDate ?? null,
+              })
+              .returning()
+              .get();
+
+            createdTasks.push(task);
+            existingTaskTitles.add(extractedTask.title);
+          }
+        }
+      } catch (error) {
+        console.error(`Failed to extract tasks from memo ${memo.id}:`, error);
       }
     }
 
@@ -510,8 +716,53 @@ function buildUserPrompt(
 ${fewShotExamples}
 
 ## メッセージ
-${context.length > 0 ? context.join(" / ") + "\n" : ""}
+${context.length > 0 ? `${context.join(" / ")}\n` : ""}
 ${message.text}`;
+}
+
+/**
+ * GitHub コメント用のプロンプトを構築
+ */
+function buildGitHubCommentPrompt(
+  comment: {
+    body: string;
+    authorLogin: string | null;
+    commentType: string;
+    repoName: string;
+    itemNumber: number;
+  },
+  fewShotExamples: string,
+): string {
+  const context = [];
+  if (comment.authorLogin) {
+    context.push(`投稿者: ${comment.authorLogin}`);
+  }
+  context.push(`タイプ: ${comment.commentType}`);
+  context.push(`リポジトリ: ${comment.repoName}#${comment.itemNumber}`);
+
+  return `以下のGitHubコメントからタスクを抽出してください。
+レビュー指摘や質問、依頼事項があればタスク化してください。
+${fewShotExamples}
+
+## コメント
+${context.join(" / ")}
+
+${comment.body}`;
+}
+
+/**
+ * メモ用のプロンプトを構築
+ */
+function buildMemoPrompt(
+  memo: { content: string; createdAt: string },
+  fewShotExamples: string,
+): string {
+  return `以下のメモからタスクを抽出してください。
+TODO、やること、対応が必要な内容があればタスク化してください。
+${fewShotExamples}
+
+## メモ (${memo.createdAt})
+${memo.content}`;
 }
 
 /**

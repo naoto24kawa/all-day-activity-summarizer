@@ -24,6 +24,7 @@ export type {
   NewGitHubQueueJob,
   NewLearning,
   NewMemo,
+  NewProfileSuggestion,
   NewPromptImprovement,
   NewSegmentFeedback,
   NewSlackMessage,
@@ -32,6 +33,8 @@ export type {
   NewSummaryQueueJob,
   NewTask,
   NewTranscriptionSegment,
+  NewUserProfile,
+  ProfileSuggestion,
   PromptImprovement,
   SegmentFeedback,
   SlackMessage,
@@ -40,6 +43,7 @@ export type {
   SummaryQueueJob,
   Task,
   TranscriptionSegment,
+  UserProfile,
 } from "./schema.js";
 
 export type AdasDatabase = ReturnType<typeof createDatabase>;
@@ -561,7 +565,7 @@ export function createDatabase(dbPath: string) {
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='learnings'",
       )
       .get();
-    if (row && row.sql.includes("session_id") && !row.sql.includes("source_type")) {
+    if (row?.sql.includes("session_id") && !row.sql.includes("source_type")) {
       sqlite.exec(`
         ALTER TABLE learnings RENAME TO learnings_old;
         CREATE TABLE learnings (
@@ -592,6 +596,83 @@ export function createDatabase(dbPath: string) {
   } catch {
     // Migration already applied or fresh DB
   }
+
+  // Migration: add prompt_improvement_id to tasks and update CHECK constraint
+  addColumnIfNotExists(sqlite, "tasks", "prompt_improvement_id", "INTEGER");
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'",
+      )
+      .get();
+    if (row && !row.sql.includes("'prompt-improvement'")) {
+      sqlite.exec(`
+        ALTER TABLE tasks RENAME TO tasks_old;
+        CREATE TABLE tasks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          slack_message_id INTEGER,
+          prompt_improvement_id INTEGER,
+          source_type TEXT NOT NULL DEFAULT 'slack' CHECK(source_type IN ('slack', 'github', 'github-comment', 'memo', 'manual', 'prompt-improvement')),
+          title TEXT NOT NULL,
+          description TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected', 'completed')),
+          priority TEXT CHECK(priority IN ('high', 'medium', 'low')),
+          confidence REAL,
+          due_date TEXT,
+          extracted_at TEXT NOT NULL,
+          accepted_at TEXT,
+          rejected_at TEXT,
+          completed_at TEXT,
+          reject_reason TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO tasks (id, date, slack_message_id, prompt_improvement_id, source_type, title, description, status, priority, confidence, due_date, extracted_at, accepted_at, rejected_at, completed_at, reject_reason, created_at, updated_at)
+          SELECT id, date, slack_message_id, NULL, source_type, title, description, status, priority, confidence, due_date, extracted_at, accepted_at, rejected_at, completed_at, reject_reason, created_at, updated_at FROM tasks_old;
+        DROP TABLE tasks_old;
+        CREATE INDEX IF NOT EXISTS idx_tasks_date ON tasks(date);
+        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_slack_message ON tasks(slack_message_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_prompt_improvement ON tasks(prompt_improvement_id);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: create user_profile table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS user_profile (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      experience_years INTEGER,
+      specialties TEXT,
+      known_technologies TEXT,
+      learning_goals TEXT,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  // Migration: create profile_suggestions table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS profile_suggestions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      suggestion_type TEXT NOT NULL CHECK(suggestion_type IN ('add_technology', 'add_specialty', 'add_goal', 'update_experience')),
+      field TEXT NOT NULL,
+      value TEXT NOT NULL,
+      reason TEXT,
+      source_type TEXT NOT NULL CHECK(source_type IN ('claude-code', 'github', 'slack', 'transcription', 'learning')),
+      source_id TEXT,
+      confidence REAL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected')),
+      accepted_at TEXT,
+      rejected_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_profile_suggestions_status ON profile_suggestions(status);
+    CREATE INDEX IF NOT EXISTS idx_profile_suggestions_source ON profile_suggestions(source_type);
+  `);
 
   return db;
 }

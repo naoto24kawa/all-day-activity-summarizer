@@ -431,8 +431,9 @@ export const tasks = sqliteTable("tasks", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   date: text("date").notNull(), // YYYY-MM-DD
   slackMessageId: integer("slack_message_id"), // FK to slack_messages (nullable for manual tasks)
+  promptImprovementId: integer("prompt_improvement_id"), // FK to prompt_improvements (for prompt-improvement type)
   sourceType: text("source_type", {
-    enum: ["slack", "github", "github-comment", "memo", "manual"],
+    enum: ["slack", "github", "github-comment", "memo", "manual", "prompt-improvement"],
   })
     .notNull()
     .default("slack"),
@@ -498,3 +499,53 @@ export const learnings = sqliteTable("learnings", {
 
 export type Learning = typeof learnings.$inferSelect;
 export type NewLearning = typeof learnings.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// User Profile (ユーザープロフィール - 単一レコード)
+// ---------------------------------------------------------------------------
+
+export const userProfile = sqliteTable("user_profile", {
+  id: integer("id").primaryKey().default(1),
+  experienceYears: integer("experience_years"),
+  specialties: text("specialties"), // JSON: ["frontend", "typescript"]
+  knownTechnologies: text("known_technologies"), // JSON: ["React", "Hono", ...]
+  learningGoals: text("learning_goals"), // JSON: ["Rust", "DDD"]
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type UserProfile = typeof userProfile.$inferSelect;
+export type NewUserProfile = typeof userProfile.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Profile Suggestions (プロフィール提案 - 承認待ち)
+// ---------------------------------------------------------------------------
+
+export const profileSuggestions = sqliteTable("profile_suggestions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  suggestionType: text("suggestion_type", {
+    enum: ["add_technology", "add_specialty", "add_goal", "update_experience"],
+  }).notNull(),
+  field: text("field").notNull(), // "knownTechnologies" | "specialties" | ...
+  value: text("value").notNull(), // 提案する値
+  reason: text("reason"), // 提案理由
+  sourceType: text("source_type", {
+    enum: ["claude-code", "github", "slack", "transcription", "learning"],
+  }).notNull(),
+  sourceId: text("source_id"), // 根拠となるソースのID
+  confidence: real("confidence"), // AI確信度
+  status: text("status", {
+    enum: ["pending", "accepted", "rejected"],
+  })
+    .notNull()
+    .default("pending"),
+  acceptedAt: text("accepted_at"),
+  rejectedAt: text("rejected_at"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type ProfileSuggestion = typeof profileSuggestions.$inferSelect;
+export type NewProfileSuggestion = typeof profileSuggestions.$inferInsert;

@@ -70,6 +70,42 @@ export function useTasks(date?: string) {
     [fetchTasks],
   );
 
+  const extractGitHubTasks = useCallback(
+    async (options?: { date?: string }) => {
+      const result = await postAdasApi<{ extracted: number; tasks: Task[] }>(
+        "/api/tasks/extract-github",
+        options ?? {},
+      );
+      await fetchTasks(true);
+      return result;
+    },
+    [fetchTasks],
+  );
+
+  const extractGitHubCommentTasks = useCallback(
+    async (options?: { date?: string }) => {
+      const result = await postAdasApi<{ extracted: number; tasks: Task[] }>(
+        "/api/tasks/extract-github-comments",
+        options ?? {},
+      );
+      await fetchTasks(true);
+      return result;
+    },
+    [fetchTasks],
+  );
+
+  const extractMemoTasks = useCallback(
+    async (options?: { date?: string }) => {
+      const result = await postAdasApi<{ extracted: number; tasks: Task[] }>(
+        "/api/tasks/extract-memos",
+        options ?? {},
+      );
+      await fetchTasks(true);
+      return result;
+    },
+    [fetchTasks],
+  );
+
   return {
     tasks,
     error,
@@ -78,6 +114,9 @@ export function useTasks(date?: string) {
     updateTask,
     deleteTask,
     extractTasks,
+    extractGitHubTasks,
+    extractGitHubCommentTasks,
+    extractMemoTasks,
   };
 }
 

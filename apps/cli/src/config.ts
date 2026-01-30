@@ -51,6 +51,7 @@ export interface AdasConfig {
   };
   github: {
     enabled: boolean; // GitHub 統合を有効にする
+    username?: string; // Your GitHub username for filtering assigned issues/PRs
     fetchIntervalMinutes: number; // 取得間隔(分)
     parallelWorkers: number; // 並列ワーカー数
   };
@@ -108,6 +109,7 @@ const defaultConfig: AdasConfig = {
   },
   github: {
     enabled: false,
+    username: undefined,
     fetchIntervalMinutes: 10,
     parallelWorkers: 2,
   },

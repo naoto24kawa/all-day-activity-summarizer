@@ -5,6 +5,13 @@ import { Hono } from "hono";
 
 const EXTRACT_MODEL = "haiku";
 
+interface UserProfileContext {
+  experienceYears?: number;
+  specialties?: string[];
+  knownTechnologies?: string[];
+  learningGoals?: string[];
+}
+
 interface ExtractLearningsRequestBody {
   messages: Array<{
     role: string;
@@ -13,6 +20,7 @@ interface ExtractLearningsRequestBody {
   sourceType?: LearningSourceType;
   projectName?: string;
   contextInfo?: string;
+  userProfile?: UserProfileContext;
 }
 
 export interface ExtractedLearning {
@@ -42,6 +50,7 @@ export function createExtractLearningsRouter() {
         body.sourceType || "claude-code",
         body.projectName,
         body.contextInfo,
+        body.userProfile,
       );
       return c.json(result);
     } catch (err) {
@@ -58,9 +67,36 @@ function buildPrompt(
   conversation: string,
   projectName?: string,
   contextInfo?: string,
+  userProfile?: UserProfileContext,
 ): string {
   const projectInfo = projectName ? `プロジェクト: ${projectName}\n\n` : "";
   const contextSection = contextInfo ? `コンテキスト: ${contextInfo}\n\n` : "";
+
+  // ユーザープロフィール情報セクション
+  let profileSection = "";
+  if (userProfile) {
+    const parts: string[] = [];
+    if (userProfile.experienceYears !== undefined) {
+      parts.push(`経験年数: ${userProfile.experienceYears}年`);
+    }
+    if (userProfile.specialties && userProfile.specialties.length > 0) {
+      parts.push(`専門分野: ${userProfile.specialties.join(", ")}`);
+    }
+    if (userProfile.knownTechnologies && userProfile.knownTechnologies.length > 0) {
+      parts.push(`既知技術: ${userProfile.knownTechnologies.join(", ")}`);
+    }
+    if (userProfile.learningGoals && userProfile.learningGoals.length > 0) {
+      parts.push(`学習目標: ${userProfile.learningGoals.join(", ")}`);
+    }
+    if (parts.length > 0) {
+      profileSection = `ユーザープロフィール:
+${parts.map((p) => `- ${p}`).join("\n")}
+
+注意: 既知技術の基礎的な内容は除外し、学習目標に関連する内容を優先してください。
+
+`;
+    }
+  }
 
   const categoryList = `"typescript" | "react" | "architecture" | "testing" | "devops" | "database" | "api" | "security" | "performance" | "communication" | "other"`;
 
@@ -79,7 +115,7 @@ function buildPrompt(
     case "claude-code":
       return `以下の Claude Code セッションの会話から、ユーザーが学んだと思われる技術的な知見を抽出してください。
 
-${projectInfo}${contextSection}会話:
+${profileSection}${projectInfo}${contextSection}会話:
 ${conversation}
 
 ルール:
@@ -95,7 +131,7 @@ ${jsonFormat}`;
     case "transcription":
       return `以下の音声文字起こしから、会話中で共有された技術的な知見やノウハウを抽出してください。
 
-${projectInfo}${contextSection}会話:
+${profileSection}${projectInfo}${contextSection}会話:
 ${conversation}
 
 ルール:
@@ -112,7 +148,7 @@ ${jsonFormat}`;
     case "github-comment":
       return `以下の GitHub PR レビューコメントから、コードレビューで指摘された技術的な知見を抽出してください。
 
-${projectInfo}${contextSection}コメント:
+${profileSection}${projectInfo}${contextSection}コメント:
 ${conversation}
 
 ルール:
@@ -129,7 +165,7 @@ ${jsonFormat}`;
     case "slack-message":
       return `以下の Slack メッセージから、チームで共有された技術的な知見やノウハウを抽出してください。
 
-${projectInfo}${contextSection}メッセージ:
+${profileSection}${projectInfo}${contextSection}メッセージ:
 ${conversation}
 
 ルール:
@@ -146,7 +182,7 @@ ${jsonFormat}`;
     default:
       return `以下の内容から技術的な知見を抽出してください。
 
-${projectInfo}${contextSection}内容:
+${profileSection}${projectInfo}${contextSection}内容:
 ${conversation}
 
 JSON形式で出力:
@@ -159,11 +195,12 @@ async function extractLearningsWithClaude(
   sourceType: LearningSourceType,
   projectName?: string,
   contextInfo?: string,
+  userProfile?: UserProfileContext,
 ): Promise<ExtractLearningsResponse> {
   // メッセージを会話形式に整形
   const conversation = messages.map((m) => `[${m.role}]: ${m.content}`).join("\n\n");
 
-  const prompt = buildPrompt(sourceType, conversation, projectName, contextInfo);
+  const prompt = buildPrompt(sourceType, conversation, projectName, contextInfo, userProfile);
 
   consola.info(
     `[worker/extract-learnings] Extracting from ${messages.length} messages (source: ${sourceType})...`,

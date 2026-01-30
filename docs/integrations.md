@@ -31,11 +31,19 @@ gh auth login
 {
   "github": {
     "enabled": true,
+    "username": "your-github-username",
     "fetchIntervalMinutes": 10,
     "parallelWorkers": 2
   }
 }
 ```
+
+| オプション | 説明 | 例 |
+|-----------|------|-----|
+| `enabled` | GitHub 統合を有効化 | `true` |
+| `username` | 自分の GitHub ユーザー名 (タスク抽出時のフィルタリングに使用) | `"octocat"` |
+| `fetchIntervalMinutes` | 取得間隔(分) | `10` |
+| `parallelWorkers` | 並列ワーカー数 | `2` |
 
 3. **サーバー起動**
 

@@ -11,6 +11,14 @@ import consola from "consola";
 import { and, eq } from "drizzle-orm";
 import type { AdasConfig } from "../config.js";
 
+/** ユーザープロフィール情報 (学び抽出時に参照) */
+export interface UserProfileContext {
+  experienceYears?: number;
+  specialties?: string[];
+  knownTechnologies?: string[];
+  learningGoals?: string[];
+}
+
 interface ExtractedLearning {
   content: string;
   category: LearningCategory;
@@ -32,6 +40,7 @@ export async function extractAndSaveLearnings(
   date: string,
   messages: ClaudeCodeMessage[],
   projectName?: string,
+  userProfile?: UserProfileContext,
 ): Promise<{ extracted: number; saved: number }> {
   if (messages.length === 0) {
     return { extracted: 0, saved: 0 };
@@ -51,6 +60,23 @@ export async function extractAndSaveLearnings(
     return { extracted: 0, saved: 0 };
   }
 
+  // プロフィール情報を取得 (引数で渡されていない場合はDBから取得)
+  let profileContext = userProfile;
+  if (!profileContext) {
+    const profile = db.select().from(schema.userProfile).where(eq(schema.userProfile.id, 1)).get();
+
+    if (profile) {
+      profileContext = {
+        experienceYears: profile.experienceYears ?? undefined,
+        specialties: profile.specialties ? JSON.parse(profile.specialties) : undefined,
+        knownTechnologies: profile.knownTechnologies
+          ? JSON.parse(profile.knownTechnologies)
+          : undefined,
+        learningGoals: profile.learningGoals ? JSON.parse(profile.learningGoals) : undefined,
+      };
+    }
+  }
+
   // Format messages for extraction
   const formattedMessages = messages.map((m) => ({
     role: m.role,
@@ -64,7 +90,7 @@ export async function extractAndSaveLearnings(
     sessionId,
     date,
     formattedMessages,
-    { projectName },
+    { projectName, userProfile: profileContext },
   );
 }
 
@@ -78,7 +104,7 @@ export async function extractAndSaveLearningsFromContent(
   sourceId: string,
   date: string,
   messages: Array<{ role: string; content: string }>,
-  context?: { projectName?: string; contextInfo?: string },
+  context?: { projectName?: string; contextInfo?: string; userProfile?: UserProfileContext },
 ): Promise<{ extracted: number; saved: number }> {
   if (messages.length === 0) {
     return { extracted: 0, saved: 0 };
@@ -98,6 +124,7 @@ export async function extractAndSaveLearningsFromContent(
         sourceType,
         projectName: context?.projectName,
         contextInfo: context?.contextInfo,
+        userProfile: context?.userProfile,
       }),
       signal: controller.signal,
     });

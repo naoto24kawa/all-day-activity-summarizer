@@ -1,12 +1,14 @@
 import type {
   AdasDatabase,
   ClaudeCodeSession,
+  Learning,
   Memo,
   SlackMessage,
+  Task,
   TranscriptionSegment,
 } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, between, eq, gte, lte } from "drizzle-orm";
+import { and, between, eq, gte, inArray, lte } from "drizzle-orm";
 import { loadConfig } from "../config.js";
 import { generateSummary, getModelName } from "./client.js";
 import { buildDailySummaryPrompt, buildHourlySummaryPrompt } from "./prompts.js";
@@ -57,7 +59,7 @@ function jstToUtcIso(jstTimeString: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * 活動データ (セグメント、メモ、Slack、Claude Code) を時系列でマージして、
+ * 活動データ (セグメント、メモ、Slack、Claude Code、タスク、学び) を時系列でマージして、
  * プロンプト用のテキストを生成する。
  */
 function buildActivityText(
@@ -65,6 +67,8 @@ function buildActivityText(
   memos: Memo[],
   slackMessages: SlackMessage[],
   claudeSessions: ClaudeCodeSession[],
+  tasks: Task[],
+  learnings: Learning[],
 ): string {
   const sections: string[] = [];
 
@@ -124,6 +128,32 @@ function buildActivityText(
     sections.push(`### Claude Code\n${claudeText}`);
   }
 
+  // 4. タスク (承認済みのみ)
+  const acceptedTasks = tasks.filter((t) => t.status === "accepted" || t.status === "completed");
+  if (acceptedTasks.length > 0) {
+    const taskText = acceptedTasks
+      .map((t) => {
+        const priorityLabel = t.priority ? `[${t.priority}]` : "";
+        const statusLabel = t.status === "completed" ? "[完了]" : "";
+        const source =
+          t.sourceType === "github" ? "[GitHub]" : t.sourceType === "manual" ? "[手動]" : "";
+        return `- ${priorityLabel}${statusLabel}${source} ${t.title}`;
+      })
+      .join("\n");
+    sections.push(`### タスク\n${taskText}`);
+  }
+
+  // 5. 学び (Claude Code セッションから抽出)
+  if (learnings.length > 0) {
+    const learningText = learnings
+      .map((l) => {
+        const category = l.category ? `[${l.category}]` : "";
+        return `- ${category} ${l.content}`;
+      })
+      .join("\n");
+    sections.push(`### 学び\n${learningText}`);
+  }
+
   return sections.join("\n\n");
 }
 
@@ -132,6 +162,8 @@ interface ActivityData {
   memos: Memo[];
   slackMessages: SlackMessage[];
   claudeSessions: ClaudeCodeSession[];
+  tasks: Task[];
+  learnings: Learning[];
 }
 
 /**
@@ -208,7 +240,27 @@ function fetchActivityData(
     )
     .all();
 
-  return { segments, memos, slackMessages, claudeSessions };
+  // タスク (承認済み・完了のみ)
+  const tasks = db
+    .select()
+    .from(schema.tasks)
+    .where(
+      and(eq(schema.tasks.date, date), inArray(schema.tasks.status, ["accepted", "completed"])),
+    )
+    .all();
+
+  // 学び (該当期間の Claude Code セッションから)
+  const sessionIds = claudeSessions.map((s) => s.sessionId);
+  const learnings =
+    sessionIds.length > 0
+      ? db
+          .select()
+          .from(schema.learnings)
+          .where(inArray(schema.learnings.sessionId, sessionIds))
+          .all()
+      : [];
+
+  return { segments, memos, slackMessages, claudeSessions, tasks, learnings };
 }
 
 /** period index (0-47) から startTime/endTime を返す */
@@ -251,7 +303,7 @@ export async function generatePomodoroSummary(
   startTime: string,
   endTime: string,
 ): Promise<string | null> {
-  const { segments, memos, slackMessages, claudeSessions } = fetchActivityData(
+  const { segments, memos, slackMessages, claudeSessions, tasks, learnings } = fetchActivityData(
     db,
     date,
     startTime,
@@ -262,13 +314,22 @@ export async function generatePomodoroSummary(
     segments.length > 0 ||
     memos.length > 0 ||
     slackMessages.length > 0 ||
-    claudeSessions.length > 0;
+    claudeSessions.length > 0 ||
+    tasks.length > 0 ||
+    learnings.length > 0;
 
   if (!hasData) {
     return null;
   }
 
-  const activityText = buildActivityText(segments, memos, slackMessages, claudeSessions);
+  const activityText = buildActivityText(
+    segments,
+    memos,
+    slackMessages,
+    claudeSessions,
+    tasks,
+    learnings,
+  );
   const prompt = await buildHourlySummaryPrompt(activityText, db);
   const content = await generateSummary(prompt);
   const segmentIds = segments.map((s) => s.id);
@@ -373,7 +434,7 @@ export async function generateHourlySummary(
   }
 
   // Fallback: generate directly from activity data
-  const { segments, memos, slackMessages, claudeSessions } = fetchActivityData(
+  const { segments, memos, slackMessages, claudeSessions, tasks, learnings } = fetchActivityData(
     db,
     date,
     startTime,
@@ -384,13 +445,22 @@ export async function generateHourlySummary(
     segments.length > 0 ||
     memos.length > 0 ||
     slackMessages.length > 0 ||
-    claudeSessions.length > 0;
+    claudeSessions.length > 0 ||
+    tasks.length > 0 ||
+    learnings.length > 0;
 
   if (!hasData) {
     return null;
   }
 
-  const activityText = buildActivityText(segments, memos, slackMessages, claudeSessions);
+  const activityText = buildActivityText(
+    segments,
+    memos,
+    slackMessages,
+    claudeSessions,
+    tasks,
+    learnings,
+  );
   const prompt = await buildHourlySummaryPrompt(activityText, db);
   const content = await generateSummary(prompt);
   const segmentIds = segments.map((s) => s.id);

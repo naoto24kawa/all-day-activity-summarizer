@@ -473,7 +473,13 @@ export interface Vocabulary {
 // ========== Task 型定義 ==========
 
 /** タスクソース種別 */
-export type TaskSourceType = "slack" | "github" | "github-comment" | "memo" | "manual";
+export type TaskSourceType =
+  | "slack"
+  | "github"
+  | "github-comment"
+  | "memo"
+  | "manual"
+  | "prompt-improvement";
 
 /** タスクステータス */
 export type TaskStatus = "pending" | "accepted" | "rejected" | "completed";
@@ -481,11 +487,12 @@ export type TaskStatus = "pending" | "accepted" | "rejected" | "completed";
 /** タスク優先度 */
 export type TaskPriority = "high" | "medium" | "low";
 
-/** タスク (Slack メッセージから抽出) */
+/** タスク (各種ソースから抽出) */
 export interface Task {
   id: number;
   date: string;
   slackMessageId: number | null;
+  promptImprovementId: number | null;
   sourceType: TaskSourceType;
   title: string;
   description: string | null;
@@ -529,4 +536,66 @@ export interface TaskStats {
   accepted: number;
   rejected: number;
   completed: number;
+}
+
+// ========== User Profile 型定義 ==========
+
+/** ユーザープロフィール */
+export interface UserProfile {
+  id: number;
+  experienceYears: number | null;
+  specialties: string | null; // JSON string
+  knownTechnologies: string | null; // JSON string
+  learningGoals: string | null; // JSON string
+  updatedAt: string;
+}
+
+/** プロフィール提案タイプ */
+export type ProfileSuggestionType =
+  | "add_technology"
+  | "add_specialty"
+  | "add_goal"
+  | "update_experience";
+
+/** プロフィール提案ソースタイプ */
+export type ProfileSuggestionSourceType =
+  | "claude-code"
+  | "github"
+  | "slack"
+  | "transcription"
+  | "learning";
+
+/** プロフィール提案 */
+export interface ProfileSuggestion {
+  id: number;
+  suggestionType: ProfileSuggestionType;
+  field: string;
+  value: string;
+  reason: string | null;
+  sourceType: ProfileSuggestionSourceType;
+  sourceId: string | null;
+  confidence: number | null;
+  status: "pending" | "accepted" | "rejected";
+  acceptedAt: string | null;
+  rejectedAt: string | null;
+  createdAt: string;
+}
+
+/** プロフィール更新リクエスト */
+export interface UpdateProfileRequest {
+  experienceYears?: number | null;
+  specialties?: string[];
+  knownTechnologies?: string[];
+  learningGoals?: string[];
+}
+
+/** プロフィール提案生成リクエスト */
+export interface GenerateProfileSuggestionsRequest {
+  daysBack?: number; // デフォルト: 7日
+}
+
+/** プロフィール提案生成レスポンス */
+export interface GenerateProfileSuggestionsResponse {
+  generated: number;
+  suggestions: ProfileSuggestion[];
 }

@@ -77,6 +77,46 @@ error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 - `createApp(db)` で DB を注入
 - ルート: `apps/cli/src/server/routes/` 配下
 
+### サマリ生成
+
+- `apps/cli/src/summarizer/generator.ts` の `buildActivityText()` でサマリ内容を構築
+- 含まれるデータ: 音声/メモ、Slack、Claude Code、タスク (承認済み)、学び
+- タスクと学びはサマリに自動で含まれる
+
+### フィードバックループ
+
+- **動的 few-shot 挿入**: `apps/cli/src/feedback-injector.ts`
+- **プロンプト自動改善**: `apps/cli/src/server/routes/prompt-improvements.ts`
+- **プロフィール提案**: `apps/cli/src/server/routes/profile.ts`
+- 詳細: [docs/feedback-loop.md](docs/feedback-loop.md)
+
+### タスク抽出
+
+- **API**: `apps/cli/src/server/routes/tasks.ts`
+- **プロンプト**: `packages/core/prompts/task-extract.md`
+- **フロントエンド**: `apps/frontend/src/components/app/tasks-panel.tsx`
+
+**対応ソース**:
+| ソース | エンドポイント | 必要な設定 |
+|--------|---------------|-----------|
+| Slack | `POST /api/tasks/extract` | `slack.userId` |
+| GitHub Items | `POST /api/tasks/extract-github` | `github.username` |
+| GitHub Comments | `POST /api/tasks/extract-github-comments` | `github.username` |
+| Memos | `POST /api/tasks/extract-memos` | - |
+
+**フィードバックループ**:
+- 承認/却下履歴から few-shot examples を自動構築
+- 却下理由も学習に活用
+- プロンプト改善案はタスクとして登録 (`sourceType: "prompt-improvement"`)
+
+### ユーザープロフィール
+
+- **DB テーブル**: `user_profile` (単一レコード)、`profile_suggestions` (提案)
+- **API**: `apps/cli/src/server/routes/profile.ts`
+- **フロントエンド**: `apps/frontend/src/components/app/profile-panel.tsx`
+- **Worker**: `apps/worker/src/routes/analyze-profile.ts` (提案生成)
+- 学び抽出時にプロフィール情報を参照して精度向上 (`apps/cli/src/claude-code/extractor.ts`)
+
 ### フロントエンド
 
 - ダッシュボード: `apps/frontend/src/components/app/dashboard.tsx`

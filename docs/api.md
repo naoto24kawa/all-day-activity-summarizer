@@ -54,6 +54,30 @@
 |---------|------|------|
 | GET | `/api/claude-code-sessions?date=YYYY-MM-DD` | Claude Code セッション一覧 |
 
+### 学び (Learnings)
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/learnings?date=YYYY-MM-DD` | 学び一覧 |
+| GET | `/api/learnings/stats` | 学びの統計 |
+| PUT | `/api/learnings/:id/review` | SM-2 復習記録 |
+| DELETE | `/api/learnings/:id` | 学び削除 |
+
+### タスク
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/tasks?date=YYYY-MM-DD&status=pending` | タスク一覧 |
+| GET | `/api/tasks/stats` | タスク統計 |
+| PATCH | `/api/tasks/:id` | タスク更新 (承認/却下/完了) |
+| POST | `/api/tasks/extract` | Slack メッセージからタスク抽出 |
+| POST | `/api/tasks/extract-github` | GitHub Items からタスク抽出 (※) |
+| POST | `/api/tasks/extract-github-comments` | GitHub Comments からタスク抽出 (※) |
+| POST | `/api/tasks/extract-memos` | メモからタスク抽出 |
+| DELETE | `/api/tasks/:id` | タスク削除 |
+
+※ `github.username` の設定が必要 (自分宛てのタスクのみ抽出)
+
 ### フィードバック
 
 | メソッド | パス | 説明 |
@@ -62,6 +86,28 @@
 | GET | `/api/segment-feedbacks?date=YYYY-MM-DD` | interpret フィードバック取得 |
 | POST | `/api/feedbacks/v2` | summarize/evaluate フィードバック送信 |
 | GET | `/api/feedbacks/v2?targetType=summary&date=YYYY-MM-DD` | フィードバック取得 |
+
+### プロンプト改善
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/prompt-improvements` | 改善案一覧 |
+| GET | `/api/prompt-improvements/stats` | 各ターゲットの統計 |
+| POST | `/api/prompt-improvements/generate` | 改善案生成 |
+| POST | `/api/prompt-improvements/:id/approve` | 承認 (プロンプト更新) |
+| POST | `/api/prompt-improvements/:id/reject` | 却下 |
+
+### ユーザープロフィール
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/profile` | プロフィール取得 |
+| PUT | `/api/profile` | プロフィール更新 |
+| GET | `/api/profile/suggestions?status=pending` | プロフィール提案一覧 |
+| POST | `/api/profile/suggestions/generate` | 提案生成 (活動データから AI 分析) |
+| POST | `/api/profile/suggestions/:id/accept` | 提案承認 (プロフィールに反映) |
+| POST | `/api/profile/suggestions/:id/reject` | 提案却下 |
+| DELETE | `/api/profile/suggestions/:id` | 提案削除 |
 
 ### 評価ログ
 
@@ -80,3 +126,5 @@
 | POST | `/rpc/summarize` | Claude 要約実行 |
 | POST | `/rpc/interpret` | AI テキスト解釈 |
 | POST | `/rpc/evaluate` | ハルシネーション評価 |
+| POST | `/rpc/extract-learnings` | 学び抽出 (userProfile 対応) |
+| POST | `/rpc/analyze-profile` | プロフィール提案生成 |
