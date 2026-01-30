@@ -21,19 +21,21 @@ export function createMemosRouter(db: AdasDatabase) {
   });
 
   router.post("/", async (c) => {
-    const body = await c.req.json<{ content: string; date?: string }>();
+    const body = await c.req.json<{ content: string; date?: string; tags?: string[] }>();
 
     if (!body.content || typeof body.content !== "string" || body.content.trim() === "") {
       return c.json({ error: "content is required" }, 400);
     }
 
     const date = body.date || getTodayDateString();
+    const tags = body.tags && body.tags.length > 0 ? JSON.stringify(body.tags) : null;
 
     const result = db
       .insert(schema.memos)
       .values({
         date,
         content: body.content.trim(),
+        tags,
       })
       .returning()
       .get();
@@ -47,7 +49,7 @@ export function createMemosRouter(db: AdasDatabase) {
       return c.json({ error: "Invalid id" }, 400);
     }
 
-    const body = await c.req.json<{ content: string }>();
+    const body = await c.req.json<{ content: string; tags?: string[] | null }>();
 
     if (!body.content || typeof body.content !== "string" || body.content.trim() === "") {
       return c.json({ error: "content is required" }, 400);
@@ -58,9 +60,18 @@ export function createMemosRouter(db: AdasDatabase) {
       return c.json({ error: "Memo not found" }, 404);
     }
 
+    const updateData: { content: string; tags?: string | null } = {
+      content: body.content.trim(),
+    };
+
+    // tags が明示的に渡された場合のみ更新 (undefined なら既存値を維持)
+    if (body.tags !== undefined) {
+      updateData.tags = body.tags && body.tags.length > 0 ? JSON.stringify(body.tags) : null;
+    }
+
     const result = db
       .update(schema.memos)
-      .set({ content: body.content.trim() })
+      .set(updateData)
       .where(eq(schema.memos.id, id))
       .returning()
       .get();

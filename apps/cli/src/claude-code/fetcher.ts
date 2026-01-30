@@ -174,6 +174,8 @@ export async function fetchProjectSessions(
           date,
           savedMessages,
           projectName,
+          undefined, // userProfile
+          projectPath, // projectPath for project linking
         );
         totalLearnings += learningResult.saved;
       }

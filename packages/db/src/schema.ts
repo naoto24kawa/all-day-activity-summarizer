@@ -35,6 +35,7 @@ export const memos = sqliteTable("memos", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   date: text("date").notNull(), // YYYY-MM-DD
   content: text("content").notNull(),
+  tags: text("tags"), // JSON array: ["TODO", "重要"]
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -432,6 +433,7 @@ export const tasks = sqliteTable("tasks", {
   date: text("date").notNull(), // YYYY-MM-DD
   slackMessageId: integer("slack_message_id"), // FK to slack_messages (nullable for manual tasks)
   promptImprovementId: integer("prompt_improvement_id"), // FK to prompt_improvements (for prompt-improvement type)
+  projectId: integer("project_id"), // FK to projects (nullable for Slack/Memo tasks)
   sourceType: text("source_type", {
     enum: ["slack", "github", "github-comment", "memo", "manual", "prompt-improvement"],
   })
@@ -479,6 +481,7 @@ export const learnings = sqliteTable("learnings", {
     .notNull()
     .default("claude-code"),
   sourceId: text("source_id").notNull(), // 各ソースの ID (session_id, segment_id, comment_id, message_id)
+  projectId: integer("project_id"), // FK to projects (nullable)
   date: text("date").notNull(), // YYYY-MM-DD
   content: text("content").notNull(), // 学びの内容
   category: text("category"), // "typescript" | "react" | "architecture" など
@@ -549,3 +552,25 @@ export const profileSuggestions = sqliteTable("profile_suggestions", {
 
 export type ProfileSuggestion = typeof profileSuggestions.$inferSelect;
 export type NewProfileSuggestion = typeof profileSuggestions.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Projects (プロジェクト管理)
+// ---------------------------------------------------------------------------
+
+export const projects = sqliteTable("projects", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  path: text("path"), // Claude Code の projectPath
+  githubOwner: text("github_owner"), // GitHub owner
+  githubRepo: text("github_repo"), // GitHub repo name
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type Project = typeof projects.$inferSelect;
+export type NewProject = typeof projects.$inferInsert;

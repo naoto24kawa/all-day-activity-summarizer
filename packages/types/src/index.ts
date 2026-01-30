@@ -29,6 +29,7 @@ export type {
   LearningCategory,
   LearningSourceType,
   Memo,
+  MemoTag,
   ProfileSuggestion,
   ProfileSuggestionSourceType,
   ProfileSuggestionType,
@@ -59,6 +60,8 @@ export type {
   UpdateProfileRequest,
   UserProfile,
 } from "./adas";
+
+export { MEMO_TAGS } from "./adas";
 // API型定義
 export type { ApiError, ApiResponse, Post } from "./api";
 // 環境変数の型定義

@@ -30,16 +30,16 @@ export function useMemos(date: string) {
   }, [fetchMemos]);
 
   const postMemo = useCallback(
-    async (content: string) => {
-      await postAdasApi<Memo>("/api/memos", { content, date });
+    async (content: string, tags?: string[]) => {
+      await postAdasApi<Memo>("/api/memos", { content, date, tags });
       await fetchMemos(true);
     },
     [date, fetchMemos],
   );
 
   const updateMemo = useCallback(
-    async (id: number, content: string) => {
-      await putAdasApi<Memo>(`/api/memos/${id}`, { content });
+    async (id: number, content: string, tags?: string[] | null) => {
+      await putAdasApi<Memo>(`/api/memos/${id}`, { content, tags });
       await fetchMemos(true);
     },
     [fetchMemos],

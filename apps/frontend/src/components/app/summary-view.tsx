@@ -93,7 +93,7 @@ export function SummaryView({ date, className }: SummaryViewProps) {
         </div>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col">
-        <Tabs defaultValue="daily" className="flex min-h-0 flex-1 flex-col">
+        <Tabs defaultValue="pomodoro" className="flex min-h-0 flex-1 flex-col">
           <TabsList className="mb-2 shrink-0">
             <TabsTrigger value="daily">
               Daily

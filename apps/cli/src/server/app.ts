@@ -13,6 +13,7 @@ import { createGitHubItemsRouter } from "./routes/github-items.js";
 import { createLearningsRouter } from "./routes/learnings.js";
 import { createMemosRouter } from "./routes/memos.js";
 import { createProfileRouter } from "./routes/profile.js";
+import { createProjectsRouter } from "./routes/projects.js";
 import { createPromptImprovementsRouter } from "./routes/prompt-improvements.js";
 import { createRecordingRouter } from "./routes/recording.js";
 import { createServerLogsRouter } from "./routes/server-logs.js";
@@ -57,6 +58,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/vocabulary", createVocabularyRouter(db));
   app.route("/api/prompt-improvements", createPromptImprovementsRouter(db));
   app.route("/api/profile", createProfileRouter(db, options?.config));
+  app.route("/api/projects", createProjectsRouter(db));
 
   if (options?.micCapture || options?.speakerCapture) {
     app.route(

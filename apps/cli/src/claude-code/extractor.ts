@@ -10,6 +10,7 @@ import type { LearningCategory, LearningSourceType } from "@repo/types";
 import consola from "consola";
 import { and, eq } from "drizzle-orm";
 import type { AdasConfig } from "../config.js";
+import { findProjectByPath } from "../utils/project-lookup.js";
 
 /** ユーザープロフィール情報 (学び抽出時に参照) */
 export interface UserProfileContext {
@@ -41,6 +42,7 @@ export async function extractAndSaveLearnings(
   messages: ClaudeCodeMessage[],
   projectName?: string,
   userProfile?: UserProfileContext,
+  projectPath?: string,
 ): Promise<{ extracted: number; saved: number }> {
   if (messages.length === 0) {
     return { extracted: 0, saved: 0 };
@@ -58,6 +60,12 @@ export async function extractAndSaveLearnings(
   if (existingLearnings.length > 0) {
     consola.debug(`[extractor] Learnings already exist for session ${sessionId}, skipping`);
     return { extracted: 0, saved: 0 };
+  }
+
+  // プロジェクト紐付け (projectPath から)
+  let projectId: number | null = null;
+  if (projectPath) {
+    projectId = findProjectByPath(db, projectPath);
   }
 
   // プロフィール情報を取得 (引数で渡されていない場合はDBから取得)
@@ -90,7 +98,7 @@ export async function extractAndSaveLearnings(
     sessionId,
     date,
     formattedMessages,
-    { projectName, userProfile: profileContext },
+    { projectName, userProfile: profileContext, projectId },
   );
 }
 
@@ -104,7 +112,12 @@ export async function extractAndSaveLearningsFromContent(
   sourceId: string,
   date: string,
   messages: Array<{ role: string; content: string }>,
-  context?: { projectName?: string; contextInfo?: string; userProfile?: UserProfileContext },
+  context?: {
+    projectName?: string;
+    contextInfo?: string;
+    userProfile?: UserProfileContext;
+    projectId?: number | null;
+  },
 ): Promise<{ extracted: number; saved: number }> {
   if (messages.length === 0) {
     return { extracted: 0, saved: 0 };
@@ -150,6 +163,7 @@ export async function extractAndSaveLearningsFromContent(
       const newLearning: NewLearning = {
         sourceType,
         sourceId,
+        projectId: context?.projectId ?? null,
         date,
         content: learning.content,
         category: learning.category,

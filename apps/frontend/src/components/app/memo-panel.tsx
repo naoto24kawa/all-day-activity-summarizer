@@ -1,4 +1,5 @@
-import type { Memo } from "@repo/types";
+import type { Memo, MemoTag } from "@repo/types";
+import { MEMO_TAGS } from "@repo/types";
 import { Check, Mic, MicOff, Pencil, RefreshCw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +8,69 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMemos } from "@/hooks/use-memos";
 import { formatTimeJST } from "@/lib/date";
+
+/** タグごとの色定義 */
+const TAG_COLORS: Record<MemoTag, string> = {
+  完了: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  重要: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+  TODO: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+  要確認: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  後で: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+  アイデア: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
+  問題: "bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200",
+  メモ: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200",
+};
+
+interface TagSelectorProps {
+  selectedTags: string[];
+  onTagsChange: (tags: string[]) => void;
+  disabled?: boolean;
+}
+
+function TagSelector({ selectedTags, onTagsChange, disabled }: TagSelectorProps) {
+  const toggleTag = (tag: string) => {
+    if (selectedTags.includes(tag)) {
+      onTagsChange(selectedTags.filter((t) => t !== tag));
+    } else {
+      onTagsChange([...selectedTags, tag]);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {MEMO_TAGS.map((tag) => {
+        const isSelected = selectedTags.includes(tag);
+        const colorClass = TAG_COLORS[tag];
+        return (
+          <button
+            key={tag}
+            type="button"
+            onClick={() => toggleTag(tag)}
+            disabled={disabled}
+            className={`rounded-full px-2 py-0.5 text-xs transition-all ${
+              isSelected
+                ? colorClass
+                : "bg-gray-50 text-gray-400 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-500 dark:hover:bg-gray-700"
+            } ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+          >
+            {tag}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** タグを JSON 文字列からパース */
+function parseTags(tags: string | null): string[] {
+  if (!tags) return [];
+  try {
+    const parsed = JSON.parse(tags);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 interface MemoPanelProps {
   date: string;
@@ -17,6 +81,7 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
   const { memos, loading, error, postMemo, updateMemo, deleteMemo, refetch } = useMemos(date);
   const [refreshing, setRefreshing] = useState(false);
   const [input, setInput] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -48,15 +113,17 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
     const content = input.trim();
     if (!content || sending) return;
 
-    // 音声入力中の場合は停止
+    // 音声入力中の場合は停止し、結果ハンドラを無効化
     if (listening && recognitionRef.current) {
+      recognitionRef.current.onresult = null;
       recognitionRef.current.stop();
     }
 
     setSending(true);
     try {
-      await postMemo(content);
+      await postMemo(content, selectedTags.length > 0 ? selectedTags : undefined);
       setInput("");
+      setSelectedTags([]);
     } finally {
       setSending(false);
     }
@@ -195,29 +262,36 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
           )}
         </div>
 
-        <div className="mt-4 flex shrink-0 gap-2">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="メモを入力... (Enter で送信, Shift+Enter で改行)"
-            className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            rows={2}
+        <div className="mt-4 shrink-0 space-y-2">
+          <TagSelector
+            selectedTags={selectedTags}
+            onTagsChange={setSelectedTags}
             disabled={sending}
           />
-          <div className="flex flex-col justify-end gap-1">
-            <Button
-              size="icon"
-              variant={listening ? "destructive" : "outline"}
-              onClick={toggleListening}
-              title={listening ? "音声入力を停止" : "音声入力"}
-            >
-              {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            </Button>
-            <Button onClick={handleSend} disabled={sending || !input.trim()}>
-              {sending ? "..." : "送信"}
-            </Button>
+          <div className="flex gap-2">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="メモを入力... (Enter で送信, Shift+Enter で改行)"
+              className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              rows={2}
+              disabled={sending}
+            />
+            <div className="flex flex-col justify-end gap-1">
+              <Button
+                size="icon"
+                variant={listening ? "destructive" : "outline"}
+                onClick={toggleListening}
+                title={listening ? "音声入力を停止" : "音声入力"}
+              >
+                {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </Button>
+              <Button onClick={handleSend} disabled={sending || !input.trim()}>
+                {sending ? "..." : "送信"}
+              </Button>
+            </div>
           </div>
         </div>
       </CardContent>
@@ -227,16 +301,18 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
 
 interface MemoItemProps {
   memo: Memo;
-  onUpdate: (id: number, content: string) => Promise<void>;
+  onUpdate: (id: number, content: string, tags?: string[] | null) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
 }
 
 function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(memo.content);
+  const [editTags, setEditTags] = useState<string[]>(parseTags(memo.tags));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const memoTags = parseTags(memo.tags);
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -250,7 +326,7 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
     if (!content || saving) return;
     setSaving(true);
     try {
-      await onUpdate(memo.id, content);
+      await onUpdate(memo.id, content, editTags.length > 0 ? editTags : null);
       setIsEditing(false);
     } finally {
       setSaving(false);
@@ -259,6 +335,7 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
 
   const handleCancel = () => {
     setEditContent(memo.content);
+    setEditTags(parseTags(memo.tags));
     setIsEditing(false);
   };
 
@@ -292,6 +369,9 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
             {formatTimeJST(memo.createdAt)}
           </span>
         </div>
+        <div className="mb-2">
+          <TagSelector selectedTags={editTags} onTagsChange={setEditTags} disabled={saving} />
+        </div>
         <textarea
           ref={textareaRef}
           value={editContent}
@@ -316,9 +396,23 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
   return (
     <div className="group rounded-md border border-blue-300 bg-blue-100 p-3 dark:border-blue-700 dark:bg-blue-900">
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-xs font-medium text-blue-500 dark:text-blue-300">
-          {formatTimeJST(memo.createdAt)}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-blue-500 dark:text-blue-300">
+            {formatTimeJST(memo.createdAt)}
+          </span>
+          {memoTags.length > 0 && (
+            <div className="flex gap-1">
+              {memoTags.map((tag) => (
+                <span
+                  key={tag}
+                  className={`rounded-full px-2 py-0.5 text-xs ${TAG_COLORS[tag as MemoTag] || "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"}`}
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <Button
             size="icon"

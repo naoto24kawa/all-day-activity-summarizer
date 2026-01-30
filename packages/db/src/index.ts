@@ -25,6 +25,7 @@ export type {
   NewLearning,
   NewMemo,
   NewProfileSuggestion,
+  NewProject,
   NewPromptImprovement,
   NewSegmentFeedback,
   NewSlackMessage,
@@ -35,6 +36,7 @@ export type {
   NewTranscriptionSegment,
   NewUserProfile,
   ProfileSuggestion,
+  Project,
   PromptImprovement,
   SegmentFeedback,
   SlackMessage,
@@ -645,6 +647,9 @@ export function createDatabase(dbPath: string) {
     // Migration already applied or fresh DB
   }
 
+  // Migration: add tags column to memos
+  addColumnIfNotExists(sqlite, "memos", "tags", "TEXT");
+
   // Migration: create user_profile table
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS user_profile (
@@ -676,6 +681,33 @@ export function createDatabase(dbPath: string) {
 
     CREATE INDEX IF NOT EXISTS idx_profile_suggestions_status ON profile_suggestions(status);
     CREATE INDEX IF NOT EXISTS idx_profile_suggestions_source ON profile_suggestions(source_type);
+  `);
+
+  // Migration: create projects table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      path TEXT,
+      github_owner TEXT,
+      github_repo TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_path ON projects(path) WHERE path IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_github ON projects(github_owner, github_repo) WHERE github_owner IS NOT NULL AND github_repo IS NOT NULL;
+  `);
+
+  // Migration: add project_id to tasks and learnings
+  addColumnIfNotExists(sqlite, "tasks", "project_id", "INTEGER");
+  addColumnIfNotExists(sqlite, "learnings", "project_id", "INTEGER");
+
+  // Create indexes for project_id
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+    CREATE INDEX IF NOT EXISTS idx_learnings_project ON learnings(project_id);
   `);
 
   return db;

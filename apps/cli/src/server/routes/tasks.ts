@@ -9,10 +9,11 @@ import { getPromptFilePath, runClaude } from "@repo/core";
 import type { AdasDatabase, SlackMessage } from "@repo/db";
 import { schema } from "@repo/db";
 import type { TaskStatus } from "@repo/types";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { loadConfig } from "../../config";
 import { getTodayDateString } from "../../utils/date";
+import { findOrCreateProjectByGitHub } from "../../utils/project-lookup.js";
 
 interface ExtractedTask {
   title: string;
@@ -35,11 +36,15 @@ export function createTasksRouter(db: AdasDatabase) {
    * Query params:
    * - date: YYYY-MM-DD (optional)
    * - status: pending | accepted | rejected | completed (optional)
+   * - projectId: number (optional, filters by project)
+   * - noProject: boolean (optional, filters tasks without project)
    * - limit: number (optional, defaults to 100)
    */
   router.get("/", (c) => {
     const date = c.req.query("date");
     const status = c.req.query("status") as TaskStatus | undefined;
+    const projectIdStr = c.req.query("projectId");
+    const noProject = c.req.query("noProject") === "true";
     const limitStr = c.req.query("limit");
 
     const limit = limitStr ? Number.parseInt(limitStr, 10) : 100;
@@ -52,6 +57,15 @@ export function createTasksRouter(db: AdasDatabase) {
 
     if (status) {
       conditions.push(eq(schema.tasks.status, status));
+    }
+
+    if (projectIdStr) {
+      const projectId = Number.parseInt(projectIdStr, 10);
+      if (!Number.isNaN(projectId)) {
+        conditions.push(eq(schema.tasks.projectId, projectId));
+      }
+    } else if (noProject) {
+      conditions.push(isNull(schema.tasks.projectId));
     }
 
     let query = db.select().from(schema.tasks).orderBy(desc(schema.tasks.extractedAt)).limit(limit);
@@ -355,6 +369,9 @@ export function createTasksRouter(db: AdasDatabase) {
     const createdTasks = [];
 
     for (const item of allItems) {
+      // プロジェクト紐付け (repoOwner/repoName から)
+      const projectId = findOrCreateProjectByGitHub(db, item.repoOwner, item.repoName);
+
       // PR のレビュー依頼
       if (item.itemType === "pull_request" && item.isReviewRequested) {
         const title = `Review PR: ${item.repoName}#${item.number}`;
@@ -364,6 +381,7 @@ export function createTasksRouter(db: AdasDatabase) {
             .values({
               date,
               slackMessageId: null,
+              projectId,
               sourceType: "github",
               title,
               description: `${item.title}\n\n${item.url}`,
@@ -387,6 +405,7 @@ export function createTasksRouter(db: AdasDatabase) {
             .values({
               date,
               slackMessageId: null,
+              projectId,
               sourceType: "github",
               title,
               description: `${item.title}\n\n${item.url}`,
@@ -468,6 +487,9 @@ export function createTasksRouter(db: AdasDatabase) {
     const createdTasks = [];
 
     for (const comment of comments) {
+      // プロジェクト紐付け (repoOwner/repoName から)
+      const projectId = findOrCreateProjectByGitHub(db, comment.repoOwner, comment.repoName);
+
       const userPrompt = buildGitHubCommentPrompt(comment, fewShotExamples);
 
       try {
@@ -491,6 +513,7 @@ export function createTasksRouter(db: AdasDatabase) {
               .values({
                 date,
                 slackMessageId: null,
+                projectId,
                 sourceType: "github-comment",
                 title: extractedTask.title,
                 description:

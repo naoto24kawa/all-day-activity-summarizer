@@ -5,7 +5,7 @@
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import type { LearningSourceType } from "@repo/types";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import {
   extractAndSaveLearningsFromContent,
@@ -25,6 +25,8 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
    * - category: string (optional, filters by category)
    * - sourceType: string (optional, filters by source type)
    * - sourceId: string (optional, filters by source id)
+   * - projectId: number (optional, filters by project)
+   * - noProject: boolean (optional, filters learnings without project)
    * - dueForReview: boolean (optional, returns only items due for review)
    * - limit: number (optional, defaults to 100)
    */
@@ -33,6 +35,8 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
     const category = c.req.query("category");
     const sourceType = c.req.query("sourceType") as LearningSourceType | undefined;
     const sourceId = c.req.query("sourceId");
+    const projectIdStr = c.req.query("projectId");
+    const noProject = c.req.query("noProject") === "true";
     const dueForReview = c.req.query("dueForReview") === "true";
     const limitStr = c.req.query("limit");
 
@@ -54,6 +58,15 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
 
     if (sourceId) {
       conditions.push(eq(schema.learnings.sourceId, sourceId));
+    }
+
+    if (projectIdStr) {
+      const projectId = Number.parseInt(projectIdStr, 10);
+      if (!Number.isNaN(projectId)) {
+        conditions.push(eq(schema.learnings.projectId, projectId));
+      }
+    } else if (noProject) {
+      conditions.push(isNull(schema.learnings.projectId));
     }
 
     if (dueForReview) {

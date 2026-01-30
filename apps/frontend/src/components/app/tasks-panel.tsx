@@ -4,7 +4,7 @@
  * Slack メッセージから抽出したタスクの表示・管理
  */
 
-import type { Task, TaskSourceType, TaskStatus } from "@repo/types";
+import type { Project, Task, TaskSourceType, TaskStatus } from "@repo/types";
 import {
   Bell,
   BellOff,
@@ -14,6 +14,7 @@ import {
   Circle,
   FileText,
   Filter,
+  FolderGit2,
   Github,
   ListTodo,
   MessageSquare,
@@ -43,6 +44,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useNotifications } from "@/hooks/use-notifications";
+import { getProjectName, useProjects } from "@/hooks/use-projects";
 import { useTaskStats, useTasks } from "@/hooks/use-tasks";
 
 interface TasksPanelProps {
@@ -64,10 +66,12 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     extractMemoTasks,
   } = useTasks(date);
   const { stats } = useTaskStats(date);
+  const { projects } = useProjects();
   const { permission, requestPermission, notifyHighPriorityTask } = useNotifications();
   const [extracting, setExtracting] = useState(false);
 
   const [sourceFilter, setSourceFilter] = useState<TaskSourceType | "all">("all");
+  const [projectFilter, setProjectFilter] = useState<number | "all" | "none">("all");
 
   const getSourceLabel = (sourceType: string) => {
     switch (sourceType) {
@@ -84,14 +88,32 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     }
   };
 
-  // Filter tasks by source type
-  const filterBySource = (taskList: Task[]) => {
-    if (sourceFilter === "all") return taskList;
-    // GitHub filter includes both github and github-comment
-    if (sourceFilter === "github") {
-      return taskList.filter((t) => t.sourceType === "github" || t.sourceType === "github-comment");
+  // Filter tasks by source type and project
+  const filterTasks = (taskList: Task[]) => {
+    let result = taskList;
+
+    // Source filter
+    if (sourceFilter !== "all") {
+      // GitHub filter includes both github and github-comment
+      if (sourceFilter === "github") {
+        result = result.filter(
+          (t) => t.sourceType === "github" || t.sourceType === "github-comment",
+        );
+      } else {
+        result = result.filter((t) => t.sourceType === sourceFilter);
+      }
     }
-    return taskList.filter((t) => t.sourceType === sourceFilter);
+
+    // Project filter
+    if (projectFilter !== "all") {
+      if (projectFilter === "none") {
+        result = result.filter((t) => t.projectId === null);
+      } else {
+        result = result.filter((t) => t.projectId === projectFilter);
+      }
+    }
+
+    return result;
   };
 
   const notifyHighPriorityTasks = (extractedTasks: Task[]) => {
@@ -200,10 +222,10 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     );
   }
 
-  const pendingTasks = filterBySource(tasks.filter((t) => t.status === "pending"));
-  const acceptedTasks = filterBySource(tasks.filter((t) => t.status === "accepted"));
-  const completedTasks = filterBySource(tasks.filter((t) => t.status === "completed"));
-  const rejectedTasks = filterBySource(tasks.filter((t) => t.status === "rejected"));
+  const pendingTasks = filterTasks(tasks.filter((t) => t.status === "pending"));
+  const acceptedTasks = filterTasks(tasks.filter((t) => t.status === "accepted"));
+  const completedTasks = filterTasks(tasks.filter((t) => t.status === "completed"));
+  const rejectedTasks = filterTasks(tasks.filter((t) => t.status === "rejected"));
 
   // Count tasks by source for filter badges
   const sourceCount = {
@@ -214,6 +236,22 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     "prompt-improvement": tasks.filter((t) => t.sourceType === "prompt-improvement").length,
     memo: tasks.filter((t) => t.sourceType === "memo").length,
   };
+
+  // Count tasks by project for filter badges
+  const projectCount = new Map<number | "none", number>();
+  projectCount.set("none", 0);
+  for (const task of tasks) {
+    if (task.projectId === null) {
+      projectCount.set("none", (projectCount.get("none") ?? 0) + 1);
+    } else {
+      projectCount.set(task.projectId, (projectCount.get(task.projectId) ?? 0) + 1);
+    }
+  }
+
+  // Get projects that have tasks
+  const projectsWithTasks = projects.filter(
+    (p) => projectCount.has(p.id) && (projectCount.get(p.id) ?? 0) > 0,
+  );
 
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
@@ -358,6 +396,42 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
           </div>
         )}
 
+        {/* Project Filter Buttons */}
+        {tasks.length > 0 && projectsWithTasks.length > 0 && (
+          <div className="mb-3 flex shrink-0 flex-wrap items-center gap-1">
+            <FolderGit2 className="mr-1 h-3 w-3 text-muted-foreground" />
+            <Button
+              variant={projectFilter === "all" ? "default" : "outline"}
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={() => setProjectFilter("all")}
+            >
+              全プロジェクト
+            </Button>
+            {projectsWithTasks.map((project) => (
+              <Button
+                key={project.id}
+                variant={projectFilter === project.id ? "default" : "outline"}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setProjectFilter(project.id)}
+              >
+                {project.name} ({projectCount.get(project.id) ?? 0})
+              </Button>
+            ))}
+            {(projectCount.get("none") ?? 0) > 0 && (
+              <Button
+                variant={projectFilter === "none" ? "default" : "outline"}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setProjectFilter("none")}
+              >
+                未分類 ({projectCount.get("none")})
+              </Button>
+            )}
+          </div>
+        )}
+
         {tasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <ListTodo className="mb-2 h-8 w-8 text-muted-foreground" />
@@ -404,6 +478,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
             <TabsContent value="pending" className="min-h-0 flex-1">
               <TaskList
                 tasks={pendingTasks}
+                projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 showActions
@@ -412,6 +487,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
             <TabsContent value="accepted" className="min-h-0 flex-1">
               <TaskList
                 tasks={acceptedTasks}
+                projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 showCompleteAction
@@ -420,12 +496,18 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
             <TabsContent value="completed" className="min-h-0 flex-1">
               <TaskList
                 tasks={completedTasks}
+                projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
               />
             </TabsContent>
             <TabsContent value="rejected" className="min-h-0 flex-1">
-              <TaskList tasks={rejectedTasks} onUpdateTask={updateTask} onDeleteTask={deleteTask} />
+              <TaskList
+                tasks={rejectedTasks}
+                projects={projects}
+                onUpdateTask={updateTask}
+                onDeleteTask={deleteTask}
+              />
             </TabsContent>
           </Tabs>
         )}
@@ -436,12 +518,14 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
 
 function TaskList({
   tasks,
+  projects,
   onUpdateTask,
   onDeleteTask,
   showActions = false,
   showCompleteAction = false,
 }: {
   tasks: Task[];
+  projects: Project[];
   onUpdateTask: (
     id: number,
     updates: { status?: TaskStatus; rejectReason?: string },
@@ -461,6 +545,7 @@ function TaskList({
           <TaskItem
             key={task.id}
             task={task}
+            projects={projects}
             onUpdateTask={onUpdateTask}
             onDeleteTask={onDeleteTask}
             showActions={showActions}
@@ -474,12 +559,14 @@ function TaskList({
 
 function TaskItem({
   task,
+  projects,
   onUpdateTask,
   onDeleteTask,
   showActions,
   showCompleteAction,
 }: {
   task: Task;
+  projects: Project[];
   onUpdateTask: (
     id: number,
     updates: { status?: TaskStatus; rejectReason?: string },
@@ -491,6 +578,8 @@ function TaskItem({
   const [isOpen, setIsOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+
+  const projectName = getProjectName(projects, task.projectId);
 
   const priorityColors: Record<string, string> = {
     high: "text-red-500",
@@ -570,6 +659,12 @@ function TaskItem({
                   <Badge variant="default" className="text-xs bg-purple-500">
                     <Wand2 className="mr-1 h-3 w-3" />
                     改善
+                  </Badge>
+                )}
+                {projectName && (
+                  <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200">
+                    <FolderGit2 className="mr-1 h-3 w-3" />
+                    {projectName}
                   </Badge>
                 )}
               </div>

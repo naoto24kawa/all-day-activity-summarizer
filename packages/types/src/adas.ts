@@ -32,8 +32,24 @@ export interface Memo {
   id: number;
   date: string;
   content: string;
+  tags: string | null; // JSON array: ["TODO", "重要"]
   createdAt: string;
 }
+
+/** メモタグ定数 */
+export const MEMO_TAGS = [
+  "完了",
+  "重要",
+  "TODO",
+  "要確認",
+  "後で",
+  "アイデア",
+  "問題",
+  "メモ",
+] as const;
+
+/** メモタグ型 */
+export type MemoTag = (typeof MEMO_TAGS)[number];
 
 /** 録音状態レスポンス */
 export interface RecordingStatusResponse {
@@ -327,6 +343,7 @@ export interface Learning {
   id: number;
   sourceType: LearningSourceType;
   sourceId: string;
+  projectId: number | null;
   date: string;
   content: string;
   category: string | null;
@@ -493,6 +510,7 @@ export interface Task {
   date: string;
   slackMessageId: number | null;
   promptImprovementId: number | null;
+  projectId: number | null;
   sourceType: TaskSourceType;
   title: string;
   description: string | null;
@@ -598,4 +616,42 @@ export interface GenerateProfileSuggestionsRequest {
 export interface GenerateProfileSuggestionsResponse {
   generated: number;
   suggestions: ProfileSuggestion[];
+}
+
+// ========== Project 型定義 ==========
+
+/** プロジェクト */
+export interface Project {
+  id: number;
+  name: string;
+  path: string | null;
+  githubOwner: string | null;
+  githubRepo: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** プロジェクト作成リクエスト */
+export interface CreateProjectRequest {
+  name: string;
+  path?: string;
+  githubOwner?: string;
+  githubRepo?: string;
+}
+
+/** プロジェクト更新リクエスト */
+export interface UpdateProjectRequest {
+  name?: string;
+  path?: string | null;
+  githubOwner?: string | null;
+  githubRepo?: string | null;
+  isActive?: boolean;
+}
+
+/** プロジェクト自動検出レスポンス */
+export interface AutoDetectProjectsResponse {
+  detected: number;
+  created: number;
+  projects: Project[];
 }

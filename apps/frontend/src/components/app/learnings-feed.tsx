@@ -4,11 +4,12 @@
  * Displays learnings extracted from various sources
  */
 
-import type { Learning, LearningSourceType } from "@repo/types";
+import type { Learning, LearningSourceType, Project } from "@repo/types";
 import {
   BookOpen,
   Calendar,
   Code,
+  FolderGit2,
   Github,
   Loader2,
   MessageSquare,
@@ -28,6 +29,7 @@ import {
   useLearningsExtract,
   useLearningsStats,
 } from "@/hooks/use-learnings";
+import { getProjectName, useProjects } from "@/hooks/use-projects";
 
 interface LearningsFeedProps {
   date?: string;
@@ -45,6 +47,7 @@ function applyFilters(
   learnings: Learning[],
   categoryFilter: string | null,
   sourceFilter: LearningSourceType | null,
+  projectFilter: number | "all" | "none",
 ): Learning[] {
   let result = learnings;
   if (categoryFilter) {
@@ -52,6 +55,13 @@ function applyFilters(
   }
   if (sourceFilter) {
     result = result.filter((l) => l.sourceType === sourceFilter);
+  }
+  if (projectFilter !== "all") {
+    if (projectFilter === "none") {
+      result = result.filter((l) => l.projectId === null);
+    } else {
+      result = result.filter((l) => l.projectId === projectFilter);
+    }
   }
   return result;
 }
@@ -190,6 +200,7 @@ function FilterBar({
 export function LearningsFeed({ date, className }: LearningsFeedProps) {
   const { learnings, loading, error, deleteLearning, refetch } = useLearnings({ date });
   const { stats, refetch: refetchStats } = useLearningsStats();
+  const { projects } = useProjects();
   const {
     loading: extractLoading,
     extractFromTranscriptions,
@@ -199,8 +210,25 @@ export function LearningsFeed({ date, className }: LearningsFeedProps) {
 
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<LearningSourceType | null>(null);
+  const [projectFilter, setProjectFilter] = useState<number | "all" | "none">("all");
 
-  const filteredLearnings = applyFilters(learnings, categoryFilter, sourceFilter);
+  const filteredLearnings = applyFilters(learnings, categoryFilter, sourceFilter, projectFilter);
+
+  // Count learnings by project
+  const projectCount = new Map<number | "none", number>();
+  projectCount.set("none", 0);
+  for (const learning of learnings) {
+    if (learning.projectId === null) {
+      projectCount.set("none", (projectCount.get("none") ?? 0) + 1);
+    } else {
+      projectCount.set(learning.projectId, (projectCount.get(learning.projectId) ?? 0) + 1);
+    }
+  }
+
+  // Get projects that have learnings
+  const projectsWithLearnings = projects.filter(
+    (p) => projectCount.has(p.id) && (projectCount.get(p.id) ?? 0) > 0,
+  );
 
   const handleExtract = async (type: "transcription" | "github" | "slack") => {
     const extractors = {
@@ -283,6 +311,41 @@ export function LearningsFeed({ date, className }: LearningsFeedProps) {
         onCategoryFilterChange={setCategoryFilter}
       />
 
+      {/* Project Filter */}
+      {projectsWithLearnings.length > 0 && (
+        <div className="shrink-0 border-b px-6 py-2">
+          <div className="flex flex-wrap gap-2">
+            <FolderGit2 className="mr-1 h-4 w-4 text-muted-foreground" />
+            <Button
+              variant={projectFilter === "all" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setProjectFilter("all")}
+            >
+              All Projects
+            </Button>
+            {projectsWithLearnings.map((project) => (
+              <Button
+                key={project.id}
+                variant={projectFilter === project.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => setProjectFilter(project.id)}
+              >
+                {project.name} ({projectCount.get(project.id) ?? 0})
+              </Button>
+            ))}
+            {(projectCount.get("none") ?? 0) > 0 && (
+              <Button
+                variant={projectFilter === "none" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setProjectFilter("none")}
+              >
+                Unassigned ({projectCount.get("none")})
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       <CardContent className="min-h-0 flex-1 overflow-auto pt-4">
         {filteredLearnings.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -296,6 +359,7 @@ export function LearningsFeed({ date, className }: LearningsFeedProps) {
               <LearningItem
                 key={learning.id}
                 learning={learning}
+                projects={projects}
                 onDelete={() => deleteLearning(learning.id)}
               />
             ))}
@@ -308,13 +372,15 @@ export function LearningsFeed({ date, className }: LearningsFeedProps) {
 
 interface LearningItemProps {
   learning: Learning;
+  projects: Project[];
   onDelete: () => void;
 }
 
-function LearningItem({ learning, onDelete }: LearningItemProps) {
+function LearningItem({ learning, projects, onDelete }: LearningItemProps) {
   const tags = learning.tags ? (JSON.parse(learning.tags) as string[]) : [];
   const isDue = !learning.nextReviewAt || new Date(learning.nextReviewAt) <= new Date();
   const sourceInfo = SOURCE_TYPE_LABELS[learning.sourceType];
+  const projectName = getProjectName(projects, learning.projectId);
 
   return (
     <div className="rounded-md border p-3">
@@ -335,6 +401,13 @@ function LearningItem({ learning, onDelete }: LearningItemProps) {
           {sourceInfo?.icon}
           <span className="ml-1">{sourceInfo?.label || learning.sourceType}</span>
         </Badge>
+
+        {projectName && (
+          <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200">
+            <FolderGit2 className="mr-1 h-2 w-2" />
+            {projectName}
+          </Badge>
+        )}
 
         {learning.category && (
           <Badge variant="secondary" className="text-xs">
