@@ -250,7 +250,7 @@ function fetchActivityData(
     .all();
 
   // 学び (該当期間の Claude Code セッションから)
-  const sessionIds = claudeSessions.map((s) => s.sessionId);
+  const sessionIds = claudeSessions.map((s) => s.sessionId).filter((id) => id);
   const learnings =
     sessionIds.length > 0
       ? db
