@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useTabBadges } from "@/hooks/use-tab-badges";
 import { formatTimeJST, getTodayDateString } from "@/lib/date";
 import { ActivityFeed } from "./activity-feed";
 import { BrowserRecordingPanel } from "./browser-recording-panel";
@@ -24,6 +26,7 @@ import { VocabularyPanel } from "./vocabulary-panel";
 export function Dashboard() {
   const [date, setDate] = useState(getTodayDateString());
   const [now, setNow] = useState(new Date());
+  const { badges } = useTabBadges(date);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000);
@@ -53,8 +56,22 @@ export function Dashboard() {
       <Tabs defaultValue="activity" className="mt-4 flex min-h-0 flex-1 flex-col">
         <TabsList className="shrink-0">
           <TabsTrigger value="activity">Activity</TabsTrigger>
-          <TabsTrigger value="tasks">Tasks</TabsTrigger>
-          <TabsTrigger value="learnings">Learnings</TabsTrigger>
+          <TabsTrigger value="tasks">
+            Tasks
+            {badges.tasks > 0 && (
+              <Badge variant="destructive" className="ml-1.5 h-5 min-w-5 px-1.5">
+                {badges.tasks}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="learnings">
+            Learnings
+            {badges.learnings > 0 && (
+              <Badge variant="secondary" className="ml-1.5 h-5 min-w-5 px-1.5">
+                {badges.learnings}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="slack">Slack</TabsTrigger>
           <TabsTrigger value="github">GitHub</TabsTrigger>
