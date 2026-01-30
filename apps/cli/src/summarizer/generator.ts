@@ -256,7 +256,7 @@ function fetchActivityData(
       ? db
           .select()
           .from(schema.learnings)
-          .where(inArray(schema.learnings.sessionId, sessionIds))
+          .where(inArray(schema.learnings.sourceId, sessionIds))
           .all()
       : [];
 
