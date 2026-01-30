@@ -7,12 +7,48 @@
 export const ADAS_API_URL = import.meta.env.VITE_ADAS_API_URL || "http://localhost:3001";
 
 /**
+ * API エラーレスポンスの型
+ */
+interface ApiErrorResponse {
+  error?: string;
+  message?: string;
+  details?: {
+    feature?: string;
+    featureName?: string;
+    hint?: string;
+  };
+}
+
+/**
+ * レスポンスからユーザーフレンドリーなエラーメッセージを取得する
+ */
+async function getErrorMessage(response: Response): Promise<string> {
+  try {
+    const data = (await response.json()) as ApiErrorResponse;
+    if (data.message) {
+      // 詳細なエラーメッセージがある場合
+      if (data.details?.hint) {
+        return `${data.message} (${data.details.hint})`;
+      }
+      return data.message;
+    }
+    if (data.error) {
+      return data.error;
+    }
+  } catch {
+    // JSON パースに失敗した場合はデフォルトメッセージを使用
+  }
+  return `API error: ${response.status} ${response.statusText}`;
+}
+
+/**
  * ADAS API から GET リクエストでデータを取得する
  */
 export async function fetchAdasApi<T>(path: string): Promise<T> {
   const response = await fetch(`${ADAS_API_URL}${path}`);
   if (!response.ok) {
-    throw new Error(`ADAS API error: ${response.status} ${response.statusText}`);
+    const errorMessage = await getErrorMessage(response);
+    throw new Error(errorMessage);
   }
   return response.json() as Promise<T>;
 }
@@ -27,7 +63,8 @@ export async function postAdasApi<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`ADAS API error: ${response.status} ${response.statusText}`);
+    const errorMessage = await getErrorMessage(response);
+    throw new Error(errorMessage);
   }
   return response.json() as Promise<T>;
 }
@@ -42,7 +79,8 @@ export async function putAdasApi<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`ADAS API error: ${response.status} ${response.statusText}`);
+    const errorMessage = await getErrorMessage(response);
+    throw new Error(errorMessage);
   }
   return response.json() as Promise<T>;
 }
@@ -57,7 +95,8 @@ export async function patchAdasApi<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`ADAS API error: ${response.status} ${response.statusText}`);
+    const errorMessage = await getErrorMessage(response);
+    throw new Error(errorMessage);
   }
   return response.json() as Promise<T>;
 }
@@ -70,7 +109,8 @@ export async function deleteAdasApi<T>(path: string): Promise<T> {
     method: "DELETE",
   });
   if (!response.ok) {
-    throw new Error(`ADAS API error: ${response.status} ${response.statusText}`);
+    const errorMessage = await getErrorMessage(response);
+    throw new Error(errorMessage);
   }
   return response.json() as Promise<T>;
 }
@@ -84,7 +124,8 @@ export async function postFormDataAdasApi<T>(path: string, formData: FormData): 
     body: formData,
   });
   if (!response.ok) {
-    throw new Error(`ADAS API error: ${response.status} ${response.statusText}`);
+    const errorMessage = await getErrorMessage(response);
+    throw new Error(errorMessage);
   }
   return response.json() as Promise<T>;
 }

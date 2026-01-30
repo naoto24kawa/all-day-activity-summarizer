@@ -17,7 +17,6 @@ import { MemoFloatingChat } from "./memo-floating-chat";
 import { MonitoringPanel } from "./monitoring-panel";
 import { ProfilePanel } from "./profile-panel";
 import { ProjectsPanel } from "./projects-panel";
-import { PromptImprovementsPanel } from "./prompt-improvements-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
 import { SlackUsersPanel } from "./slack-users-panel";
@@ -190,7 +189,6 @@ export function Dashboard() {
                     <ProfilePanel />
                   </div>
                   <div className="space-y-4">
-                    <PromptImprovementsPanel />
                     <MonitoringPanel />
                   </div>
                 </div>

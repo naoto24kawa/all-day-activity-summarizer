@@ -60,7 +60,27 @@ export function useSlackMessages(date?: string) {
     [fetchMessages],
   );
 
-  return { messages, error, loading, refetch: fetchMessages, markAsRead, markAllAsRead };
+  const updateMessage = useCallback(
+    async (id: number, data: { projectId?: number | null }) => {
+      await fetch(`${ADAS_API_URL}/api/slack-messages/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      await fetchMessages(true);
+    },
+    [fetchMessages],
+  );
+
+  return {
+    messages,
+    error,
+    loading,
+    refetch: fetchMessages,
+    markAsRead,
+    markAllAsRead,
+    updateMessage,
+  };
 }
 
 export function useSlackUnreadCounts(date?: string) {

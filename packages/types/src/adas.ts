@@ -305,12 +305,25 @@ export interface SlackMessage {
   channelName: string | null;
   userId: string;
   userName: string | null;
-  messageType: "mention" | "channel" | "dm";
+  messageType: "mention" | "channel" | "dm" | "keyword";
   text: string;
   threadTs: string | null;
   permalink: string | null;
   isRead: boolean;
+  projectId: number | null; // FK to projects
+  /** 有効プロジェクトID (メッセージ > チャンネル > 自動検索 の優先順) */
+  effectiveProjectId?: number | null;
   createdAt: string;
+}
+
+/** Slack チャンネル (プロジェクト紐づけ用) */
+export interface SlackChannel {
+  id: number;
+  channelId: string;
+  channelName: string | null;
+  projectId: number | null; // FK to projects
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ========== Claude Code 型定義 ==========
@@ -328,6 +341,7 @@ export interface ClaudeCodeSession {
   assistantMessageCount: number;
   toolUseCount: number;
   summary: string | null;
+  projectId: number | null; // FK to projects
   createdAt: string;
 }
 
@@ -347,7 +361,8 @@ export type LearningSourceType =
   | "claude-code"
   | "transcription"
   | "github-comment"
-  | "slack-message";
+  | "slack-message"
+  | "manual";
 
 /** 学び (各種ソースから抽出) */
 export interface Learning {
@@ -843,6 +858,7 @@ export type AiProcessType =
   | "evaluate"
   | "interpret"
   | "extract-learnings"
+  | "explain-learning"
   | "summarize"
   | "check-completion"
   | "extract-terms"

@@ -183,6 +183,7 @@ export const slackMessages = sqliteTable("slack_messages", {
   threadTs: text("thread_ts"), // Parent message ts if in thread
   permalink: text("permalink"),
   isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),
+  projectId: integer("project_id"), // FK to projects (nullable)
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -258,6 +259,7 @@ export const claudeCodeSessions = sqliteTable("claude_code_sessions", {
   assistantMessageCount: integer("assistant_message_count").notNull().default(0),
   toolUseCount: integer("tool_use_count").notNull().default(0),
   summary: text("summary"), // 最初のユーザーメッセージ
+  projectId: integer("project_id"), // FK to projects (nullable)
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -526,7 +528,7 @@ export type NewTask = typeof tasks.$inferInsert;
 export const learnings = sqliteTable("learnings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   sourceType: text("source_type", {
-    enum: ["claude-code", "transcription", "github-comment", "slack-message"],
+    enum: ["claude-code", "transcription", "github-comment", "slack-message", "manual"],
   })
     .notNull()
     .default("claude-code"),
@@ -661,6 +663,7 @@ export const aiProcessingLogs = sqliteTable("ai_processing_logs", {
       "evaluate",
       "interpret",
       "extract-learnings",
+      "explain-learning",
       "summarize",
       "check-completion",
       "extract-terms",
@@ -681,6 +684,26 @@ export const aiProcessingLogs = sqliteTable("ai_processing_logs", {
 
 export type AiProcessingLog = typeof aiProcessingLogs.$inferSelect;
 export type NewAiProcessingLog = typeof aiProcessingLogs.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Slack Channels (チャンネル単位のプロジェクト紐づけ)
+// ---------------------------------------------------------------------------
+
+export const slackChannels = sqliteTable("slack_channels", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  channelId: text("channel_id").notNull().unique(),
+  channelName: text("channel_name"),
+  projectId: integer("project_id"), // FK to projects (nullable)
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type SlackChannel = typeof slackChannels.$inferSelect;
+export type NewSlackChannel = typeof slackChannels.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // Task Dependencies (タスク間依存関係)

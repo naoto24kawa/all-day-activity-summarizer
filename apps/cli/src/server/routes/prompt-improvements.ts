@@ -12,6 +12,8 @@ import { schema } from "@repo/db";
 import type { PromptTarget } from "@repo/types";
 import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import type { AdasConfig } from "../../config.js";
+import { featureDisabledResponse } from "../errors.js";
 
 const PROMPT_TARGETS: PromptTarget[] = [
   "interpret",
@@ -24,7 +26,7 @@ const PROMPT_TARGETS: PromptTarget[] = [
 // 改善提案生成に必要な最小 bad フィードバック数
 const MIN_BAD_FEEDBACKS = 3;
 
-export function createPromptImprovementsRouter(db: AdasDatabase) {
+export function createPromptImprovementsRouter(db: AdasDatabase, config?: AdasConfig) {
   const router = new Hono();
 
   /**
@@ -157,6 +159,11 @@ export function createPromptImprovementsRouter(db: AdasDatabase) {
    * Body: { target: PromptTarget }
    */
   router.post("/generate", async (c) => {
+    // 機能が無効な場合は 503 を返す
+    if (!config?.promptImprovement.enabled) {
+      return featureDisabledResponse(c, "promptImprovement");
+    }
+
     const body = await c.req.json<{ target: PromptTarget }>();
     const { target } = body;
 
@@ -554,7 +561,7 @@ ${feedbackData.badFeedbacks
 上記のフィードバックを分析し、プロンプトを改善してください。`;
 
   const response = await runClaude(userPrompt, {
-    model: "sonnet",
+    model: "opus-4",
     systemPrompt,
     disableTools: true,
   });
@@ -562,7 +569,7 @@ ${feedbackData.badFeedbacks
   // JSON をパース
   try {
     const jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const jsonStr = jsonMatch ? jsonMatch[1].trim() : response.trim();
+    const jsonStr = jsonMatch?.[1]?.trim() ?? response.trim();
     const parsed = JSON.parse(jsonStr) as { newPrompt: string; reason: string };
     return parsed;
   } catch {

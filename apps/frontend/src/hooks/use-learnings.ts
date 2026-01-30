@@ -88,7 +88,56 @@ export function useLearnings(options?: LearningsOptions) {
     [fetchLearnings],
   );
 
-  return { learnings, error, loading, refetch: fetchLearnings, reviewLearning, deleteLearning };
+  const updateLearning = useCallback(
+    async (
+      id: number,
+      data: {
+        content?: string;
+        category?: string | null;
+        tags?: string[] | null;
+        projectId?: number | null;
+      },
+    ) => {
+      try {
+        await putAdasApi(`/api/learnings/${id}`, data);
+        await fetchLearnings(true);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to update learning");
+        throw err;
+      }
+    },
+    [fetchLearnings],
+  );
+
+  const createLearning = useCallback(
+    async (data: {
+      content: string;
+      date?: string;
+      category?: string;
+      tags?: string[];
+      projectId?: number;
+    }) => {
+      try {
+        await postAdasApi<Learning>("/api/learnings", data);
+        await fetchLearnings(true);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to create learning");
+        throw err;
+      }
+    },
+    [fetchLearnings],
+  );
+
+  return {
+    learnings,
+    error,
+    loading,
+    refetch: fetchLearnings,
+    reviewLearning,
+    deleteLearning,
+    updateLearning,
+    createLearning,
+  };
 }
 
 export function useLearningsStats() {
@@ -124,6 +173,110 @@ interface ExtractResult {
   extracted: number;
   saved: number;
   message?: string;
+}
+
+export interface LearningExplanation {
+  explanation: string;
+  keyPoints: string[];
+  relatedTopics: string[];
+  practicalExamples?: string[];
+}
+
+export function useLearningExplain() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const explainLearning = useCallback(async (id: number): Promise<LearningExplanation | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await postAdasApi<LearningExplanation>(`/api/learnings/${id}/explain`, {});
+      return result;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to explain learning");
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { loading, error, explainLearning };
+}
+
+export interface LearningExportItem {
+  id: number;
+  date: string;
+  content: string;
+  category: string | null;
+  tags: string[];
+  sourceType: string;
+  sourceId: string;
+  projectId: number | null;
+  confidence: number | null;
+  createdAt: string;
+}
+
+export interface LearningImportItem {
+  content: string;
+  date?: string;
+  category?: string;
+  tags?: string[];
+  projectId?: number;
+}
+
+export interface LearningImportResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
+export function useLearningsExportImport() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const exportLearnings = useCallback(
+    async (options?: {
+      date?: string;
+      category?: string;
+      sourceType?: string;
+      projectId?: number;
+    }) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams();
+        if (options?.date) params.set("date", options.date);
+        if (options?.category) params.set("category", options.category);
+        if (options?.sourceType) params.set("sourceType", options.sourceType);
+        if (options?.projectId) params.set("projectId", options.projectId.toString());
+
+        const data = await fetchAdasApi<LearningExportItem[]>(`/api/learnings/export?${params}`);
+        return data;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to export");
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  const importLearnings = useCallback(async (items: LearningImportItem[]) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await postAdasApi<LearningImportResult>("/api/learnings/import", items);
+      return result;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to import");
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { loading, error, exportLearnings, importLearnings };
 }
 
 export function useLearningsExtract() {

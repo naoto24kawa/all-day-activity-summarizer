@@ -111,9 +111,9 @@ ${goodExamples || "(none)"}
 - The improved prompt should be in the same language as the current prompt`;
 
   // 5. Claude で改善案を生成
-  consola.start("Generating improved prompt...");
+  consola.start("Generating improved prompt with Claude Opus...");
   const newPrompt = await runClaude(metaPrompt, {
-    model: "sonnet",
+    model: "opus-4",
     disableTools: true,
   });
 
@@ -288,9 +288,9 @@ ${acceptedExamples || "(none)"}
 - The improved prompt should be in Japanese`;
 
   // 6. Claude で改善案を生成
-  consola.start("Generating improved task extraction prompt...");
+  consola.start("Generating improved task extraction prompt with Claude Opus...");
   const newPrompt = await runClaude(metaPrompt, {
-    model: "sonnet",
+    model: "opus-4",
     disableTools: true,
   });
 

@@ -61,6 +61,7 @@ export type {
   SegmentEvaluation,
   SegmentFeedback,
   SegmentFeedbackResponse,
+  SlackChannel,
   SlackMessage,
   StatusResponse,
   StorageFolderMetrics,
@@ -79,6 +80,8 @@ export type {
   UpdateProjectRequest,
   UpdateTaskRequest,
   UserProfile,
+  Vocabulary,
+  VocabularySource,
 } from "./adas";
 
 export { isApprovalOnlyTask, MEMO_TAGS } from "./adas";

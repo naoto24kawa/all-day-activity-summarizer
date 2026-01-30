@@ -29,6 +29,20 @@
       "when": 1769757717476,
       "tag": "0003_rapid_the_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1769759563784,
+      "tag": "0004_clear_sauron",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1769760577018,
+      "tag": "0005_black_the_hood",
+      "breakpoints": true
     }
   ]
 }

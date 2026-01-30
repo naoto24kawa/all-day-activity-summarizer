@@ -4,7 +4,7 @@
  * Displays Claude Code sessions grouped by project
  */
 
-import type { ClaudeCodeMessage, ClaudeCodeSession } from "@repo/types";
+import type { ClaudeCodeMessage, ClaudeCodeSession, Project } from "@repo/types";
 import { Code, FolderGit2, MessageSquare, RefreshCw, Settings, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -18,6 +18,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useClaudeCodeMessages,
@@ -25,6 +32,7 @@ import {
   useClaudeCodeStats,
 } from "@/hooks/use-claude-code-sessions";
 import { useConfig } from "@/hooks/use-config";
+import { useProjects } from "@/hooks/use-projects";
 import { formatTimeShortJST } from "@/lib/date";
 
 interface ClaudeCodeFeedProps {
@@ -34,8 +42,9 @@ interface ClaudeCodeFeedProps {
 
 export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
-  const { sessions, loading, error, syncSessions } = useClaudeCodeSessions(date);
+  const { sessions, loading, error, syncSessions, updateSession } = useClaudeCodeSessions(date);
   const { stats } = useClaudeCodeStats(date);
+  const { projects } = useProjects();
   const [selectedSession, setSelectedSession] = useState<ClaudeCodeSession | null>(null);
 
   // Group sessions by project (moved before conditional returns for hooks rules)
@@ -161,6 +170,8 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
                         key={session.sessionId}
                         session={session}
                         onClick={() => setSelectedSession(session)}
+                        onUpdateProject={updateSession}
+                        projects={projects}
                       />
                     ))}
                   </div>
@@ -183,9 +194,11 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
 interface SessionItemProps {
   session: ClaudeCodeSession;
   onClick: () => void;
+  onUpdateProject: (id: number, data: { projectId?: number | null }) => void;
+  projects: Project[];
 }
 
-function SessionItem({ session, onClick }: SessionItemProps) {
+function SessionItem({ session, onClick, onUpdateProject, projects }: SessionItemProps) {
   // Format time
   const startTime = session.startTime ? new Date(session.startTime) : null;
   const endTime = session.endTime ? new Date(session.endTime) : null;
@@ -199,14 +212,20 @@ function SessionItem({ session, onClick }: SessionItemProps) {
   const duration =
     startTime && endTime ? Math.round((endTime.getTime() - startTime.getTime()) / 60000) : null;
 
+  const projectName = session.projectId
+    ? projects.find((p) => p.id === session.projectId)?.name
+    : null;
+  const activeProjects = projects.filter((p) => p.isActive);
+
+  const handleProjectChange = (value: string) => {
+    const newProjectId = value === "none" ? null : Number(value);
+    onUpdateProject(session.id, { projectId: newProjectId });
+  };
+
   return (
-    <button
-      type="button"
-      className="w-full cursor-pointer rounded-md border p-3 text-left transition-colors hover:bg-muted/50"
-      onClick={onClick}
-    >
+    <div className="rounded-md border p-3 transition-colors hover:bg-muted/50">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">
             {formatTime(startTime)} - {formatTime(endTime)}
           </span>
@@ -214,6 +233,31 @@ function SessionItem({ session, onClick }: SessionItemProps) {
             <Badge variant="outline" className="text-xs">
               {duration}min
             </Badge>
+          )}
+          {activeProjects.length > 0 && (
+            <Select
+              value={session.projectId?.toString() ?? "none"}
+              onValueChange={handleProjectChange}
+            >
+              <SelectTrigger className="h-6 w-[120px] text-xs" onClick={(e) => e.stopPropagation()}>
+                <FolderGit2 className="mr-1 h-3 w-3" />
+                <SelectValue placeholder="プロジェクト" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">なし</SelectItem>
+                {activeProjects.map((project) => (
+                  <SelectItem key={project.id} value={project.id.toString()}>
+                    {project.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {!activeProjects.length && projectName && (
+            <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+              <FolderGit2 className="h-3 w-3" />
+              {projectName}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -227,10 +271,12 @@ function SessionItem({ session, onClick }: SessionItemProps) {
           </span>
         </div>
       </div>
-      {session.summary && (
-        <p className="line-clamp-2 text-sm text-muted-foreground">{session.summary}</p>
-      )}
-    </button>
+      <button type="button" className="w-full cursor-pointer text-left" onClick={onClick}>
+        {session.summary && (
+          <p className="line-clamp-2 text-sm text-muted-foreground">{session.summary}</p>
+        )}
+      </button>
+    </div>
   );
 }
 

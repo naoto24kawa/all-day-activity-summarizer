@@ -4,11 +4,12 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { createClaudeCodeClient } from "../../claude-code/client.js";
 import { fetchAllSessions } from "../../claude-code/fetcher.js";
 import type { AdasConfig } from "../../config.js";
+import { featureDisabledResponse } from "../errors.js";
 
 export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasConfig) {
   const router = new Hono();
@@ -19,11 +20,15 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
    * Query params:
    * - date: YYYY-MM-DD (optional, filters by date)
    * - project: string (optional, filters by project path/name)
+   * - projectId: number (optional, filters by ADAS project)
+   * - noProject: true (optional, filters sessions without ADAS project)
    * - limit: number (optional, defaults to 100)
    */
   router.get("/", (c) => {
     const date = c.req.query("date");
     const project = c.req.query("project");
+    const projectIdStr = c.req.query("projectId");
+    const noProject = c.req.query("noProject") === "true";
     const limitStr = c.req.query("limit");
 
     const limit = limitStr ? Number.parseInt(limitStr, 10) : 100;
@@ -39,6 +44,14 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
       conditions.push(
         sql`(${schema.claudeCodeSessions.projectPath} LIKE ${`%${project}%`} OR ${schema.claudeCodeSessions.projectName} LIKE ${`%${project}%`})`,
       );
+    }
+
+    // ADAS project filtering
+    if (projectIdStr) {
+      const projectId = Number.parseInt(projectIdStr, 10);
+      conditions.push(eq(schema.claudeCodeSessions.projectId, projectId));
+    } else if (noProject) {
+      conditions.push(isNull(schema.claudeCodeSessions.projectId));
     }
 
     // Execute query
@@ -135,13 +148,56 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
   });
 
   /**
+   * PUT /api/claude-code-sessions/:id
+   *
+   * Update a session (currently supports projectId update)
+   * Body: { projectId?: number | null }
+   */
+  router.put("/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const existing = db
+      .select()
+      .from(schema.claudeCodeSessions)
+      .where(eq(schema.claudeCodeSessions.id, id))
+      .get();
+
+    if (!existing) {
+      return c.json({ error: "Session not found" }, 404);
+    }
+
+    const body = await c.req.json<{ projectId?: number | null }>();
+    const updateData: Partial<typeof existing> = {};
+
+    if (body.projectId !== undefined) {
+      updateData.projectId = body.projectId;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return c.json(existing);
+    }
+
+    const result = db
+      .update(schema.claudeCodeSessions)
+      .set(updateData)
+      .where(eq(schema.claudeCodeSessions.id, id))
+      .returning()
+      .get();
+
+    return c.json(result);
+  });
+
+  /**
    * POST /api/claude-code-sessions/sync
    *
    * Manually trigger a sync of all sessions
    */
   router.post("/sync", async (c) => {
     if (!config?.claudeCode.enabled) {
-      return c.json({ error: "Claude Code integration is disabled" }, 400);
+      return featureDisabledResponse(c, "claudeCode");
     }
 
     const client = createClaudeCodeClient();

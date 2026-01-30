@@ -87,6 +87,35 @@ export function usePromptImprovementStats() {
   return { stats, error, loading, refetch: fetchStats };
 }
 
+export function usePromptImprovement(id: number | null) {
+  const [improvement, setImprovement] = useState<PromptImprovement | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchImprovement = useCallback(async () => {
+    if (id === null) {
+      setImprovement(null);
+      return;
+    }
+    try {
+      setLoading(true);
+      const data = await fetchAdasApi<PromptImprovement>(`/api/prompt-improvements/${id}`);
+      setImprovement(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch improvement");
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchImprovement();
+  }, [fetchImprovement]);
+
+  return { improvement, error, loading, refetch: fetchImprovement };
+}
+
 export function useGenerateImprovement() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);

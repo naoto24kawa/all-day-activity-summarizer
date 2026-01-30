@@ -8,6 +8,7 @@ import type { AdasDatabase, NewSlackMessage, SlackQueueJob } from "@repo/db";
 import { schema } from "@repo/db";
 import consola from "consola";
 import { and, eq } from "drizzle-orm";
+import { findProjectByName, findProjectFromContent } from "../utils/project-lookup.js";
 import type { SlackClient, SlackMessageAttachment } from "./client.js";
 
 /**
@@ -92,6 +93,7 @@ async function resolveUserMentions(
   // Resolve all user IDs to names
   const userMap = new Map<string, string>();
   for (const userId of userIds) {
+    if (!userId) continue;
     const userInfo = await client.getUserInfo(userId);
     if (userInfo) {
       userMap.set(userId, userInfo.real_name || userInfo.name);
@@ -130,6 +132,93 @@ function tsToDateString(ts: string): string {
 }
 
 /**
+ * Auto-link project from channel name and message content
+ */
+/**
+ * Ensure channel exists in slackChannels table
+ * チャンネルが存在しない場合は自動登録
+ */
+function ensureChannelExists(
+  db: AdasDatabase,
+  channelId: string,
+  channelName: string | null | undefined,
+): void {
+  // Check if channel exists
+  const existing = db
+    .select()
+    .from(schema.slackChannels)
+    .where(eq(schema.slackChannels.channelId, channelId))
+    .get();
+
+  if (existing) {
+    // Update channel name if changed
+    if (channelName && existing.channelName !== channelName) {
+      db.update(schema.slackChannels)
+        .set({
+          channelName,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(schema.slackChannels.channelId, channelId))
+        .run();
+    }
+    return;
+  }
+
+  // Insert new channel
+  try {
+    db.insert(schema.slackChannels)
+      .values({
+        channelId,
+        channelName: channelName ?? null,
+      })
+      .run();
+  } catch (error) {
+    // Unique constraint violation - already exists (race condition)
+    if (!String(error).includes("UNIQUE constraint failed")) {
+      throw error;
+    }
+  }
+}
+
+/**
+ * Get channel's projectId from slackChannels table
+ */
+function getChannelProjectId(db: AdasDatabase, channelId: string): number | null {
+  const channel = db
+    .select()
+    .from(schema.slackChannels)
+    .where(eq(schema.slackChannels.channelId, channelId))
+    .get();
+
+  return channel?.projectId ?? null;
+}
+
+function autoLinkProject(
+  db: AdasDatabase,
+  channelName: string | null | undefined,
+  text: string | null | undefined,
+): number | null {
+  // Try channel name first (strip # prefix if present)
+  if (channelName) {
+    const cleanChannelName = channelName.replace(/^#/, "");
+    const projectId = findProjectByName(db, cleanChannelName);
+    if (projectId) {
+      return projectId;
+    }
+  }
+
+  // Try message content
+  if (text) {
+    const projectId = findProjectFromContent(db, text);
+    if (projectId) {
+      return projectId;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Insert message if not exists
  */
 function insertMessageIfNotExists(db: AdasDatabase, message: NewSlackMessage): boolean {
@@ -147,6 +236,23 @@ function insertMessageIfNotExists(db: AdasDatabase, message: NewSlackMessage): b
 
   if (existing) {
     return false;
+  }
+
+  // Ensure channel exists in slackChannels table
+  ensureChannelExists(db, message.channelId, message.channelName);
+
+  // Auto-link project if not already set
+  // 優先順位: メッセージの projectId > チャンネルの projectId > 自動検索
+  if (message.projectId === undefined || message.projectId === null) {
+    // まずチャンネルの projectId を確認
+    const channelProjectId = getChannelProjectId(db, message.channelId);
+    if (channelProjectId) {
+      // チャンネルに projectId が設定されている場合はそれを使用
+      // (メッセージには設定しない - effectiveProjectId で計算)
+    } else {
+      // チャンネルに projectId がない場合は自動検索
+      message.projectId = autoLinkProject(db, message.channelName, message.text);
+    }
   }
 
   try {
@@ -222,7 +328,7 @@ export async function fetchMentions(
           userId: match.user || "unknown",
           userName: userInfo?.real_name || userInfo?.name || null,
           messageType: "mention",
-          text: resolvedText,
+          text: resolvedText ?? "",
           threadTs: match.thread_ts || null,
           permalink: match.permalink,
           isRead: false,
@@ -299,7 +405,7 @@ export async function fetchKeywords(
           userId: match.user || "unknown",
           userName: userInfo?.real_name || userInfo?.name || null,
           messageType: "keyword",
-          text: resolvedText,
+          text: resolvedText ?? "",
           threadTs: match.thread_ts || null,
           permalink: match.permalink,
           isRead: false,
@@ -382,7 +488,7 @@ async function fetchThreadReplies(
         userId,
         userName,
         messageType: "channel",
-        text: resolvedText,
+        text: resolvedText ?? "",
         threadTs: message.thread_ts || null,
         permalink,
         isRead: false,
@@ -464,7 +570,7 @@ export async function fetchChannel(
         userId,
         userName,
         messageType: "channel",
-        text: resolvedText,
+        text: resolvedText ?? "",
         threadTs: message.thread_ts || null,
         permalink,
         isRead: false,
@@ -556,7 +662,7 @@ export async function fetchDM(
         userId,
         userName,
         messageType: "dm",
-        text: resolvedText,
+        text: resolvedText ?? "",
         threadTs: message.thread_ts || null,
         permalink,
         isRead: false,

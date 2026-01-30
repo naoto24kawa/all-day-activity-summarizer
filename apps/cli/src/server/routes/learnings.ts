@@ -11,6 +11,15 @@ import { extractAndSaveLearningsFromContent } from "../../claude-code/extractor.
 import type { AdasConfig } from "../../config.js";
 import { getTodayDateString } from "../../utils/date.js";
 import { hasExtractionLog } from "../../utils/extraction-log.js";
+import { findOrCreateProjectByGitHub } from "../../utils/project-lookup.js";
+import { getVocabularyTerms } from "../../utils/vocabulary.js";
+
+interface ExplainLearningResponse {
+  explanation: string;
+  keyPoints: string[];
+  relatedTopics: string[];
+  practicalExamples?: string[];
+}
 
 export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
   const router = new Hono();
@@ -87,6 +96,180 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
     const learnings = query.all();
 
     return c.json(learnings);
+  });
+
+  /**
+   * POST /api/learnings
+   *
+   * Create a new learning manually
+   * Body: { content: string, date?: string, category?: string, tags?: string[], projectId?: number }
+   */
+  router.post("/", async (c) => {
+    const body = await c.req.json<{
+      content: string;
+      date?: string;
+      category?: string;
+      tags?: string[];
+      projectId?: number;
+    }>();
+
+    if (!body.content || body.content.trim().length === 0) {
+      return c.json({ error: "content is required" }, 400);
+    }
+
+    const date = body.date ?? getTodayDateString();
+    const sourceId = `manual-${Date.now()}`;
+
+    const newLearning = {
+      sourceType: "manual" as const,
+      sourceId,
+      projectId: body.projectId ?? null,
+      date,
+      content: body.content.trim(),
+      category: body.category ?? null,
+      tags: body.tags ? JSON.stringify(body.tags) : null,
+      confidence: 1.0, // Manual entries have 100% confidence
+      repetitionCount: 0,
+      easeFactor: 2.5,
+      interval: 0,
+      nextReviewAt: null,
+      lastReviewedAt: null,
+    };
+
+    const result = db.insert(schema.learnings).values(newLearning).returning().get();
+
+    return c.json(result, 201);
+  });
+
+  /**
+   * GET /api/learnings/export
+   *
+   * Export learnings as JSON
+   * Query params: date, category, sourceType, projectId (optional filters)
+   */
+  router.get("/export", (c) => {
+    const date = c.req.query("date");
+    const category = c.req.query("category");
+    const sourceType = c.req.query("sourceType") as LearningSourceType | undefined;
+    const projectIdStr = c.req.query("projectId");
+
+    const conditions = [];
+
+    if (date) {
+      conditions.push(eq(schema.learnings.date, date));
+    }
+
+    if (category) {
+      conditions.push(eq(schema.learnings.category, category));
+    }
+
+    if (sourceType) {
+      conditions.push(eq(schema.learnings.sourceType, sourceType));
+    }
+
+    if (projectIdStr) {
+      const projectId = Number.parseInt(projectIdStr, 10);
+      if (!Number.isNaN(projectId)) {
+        conditions.push(eq(schema.learnings.projectId, projectId));
+      }
+    }
+
+    let query = db.select().from(schema.learnings).orderBy(desc(schema.learnings.createdAt));
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as typeof query;
+    }
+
+    const learnings = query.all();
+
+    // Export format: include parsed tags for convenience
+    const exportData = learnings.map((l) => ({
+      id: l.id,
+      date: l.date,
+      content: l.content,
+      category: l.category,
+      tags: l.tags ? JSON.parse(l.tags) : [],
+      sourceType: l.sourceType,
+      sourceId: l.sourceId,
+      projectId: l.projectId,
+      confidence: l.confidence,
+      createdAt: l.createdAt,
+    }));
+
+    return c.json(exportData);
+  });
+
+  /**
+   * POST /api/learnings/import
+   *
+   * Import learnings from JSON array
+   * Body: Array of { content: string, date?: string, category?: string, tags?: string[], projectId?: number }
+   */
+  router.post("/import", async (c) => {
+    const body =
+      await c.req.json<
+        Array<{
+          content: string;
+          date?: string;
+          category?: string;
+          tags?: string[];
+          projectId?: number;
+        }>
+      >();
+
+    if (!Array.isArray(body)) {
+      return c.json({ error: "Request body must be an array" }, 400);
+    }
+
+    const today = getTodayDateString();
+    const results = { imported: 0, skipped: 0, errors: [] as string[] };
+
+    for (const item of body) {
+      if (!item.content || item.content.trim().length === 0) {
+        results.errors.push("Skipped item with empty content");
+        results.skipped++;
+        continue;
+      }
+
+      const date = item.date ?? today;
+      const content = item.content.trim();
+
+      // Check for duplicates (same content and date)
+      const existing = db
+        .select()
+        .from(schema.learnings)
+        .where(and(eq(schema.learnings.content, content), eq(schema.learnings.date, date)))
+        .get();
+
+      if (existing) {
+        results.skipped++;
+        continue;
+      }
+
+      const sourceId = `manual-import-${Date.now()}-${results.imported}`;
+
+      db.insert(schema.learnings)
+        .values({
+          sourceType: "manual",
+          sourceId,
+          projectId: item.projectId ?? null,
+          date,
+          content,
+          category: item.category ?? null,
+          tags: item.tags ? JSON.stringify(item.tags) : null,
+          confidence: 1.0,
+          repetitionCount: 0,
+          easeFactor: 2.5,
+          interval: 0,
+          nextReviewAt: null,
+          lastReviewedAt: null,
+        })
+        .run();
+
+      results.imported++;
+    }
+
+    return c.json(results);
   });
 
   /**
@@ -216,6 +399,46 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
   });
 
   /**
+   * PUT /api/learnings/:id
+   *
+   * Update a learning
+   * Body: { content?: string, category?: string | null, tags?: string[] | null, projectId?: number | null }
+   */
+  router.put("/:id", async (c) => {
+    const id = Number.parseInt(c.req.param("id"), 10);
+
+    const body = await c.req.json<{
+      content?: string;
+      category?: string | null;
+      tags?: string[] | null;
+      projectId?: number | null;
+    }>();
+
+    const existing = db.select().from(schema.learnings).where(eq(schema.learnings.id, id)).get();
+
+    if (!existing) {
+      return c.json({ error: "Learning not found" }, 404);
+    }
+
+    const updateData: Record<string, unknown> = {};
+
+    if (body.content !== undefined) updateData.content = body.content.trim();
+    if (body.category !== undefined) updateData.category = body.category;
+    if (body.tags !== undefined) updateData.tags = body.tags ? JSON.stringify(body.tags) : null;
+    if (body.projectId !== undefined) updateData.projectId = body.projectId;
+
+    if (Object.keys(updateData).length === 0) {
+      return c.json(existing);
+    }
+
+    db.update(schema.learnings).set(updateData).where(eq(schema.learnings.id, id)).run();
+
+    const updated = db.select().from(schema.learnings).where(eq(schema.learnings.id, id)).get();
+
+    return c.json(updated);
+  });
+
+  /**
    * DELETE /api/learnings/:id
    */
   router.delete("/:id", (c) => {
@@ -230,6 +453,97 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
     db.delete(schema.learnings).where(eq(schema.learnings.id, id)).run();
 
     return c.json({ success: true });
+  });
+
+  /**
+   * POST /api/learnings/:id/explain
+   *
+   * Generate a detailed explanation for a learning using AI
+   */
+  router.post("/:id/explain", async (c) => {
+    if (!config) {
+      return c.json({ error: "Config not available" }, 500);
+    }
+
+    const id = Number.parseInt(c.req.param("id"), 10);
+
+    const learning = db.select().from(schema.learnings).where(eq(schema.learnings.id, id)).get();
+
+    if (!learning) {
+      return c.json({ error: "Learning not found" }, 404);
+    }
+
+    const { url, timeout } = config.worker;
+
+    // Get vocabulary terms
+    const vocabulary = getVocabularyTerms(db);
+
+    // Get user profile for context
+    const profile = db.select().from(schema.userProfile).where(eq(schema.userProfile.id, 1)).get();
+    let userProfile:
+      | {
+          experienceYears?: number;
+          specialties?: string[];
+          knownTechnologies?: string[];
+          learningGoals?: string[];
+        }
+      | undefined;
+
+    if (profile) {
+      userProfile = {
+        experienceYears: profile.experienceYears ?? undefined,
+        specialties: profile.specialties ? JSON.parse(profile.specialties) : undefined,
+        knownTechnologies: profile.knownTechnologies
+          ? JSON.parse(profile.knownTechnologies)
+          : undefined,
+        learningGoals: profile.learningGoals ? JSON.parse(profile.learningGoals) : undefined,
+      };
+    }
+
+    // Get project name if learning has projectId
+    let projectName: string | undefined;
+    if (learning.projectId) {
+      const project = db
+        .select()
+        .from(schema.projects)
+        .where(eq(schema.projects.id, learning.projectId))
+        .get();
+      projectName = project?.name;
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+      const response = await fetch(`${url}/rpc/explain-learning`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: learning.content,
+          category: learning.category,
+          tags: learning.tags,
+          projectName,
+          userProfile,
+          vocabulary,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return c.json({ error: `Worker error: ${errorText}` }, 500);
+      }
+
+      const result = (await response.json()) as ExplainLearningResponse;
+      return c.json(result);
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        return c.json({ error: "Request timeout" }, 504);
+      }
+      return c.json({ error: err instanceof Error ? err.message : "Unknown error" }, 500);
+    }
   });
 
   /**
@@ -358,6 +672,13 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
       content: `[${c.commentType}] ${c.repoName}#${c.itemNumber}: ${c.body}`,
     }));
 
+    // Get projectId from first comment's repo (auto-link to ADAS project)
+    let projectId: number | null = null;
+    const firstComment = comments[0];
+    if (firstComment) {
+      projectId = findOrCreateProjectByGitHub(db, firstComment.repoOwner, firstComment.repoName);
+    }
+
     const result = await extractAndSaveLearningsFromContent(
       db,
       config,
@@ -365,7 +686,7 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
       sourceId,
       date,
       messages,
-      { contextInfo: "GitHub PR レビューコメントからの学び抽出" },
+      { contextInfo: "GitHub PR レビューコメントからの学び抽出", projectId },
     );
 
     return c.json(result);
@@ -413,6 +734,10 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
       content: `[${m.channelName || m.channelId}] ${m.text}`,
     }));
 
+    // Get the most common projectId from messages (for auto-linking)
+    const projectIds = messages.map((m) => m.projectId).filter((id) => id !== null);
+    const projectId = projectIds.length > 0 ? projectIds[0] : null;
+
     const result = await extractAndSaveLearningsFromContent(
       db,
       config,
@@ -420,7 +745,7 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
       sourceId,
       date,
       formattedMessages,
-      { contextInfo: "Slack メッセージからの学び抽出" },
+      { contextInfo: "Slack メッセージからの学び抽出", projectId },
     );
 
     return c.json(result);

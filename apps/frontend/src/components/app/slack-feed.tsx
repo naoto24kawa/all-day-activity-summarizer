@@ -4,13 +4,14 @@
  * Displays Slack messages from mentions, channels, and DMs
  */
 
-import type { SlackMessage } from "@repo/types";
+import type { Project, SlackMessage } from "@repo/types";
 import {
   AtSign,
   Check,
   CheckCheck,
   ChevronDown,
   ExternalLink,
+  FolderGit2,
   Hash,
   MessageSquare,
   RefreshCw,
@@ -22,9 +23,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfig } from "@/hooks/use-config";
+import { useProjects } from "@/hooks/use-projects";
+import { useSlackChannels } from "@/hooks/use-slack-channels";
 import { useSlackMessages, useSlackUnreadCounts } from "@/hooks/use-slack-messages";
 import { formatSlackTsJST } from "@/lib/date";
 
@@ -35,8 +45,11 @@ interface SlackFeedProps {
 
 export function SlackFeed({ date, className }: SlackFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
-  const { messages, loading, error, refetch, markAsRead, markAllAsRead } = useSlackMessages(date);
+  const { messages, loading, error, refetch, markAsRead, markAllAsRead, updateMessage } =
+    useSlackMessages(date);
   const { counts } = useSlackUnreadCounts(date);
+  const { projects } = useProjects();
+  const { updateChannelProject, getChannelProjectId } = useSlackChannels();
 
   // 連携が無効な場合
   if (!configLoading && integrations && !integrations.slack.enabled) {
@@ -166,16 +179,45 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="mention" className="min-h-0 flex-1">
-              <GroupedMessageList messages={mentionMessages} onMarkAsRead={markAsRead} />
+              <GroupedMessageList
+                messages={mentionMessages}
+                onMarkAsRead={markAsRead}
+                onUpdateProject={updateMessage}
+                onUpdateChannelProject={updateChannelProject}
+                getChannelProjectId={getChannelProjectId}
+                projects={projects}
+              />
             </TabsContent>
             <TabsContent value="channel" className="min-h-0 flex-1">
-              <GroupedMessageList messages={channelMessages} onMarkAsRead={markAsRead} />
+              <GroupedMessageList
+                messages={channelMessages}
+                onMarkAsRead={markAsRead}
+                onUpdateProject={updateMessage}
+                onUpdateChannelProject={updateChannelProject}
+                getChannelProjectId={getChannelProjectId}
+                projects={projects}
+              />
             </TabsContent>
             <TabsContent value="dm" className="min-h-0 flex-1">
-              <GroupedMessageList messages={dmMessages} onMarkAsRead={markAsRead} isDM />
+              <GroupedMessageList
+                messages={dmMessages}
+                onMarkAsRead={markAsRead}
+                onUpdateProject={updateMessage}
+                onUpdateChannelProject={updateChannelProject}
+                getChannelProjectId={getChannelProjectId}
+                projects={projects}
+                isDM
+              />
             </TabsContent>
             <TabsContent value="keyword" className="min-h-0 flex-1">
-              <GroupedMessageList messages={keywordMessages} onMarkAsRead={markAsRead} />
+              <GroupedMessageList
+                messages={keywordMessages}
+                onMarkAsRead={markAsRead}
+                onUpdateProject={updateMessage}
+                onUpdateChannelProject={updateChannelProject}
+                getChannelProjectId={getChannelProjectId}
+                projects={projects}
+              />
             </TabsContent>
           </Tabs>
         )}
@@ -187,46 +229,66 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
 function GroupedMessageList({
   messages,
   onMarkAsRead,
+  onUpdateProject,
+  onUpdateChannelProject,
+  getChannelProjectId,
+  projects,
   isDM = false,
 }: {
   messages: SlackMessage[];
   onMarkAsRead: (id: number) => void;
+  onUpdateProject: (id: number, data: { projectId?: number | null }) => void;
+  onUpdateChannelProject: (channelId: string, projectId: number | null) => void;
+  getChannelProjectId: (channelId: string) => number | null;
+  projects: Project[];
   isDM?: boolean;
 }) {
   const [openChannels, setOpenChannels] = useState<Set<string>>(new Set());
+  const activeProjects = projects.filter((p) => p.isActive);
 
   if (messages.length === 0) {
     return <p className="py-4 text-center text-sm text-muted-foreground">No messages.</p>;
   }
 
-  // チャンネル名でグループ化
-  const groupedMessages = messages.reduce<Record<string, SlackMessage[]>>((acc, message) => {
+  // チャンネルIDでグループ化 (チャンネル名も保持)
+  const groupedMessages = messages.reduce<
+    Record<string, { channelId: string; channelName: string; messages: SlackMessage[] }>
+  >((acc, message) => {
+    const channelId = message.channelId;
     const channelName = message.channelName ?? "Unknown";
-    if (!acc[channelName]) {
-      acc[channelName] = [];
+    if (!acc[channelId]) {
+      acc[channelId] = { channelId, channelName, messages: [] };
     }
-    acc[channelName].push(message);
+    acc[channelId].messages.push(message);
     return acc;
   }, {});
 
   // チャンネル名でソート(未読数が多い順、次にチャンネル名のアルファベット順)
-  const sortedChannels = Object.keys(groupedMessages).sort((a, b) => {
-    const unreadA = groupedMessages[a].filter((m) => !m.isRead).length;
-    const unreadB = groupedMessages[b].filter((m) => !m.isRead).length;
+  const sortedChannelIds = Object.keys(groupedMessages).sort((a, b) => {
+    const groupA = groupedMessages[a];
+    const groupB = groupedMessages[b];
+    if (!groupA || !groupB) return 0;
+    const unreadA = groupA.messages.filter((m) => !m.isRead).length;
+    const unreadB = groupB.messages.filter((m) => !m.isRead).length;
     if (unreadA !== unreadB) return unreadB - unreadA;
-    return a.localeCompare(b);
+    return groupA.channelName.localeCompare(groupB.channelName);
   });
 
-  const toggleChannel = (channelName: string) => {
+  const toggleChannel = (channelId: string) => {
     setOpenChannels((prev) => {
       const next = new Set(prev);
-      if (next.has(channelName)) {
-        next.delete(channelName);
+      if (next.has(channelId)) {
+        next.delete(channelId);
       } else {
-        next.add(channelName);
+        next.add(channelId);
       }
       return next;
     });
+  };
+
+  const handleChannelProjectChange = (channelId: string, value: string) => {
+    const newProjectId = value === "none" ? null : Number(value);
+    onUpdateChannelProject(channelId, newProjectId);
   };
 
   const Icon = isDM ? MessageSquare : Hash;
@@ -234,40 +296,71 @@ function GroupedMessageList({
   return (
     <div className="h-full overflow-y-auto">
       <div className="space-y-2">
-        {sortedChannels.map((channelName) => {
-          const channelMessages = groupedMessages[channelName];
+        {sortedChannelIds.map((channelId) => {
+          const group = groupedMessages[channelId];
+          if (!group) return null;
+          const { channelName, messages: channelMessages } = group;
           const unreadCount = channelMessages.filter((m) => !m.isRead).length;
-          const isOpen = openChannels.has(channelName);
+          const isOpen = openChannels.has(channelId);
+          const channelProjectId = getChannelProjectId(channelId);
 
           return (
             <Collapsible
-              key={channelName}
+              key={channelId}
               open={isOpen}
-              onOpenChange={() => toggleChannel(channelName)}
+              onOpenChange={() => toggleChannel(channelId)}
             >
-              <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md border p-3 hover:bg-muted/50">
-                <div className="flex items-center gap-2">
-                  <Icon className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium">{isDM ? channelName : `#${channelName}`}</span>
-                  <Badge variant="secondary" className="text-xs">
-                    {channelMessages.length}
-                  </Badge>
-                  {unreadCount > 0 && (
-                    <Badge variant="destructive" className="text-xs">
-                      {unreadCount} unread
+              <div className="flex items-center gap-2 rounded-md border p-3 hover:bg-muted/50">
+                <CollapsibleTrigger className="flex flex-1 items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">{isDM ? channelName : `#${channelName}`}</span>
+                    <Badge variant="secondary" className="text-xs">
+                      {channelMessages.length}
                     </Badge>
-                  )}
-                </div>
-                <ChevronDown
-                  className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
-                />
-              </CollapsibleTrigger>
+                    {unreadCount > 0 && (
+                      <Badge variant="destructive" className="text-xs">
+                        {unreadCount} unread
+                      </Badge>
+                    )}
+                  </div>
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+                  />
+                </CollapsibleTrigger>
+                {/* チャンネル単位のプロジェクト設定 */}
+                {activeProjects.length > 0 && (
+                  <Select
+                    value={channelProjectId?.toString() ?? "none"}
+                    onValueChange={(value) => handleChannelProjectChange(channelId, value)}
+                  >
+                    <SelectTrigger
+                      className="h-7 w-[130px] text-xs"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <FolderGit2 className="mr-1 h-3 w-3" />
+                      <SelectValue placeholder="Ch Project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">なし</SelectItem>
+                      {activeProjects.map((project) => (
+                        <SelectItem key={project.id} value={project.id.toString()}>
+                          {project.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
               <CollapsibleContent className="mt-2 space-y-3 pl-4">
                 {channelMessages.map((message) => (
                   <SlackMessageItem
                     key={message.id}
                     message={message}
                     onMarkAsRead={onMarkAsRead}
+                    onUpdateProject={onUpdateProject}
+                    projects={projects}
+                    channelProjectId={channelProjectId}
                     showChannel={false}
                   />
                 ))}
@@ -283,18 +376,40 @@ function GroupedMessageList({
 function SlackMessageItem({
   message,
   onMarkAsRead,
+  onUpdateProject,
+  projects,
+  channelProjectId,
   showChannel = true,
 }: {
   message: SlackMessage;
   onMarkAsRead: (id: number) => void;
+  onUpdateProject: (id: number, data: { projectId?: number | null }) => void;
+  projects: Project[];
+  channelProjectId?: number | null;
   showChannel?: boolean;
 }) {
+  // 有効プロジェクトID: メッセージ > チャンネル > effectiveProjectId (バックエンドで計算済み)
+  const effectiveProjectId =
+    message.projectId ?? channelProjectId ?? message.effectiveProjectId ?? null;
+  const projectName = effectiveProjectId
+    ? projects.find((p) => p.id === effectiveProjectId)?.name
+    : null;
+  const activeProjects = projects.filter((p) => p.isActive);
+  // メッセージ個別に設定されているか判定 (チャンネル設定と異なる場合)
+  const hasMessageProject = message.projectId !== null && message.projectId !== undefined;
+  const isInheritedFromChannel = !hasMessageProject && channelProjectId !== null;
+
+  const handleProjectChange = (value: string) => {
+    const newProjectId = value === "none" ? null : Number(value);
+    onUpdateProject(message.id, { projectId: newProjectId });
+  };
+
   return (
     <div
       className={`rounded-md border p-3 ${message.isRead ? "opacity-60" : "border-primary/30 bg-primary/5"}`}
     >
       <div className="mb-1 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">
             {formatSlackTsJST(message.messageTs)}
           </span>
@@ -307,6 +422,39 @@ function SlackMessageItem({
             <Badge variant="secondary" className="text-xs">
               {message.userName}
             </Badge>
+          )}
+          {activeProjects.length > 0 && (
+            <Select
+              value={message.projectId?.toString() ?? "none"}
+              onValueChange={handleProjectChange}
+            >
+              <SelectTrigger
+                className={`h-6 w-[120px] text-xs ${isInheritedFromChannel ? "border-dashed opacity-70" : ""}`}
+                title={isInheritedFromChannel ? "チャンネル設定から継承" : undefined}
+              >
+                <FolderGit2 className="mr-1 h-3 w-3" />
+                <SelectValue
+                  placeholder={isInheritedFromChannel && projectName ? projectName : "プロジェクト"}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">
+                  {isInheritedFromChannel && projectName ? `Ch: ${projectName}` : "なし"}
+                </SelectItem>
+                {activeProjects.map((project) => (
+                  <SelectItem key={project.id} value={project.id.toString()}>
+                    {project.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {!activeProjects.length && projectName && (
+            <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+              <FolderGit2 className="h-3 w-3" />
+              {projectName}
+              {isInheritedFromChannel && <span className="opacity-60">(Ch)</span>}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-1">

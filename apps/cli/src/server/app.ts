@@ -19,6 +19,7 @@ import { createProjectsRouter } from "./routes/projects.js";
 import { createPromptImprovementsRouter } from "./routes/prompt-improvements.js";
 import { createRecordingRouter } from "./routes/recording.js";
 import { createServerLogsRouter } from "./routes/server-logs.js";
+import { createSlackChannelsRouter } from "./routes/slack-channels.js";
 import { createSlackMessagesRouter } from "./routes/slack-messages.js";
 import { createSlackUsersRouter } from "./routes/slack-users.js";
 import { createStatusRouter } from "./routes/status.js";
@@ -49,6 +50,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/feedbacks", createFeedbacksRouter(db));
   app.route("/api/feedbacks/v2", createFeedbacksV2Router(db));
   app.route("/api/segments", createSegmentFeedbackRouter(db));
+  app.route("/api/slack-channels", createSlackChannelsRouter(db));
   app.route("/api/slack-messages", createSlackMessagesRouter(db));
   app.route("/api/slack-users", createSlackUsersRouter(db));
   app.route("/api/github-items", createGitHubItemsRouter(db));
@@ -59,7 +61,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/status", createStatusRouter(db));
   app.route("/api/tasks", createTasksRouter(db));
   app.route("/api/vocabulary", createVocabularyRouter(db, options?.config));
-  app.route("/api/prompt-improvements", createPromptImprovementsRouter(db));
+  app.route("/api/prompt-improvements", createPromptImprovementsRouter(db, options?.config));
   app.route("/api/profile", createProfileRouter(db, options?.config));
   app.route("/api/projects", createProjectsRouter(db));
   app.route("/api/config", createConfigRouter());

@@ -65,11 +65,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useNotifications } from "@/hooks/use-notifications";
 import { getProjectName, useProjects } from "@/hooks/use-projects";
+import {
+  useGenerateImprovement,
+  usePromptImprovement,
+  usePromptImprovementStats,
+} from "@/hooks/use-prompt-improvements";
 import { useTaskStats, useTasks } from "@/hooks/use-tasks";
 import { ADAS_API_URL } from "@/lib/adas-api";
 
@@ -95,6 +101,11 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const { projects } = useProjects();
   const { permission, requestPermission, notifyHighPriorityTask } = useNotifications();
   const [extracting, setExtracting] = useState(false);
+
+  // プロンプト改善
+  const { stats: promptStats, refetch: refetchPromptStats } = usePromptImprovementStats();
+  const { generate: generateImprovement, generating: generatingImprovement } =
+    useGenerateImprovement();
 
   const [sourceFilter, setSourceFilter] = useState<TaskSourceType | "all">("all");
   const [projectFilter, setProjectFilter] = useState<number | "all" | "none">("all");
@@ -545,6 +556,56 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
           </div>
         )}
 
+        {/* プロンプト改善案生成 */}
+        {promptStats && Object.values(promptStats).some((s) => s.canGenerate) && (
+          <div className="rounded-md border bg-muted/50 p-3">
+            <div className="mb-2 flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-purple-500" />
+              <span className="text-sm font-medium">プロンプト改善案を生成可能</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(promptStats)
+                .filter(([, stat]) => stat.canGenerate)
+                .map(([target, stat]) => (
+                  <Button
+                    key={target}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={generatingImprovement}
+                    onClick={async () => {
+                      const result = await generateImprovement(target);
+                      if (result) {
+                        refetchPromptStats();
+                        refetch();
+                      }
+                    }}
+                  >
+                    {generatingImprovement ? (
+                      <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                    ) : (
+                      <Wand2 className="mr-1 h-3 w-3" />
+                    )}
+                    {target === "interpret"
+                      ? "AI解釈"
+                      : target === "evaluate"
+                        ? "評価"
+                        : target === "summarize-hourly"
+                          ? "時間サマリ"
+                          : target === "summarize-daily"
+                            ? "日次サマリ"
+                            : target === "task-extract"
+                              ? "タスク抽出"
+                              : target}
+                    <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
+                      {stat.badCount}件
+                    </Badge>
+                  </Button>
+                ))}
+            </div>
+          </div>
+        )}
+
         {tasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <Sparkles className="mb-2 h-8 w-8 text-muted-foreground" />
@@ -848,21 +909,13 @@ function TaskItem({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // コピー状態
   const [copied, setCopied] = useState(false);
+  // プロンプト改善の差分表示
+  const [diffDialogOpen, setDiffDialogOpen] = useState(false);
+  const { improvement } = usePromptImprovement(
+    diffDialogOpen && task.promptImprovementId ? task.promptImprovementId : null,
+  );
 
   const projectName = getProjectName(projects, task.projectId);
-
-  const _priorityColors: Record<string, string> = {
-    high: "text-red-500",
-    medium: "text-yellow-500",
-    low: "text-green-500",
-  };
-
-  const _confidenceLabel = (confidence: number | null) => {
-    if (confidence === null) return null;
-    if (confidence >= 0.9) return "High";
-    if (confidence >= 0.7) return "Medium";
-    return "Low";
-  };
 
   const handleReject = async () => {
     await onUpdateTask(task.id, { status: "rejected", rejectReason: rejectReason || undefined });
@@ -1144,6 +1197,13 @@ function TaskItem({
             {/* 承認・修正して承認・却下ボタン (承認待ちのみ) */}
             {task.status === "pending" && (
               <>
+                {/* プロンプト改善タスクの場合は差分ボタンを表示 */}
+                {task.sourceType === "prompt-improvement" && task.promptImprovementId && (
+                  <Button variant="outline" size="sm" onClick={() => setDiffDialogOpen(true)}>
+                    <FileText className="mr-1 h-3 w-3" />
+                    差分
+                  </Button>
+                )}
                 <Button
                   variant="default"
                   size="sm"
@@ -1152,14 +1212,17 @@ function TaskItem({
                   <Check className="mr-1 h-3 w-3" />
                   承認
                 </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => openEditDialog("edit-approve")}
-                >
-                  <Wand2 className="mr-1 h-3 w-3" />
-                  修正して承認
-                </Button>
+                {/* 承認のみタスク以外は「修正して承認」を表示 */}
+                {!isApprovalOnlyTask(task.sourceType) && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => openEditDialog("edit-approve")}
+                  >
+                    <Wand2 className="mr-1 h-3 w-3" />
+                    修正して承認
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => setRejectDialogOpen(true)}>
                   <X className="mr-1 h-3 w-3" />
                   却下
@@ -1404,6 +1467,60 @@ function TaskItem({
                   保存
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* プロンプト改善差分ダイアログ */}
+      <Dialog open={diffDialogOpen} onOpenChange={setDiffDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>プロンプト改善案の差分</DialogTitle>
+            <DialogDescription>{improvement?.improvementReason}</DialogDescription>
+          </DialogHeader>
+          {improvement ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h4 className="mb-2 text-sm font-medium">変更前</h4>
+                <ScrollArea className="h-[400px] rounded border p-2">
+                  <pre className="whitespace-pre-wrap text-xs">{improvement.previousPrompt}</pre>
+                </ScrollArea>
+              </div>
+              <div>
+                <h4 className="mb-2 text-sm font-medium">変更後</h4>
+                <ScrollArea className="h-[400px] rounded border p-2">
+                  <pre className="whitespace-pre-wrap text-xs">{improvement.newPrompt}</pre>
+                </ScrollArea>
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-[400px] items-center justify-center">
+              <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiffDialogOpen(false)}>
+              閉じる
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                onUpdateTask(task.id, { status: "rejected" });
+                setDiffDialogOpen(false);
+              }}
+            >
+              <X className="mr-1 h-4 w-4" />
+              却下
+            </Button>
+            <Button
+              onClick={() => {
+                onUpdateTask(task.id, { status: "accepted" });
+                setDiffDialogOpen(false);
+              }}
+            >
+              <Check className="mr-1 h-4 w-4" />
+              承認
             </Button>
           </DialogFooter>
         </DialogContent>

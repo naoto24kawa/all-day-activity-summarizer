@@ -18,8 +18,10 @@ import {
 import { findProjectByPath } from "../utils/project-lookup.js";
 import { getVocabularyTerms } from "../utils/vocabulary.js";
 
-/** Map LearningSourceType to ExtractionSourceType */
-function toExtractionSourceType(sourceType: LearningSourceType): ExtractionSourceType {
+/** Map LearningSourceType to ExtractionSourceType (manual is excluded from extraction) */
+function toExtractionSourceType(
+  sourceType: Exclude<LearningSourceType, "manual">,
+): ExtractionSourceType {
   if (sourceType === "slack-message") return "slack";
   return sourceType;
 }
@@ -114,13 +116,16 @@ export async function extractAndSaveLearnings(
   );
 }
 
+/** Source types that support AI extraction (manual is excluded) */
+export type ExtractableLearningSourceType = Exclude<LearningSourceType, "manual">;
+
 /**
  * Generic function to extract learnings from content and save to DB
  */
 export async function extractAndSaveLearningsFromContent(
   db: AdasDatabase,
   config: AdasConfig,
-  sourceType: LearningSourceType,
+  sourceType: ExtractableLearningSourceType,
   sourceId: string,
   date: string,
   messages: Array<{ role: string; content: string }>,

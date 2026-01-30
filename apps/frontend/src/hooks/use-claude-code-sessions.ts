@@ -4,7 +4,7 @@
 
 import type { ClaudeCodeMessage, ClaudeCodeSession } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
-import { fetchAdasApi, postAdasApi } from "@/lib/adas-api";
+import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
 export interface ClaudeCodeStats {
   totalSessions: number;
@@ -58,7 +58,19 @@ export function useClaudeCodeSessions(date?: string) {
     }
   }, [fetchSessions]);
 
-  return { sessions, error, loading, refetch: fetchSessions, syncSessions };
+  const updateSession = useCallback(
+    async (id: number, data: { projectId?: number | null }) => {
+      await fetch(`${ADAS_API_URL}/api/claude-code-sessions/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      await fetchSessions(true);
+    },
+    [fetchSessions],
+  );
+
+  return { sessions, error, loading, refetch: fetchSessions, syncSessions, updateSession };
 }
 
 export function useClaudeCodeStats(date?: string) {

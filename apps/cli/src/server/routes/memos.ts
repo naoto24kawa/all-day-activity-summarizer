@@ -3,6 +3,7 @@ import { schema } from "@repo/db";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getTodayDateString } from "../../utils/date.js";
+import { findProjectFromContent } from "../../utils/project-lookup.js";
 
 export function createMemosRouter(db: AdasDatabase) {
   const router = new Hono();
@@ -35,13 +36,19 @@ export function createMemosRouter(db: AdasDatabase) {
     const date = body.date || getTodayDateString();
     const tags = body.tags && body.tags.length > 0 ? JSON.stringify(body.tags) : null;
 
+    // Auto-link project if not specified
+    let projectId = body.projectId ?? null;
+    if (projectId === null) {
+      projectId = findProjectFromContent(db, body.content);
+    }
+
     const result = db
       .insert(schema.memos)
       .values({
         date,
         content: body.content.trim(),
         tags,
-        projectId: body.projectId ?? null,
+        projectId,
       })
       .returning()
       .get();

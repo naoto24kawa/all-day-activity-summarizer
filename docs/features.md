@@ -489,3 +489,85 @@ recordExtractionLog(db, "task", "slack", String(messageId), extractedCount);
 | `learning` | Transcription | `transcription-YYYY-MM-DD` |
 | `learning` | GitHub Comment | `github-comment-YYYY-MM-DD` |
 | `learning` | Slack | `slack-message-YYYY-MM-DD` |
+
+---
+
+## プロンプト定期見直し
+
+### 概要
+
+組み込まれたプロンプト (task-extract.md など) を定期的に見直し、フィードバックに基づいて改善案を自動生成。
+Claude Opus を使用して高品質な改善案を生成し、ユーザー承認後に適用。
+
+### 実行タイミング
+
+- **自動実行**: 毎日 6:00 (serve コマンド起動中)
+- **手動実行**: UI の「プロンプト改善」パネルから「改善案を生成」ボタン
+
+### ファイル構成
+
+| 種別 | パス |
+|------|------|
+| スケジューラー | `apps/cli/src/prompt-improvement/scheduler.ts` |
+| 改善ロジック | `apps/cli/src/prompts/improver.ts` |
+| API ルート | `apps/cli/src/server/routes/prompt-improvements.ts` |
+| フロントエンド | `apps/frontend/src/components/app/prompt-improvements-panel.tsx` |
+
+### 処理フロー
+
+```
+毎日 6:00
+    ↓
+各プロンプトターゲットをチェック
+    ↓
+[条件チェック]
+- pending の改善案がない
+- bad フィードバック >= 3件
+    ↓ Yes
+Claude Opus で改善案を生成
+    ↓
+DB に保存 (status: pending)
+    ↓
+tasks テーブルに登録 ([定期見直し] ラベル付き)
+    ↓
+UI で承認待ちとして表示
+```
+
+### 実行条件
+
+| 条件 | 説明 |
+|------|------|
+| 既存の pending 改善案がない | 未承認の改善案がある場合はスキップ |
+| bad フィードバック >= 3件 | 最終改善日以降のフィードバックをカウント |
+
+### 使用 AI モデル
+
+| 場所 | モデル |
+|------|--------|
+| 定期見直しスケジューラー | Claude Opus |
+| UI からの手動生成 | Claude Opus |
+| CLI コマンド (improve-prompt) | Claude Opus |
+
+### 設定
+
+`~/.adas/config.json`:
+```json
+{
+  "promptImprovement": {
+    "enabled": true
+  }
+}
+```
+
+### 確認方法
+
+サーバー起動時に以下のログが出力:
+```
+Prompt improvement scheduler started (runs daily at 6:00)
+```
+
+### UI での操作
+
+1. **Settings タブ** → **プロンプト改善パネル**
+2. **承認待ちタブ** で定期見直しで生成された改善案を確認
+3. 差分を確認して **承認** または **却下**

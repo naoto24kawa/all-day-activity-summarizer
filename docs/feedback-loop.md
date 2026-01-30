@@ -99,6 +99,13 @@ Few-shot learning は、少数の例をプロンプトに含めることで AI �
 
 悪いフィードバックが一定数溜まると、AI がプロンプト改善案を生成します。ユーザーが承認するまでプロンプトは変更されません。
 
+### 2つの実行方式
+
+| 方式 | 説明 | 使用モデル |
+|------|------|-----------|
+| **定期見直し** | 毎日 6:00 に自動実行 | Claude Opus |
+| **手動生成** | UI から「改善案を生成」ボタンで実行 | Claude Opus |
+
 ### フロー
 
 ```
@@ -168,9 +175,34 @@ Settings タブの「プロンプト改善」パネルから操作:
 
 | ファイル | 役割 |
 |---------|------|
+| `apps/cli/src/prompt-improvement/scheduler.ts` | 定期見直しスケジューラー |
+| `apps/cli/src/prompts/improver.ts` | プロンプト改善ロジック |
 | `apps/cli/src/server/routes/prompt-improvements.ts` | API ルート |
 | `apps/frontend/src/hooks/use-prompt-improvements.ts` | フック |
 | `apps/frontend/src/components/app/prompt-improvements-panel.tsx` | UI コンポーネント |
+
+### 定期見直しスケジューラー
+
+サーバー (`serve` コマンド) 起動時に自動的に開始されます。
+
+**実行タイミング**: 毎日 6:00
+
+**処理内容**:
+1. 全プロンプトターゲットを順次チェック
+2. 条件を満たすターゲットのみ改善案を生成
+3. 生成した改善案は tasks テーブルにも登録 (`[定期見直し]` ラベル付き)
+
+**実行条件**:
+- 対象プロンプトに pending の改善案がない
+- 最終改善日以降の bad フィードバックが 3 件以上
+
+**ログ出力**:
+```
+Prompt improvement scheduler started (runs daily at 6:00)
+[interpret] Generating improvement with Claude Opus...
+[interpret] Improvement generated and saved (ID: 5)
+Scheduled prompt review completed: 1 improvements generated
+```
 
 ---
 

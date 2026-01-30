@@ -4,7 +4,7 @@
  * Slack メッセージから抽出したタスクの管理
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { getPromptFilePath, runClaude } from "@repo/core";
 import type { AdasDatabase, SlackMessage } from "@repo/db";
 import { schema } from "@repo/db";
@@ -12,6 +12,7 @@ import {
   type CheckCompletionRequest,
   type CheckCompletionResponse,
   isApprovalOnlyTask,
+  type PromptTarget,
   type SuggestCompletionsResponse,
   type Task,
   type TaskCompletionSuggestion,
@@ -572,6 +573,81 @@ export function createTasksRouter(db: AdasDatabase) {
   });
 
   /**
+   * PATCH /api/tasks/batch
+   *
+   * 一括更新 (ステータス、プロジェクト等)
+   * Body: { ids: number[], status?: TaskStatus, projectId?: number | null, reason?: string }
+   */
+  router.patch("/batch", async (c) => {
+    const body = await c.req.json<{
+      ids: number[];
+      status?: TaskStatus;
+      projectId?: number | null;
+      reason?: string;
+    }>();
+
+    if (!body.ids || body.ids.length === 0) {
+      return c.json({ error: "ids is required" }, 400);
+    }
+
+    // status も projectId もない場合はエラー
+    if (body.status === undefined && body.projectId === undefined) {
+      return c.json({ error: "status or projectId is required" }, 400);
+    }
+
+    const now = new Date().toISOString();
+    const updates: Record<string, unknown> = {
+      updatedAt: now,
+    };
+
+    // projectId の更新
+    if (body.projectId !== undefined) {
+      updates.projectId = body.projectId;
+    }
+
+    // status の更新
+    if (body.status) {
+      updates.status = body.status;
+
+      if (body.status === "accepted") {
+        updates.acceptedAt = now;
+      } else if (body.status === "rejected") {
+        updates.rejectedAt = now;
+        if (body.reason) {
+          updates.rejectReason = body.reason;
+        }
+      } else if (body.status === "in_progress") {
+        updates.startedAt = now;
+      } else if (body.status === "paused") {
+        updates.pausedAt = now;
+        if (body.reason) {
+          updates.pauseReason = body.reason;
+        }
+      } else if (body.status === "completed") {
+        updates.completedAt = now;
+      }
+    }
+
+    const results = [];
+    for (const id of body.ids) {
+      const result = db
+        .update(schema.tasks)
+        .set(updates)
+        .where(eq(schema.tasks.id, id))
+        .returning()
+        .get();
+      if (result) {
+        results.push(result);
+      }
+    }
+
+    return c.json({
+      updated: results.length,
+      tasks: results,
+    });
+  });
+
+  /**
    * PATCH /api/tasks/:id
    *
    * タスクのステータス更新
@@ -619,6 +695,11 @@ export function createTasksRouter(db: AdasDatabase) {
         if (existing.sourceType === "vocabulary" && existing.vocabularySuggestionId) {
           await applyVocabularySuggestion(db, existing.vocabularySuggestionId, now);
         }
+
+        // prompt-improvement の場合、プロンプトファイルを更新
+        if (existing.sourceType === "prompt-improvement" && existing.promptImprovementId) {
+          await applyPromptImprovement(db, existing.promptImprovementId, now);
+        }
       } else if (body.status === "rejected") {
         updates.rejectedAt = now;
         if (body.rejectReason) {
@@ -638,6 +719,14 @@ export function createTasksRouter(db: AdasDatabase) {
           db.update(schema.vocabularySuggestions)
             .set({ status: "rejected", rejectedAt: now })
             .where(eq(schema.vocabularySuggestions.id, existing.vocabularySuggestionId))
+            .run();
+        }
+
+        // prompt-improvement の場合、提案も却下
+        if (existing.sourceType === "prompt-improvement" && existing.promptImprovementId) {
+          db.update(schema.promptImprovements)
+            .set({ status: "rejected", rejectedAt: now })
+            .where(eq(schema.promptImprovements.id, existing.promptImprovementId))
             .run();
         }
       } else if (body.status === "in_progress") {
@@ -1265,7 +1354,7 @@ export function createTasksRouter(db: AdasDatabase) {
    * タスクを承認
    * 承認のみタスク (prompt-improvement, profile-suggestion, vocabulary) は自動的に完了になる
    */
-  router.post("/:id/accept", (c) => {
+  router.post("/:id/accept", async (c) => {
     const id = Number(c.req.param("id"));
     if (Number.isNaN(id)) {
       return c.json({ error: "Invalid id" }, 400);
@@ -1280,6 +1369,21 @@ export function createTasksRouter(db: AdasDatabase) {
 
     // 承認のみタスクは自動的に完了にする
     if (isApprovalOnlyTask(existing.sourceType)) {
+      // prompt-improvement の場合、プロンプトファイルを更新
+      if (existing.sourceType === "prompt-improvement" && existing.promptImprovementId) {
+        await applyPromptImprovement(db, existing.promptImprovementId, now);
+      }
+
+      // profile-suggestion の場合、プロフィールを更新
+      if (existing.sourceType === "profile-suggestion" && existing.profileSuggestionId) {
+        await applyProfileSuggestion(db, existing.profileSuggestionId, now);
+      }
+
+      // vocabulary の場合、vocabulary テーブルに追加
+      if (existing.sourceType === "vocabulary" && existing.vocabularySuggestionId) {
+        await applyVocabularySuggestion(db, existing.vocabularySuggestionId, now);
+      }
+
       const result = db
         .update(schema.tasks)
         .set({
@@ -1330,6 +1434,27 @@ export function createTasksRouter(db: AdasDatabase) {
     }
 
     const now = new Date().toISOString();
+
+    // 関連テーブルの却下処理
+    if (existing.sourceType === "prompt-improvement" && existing.promptImprovementId) {
+      db.update(schema.promptImprovements)
+        .set({ status: "rejected", rejectedAt: now })
+        .where(eq(schema.promptImprovements.id, existing.promptImprovementId))
+        .run();
+    }
+    if (existing.sourceType === "profile-suggestion" && existing.profileSuggestionId) {
+      db.update(schema.profileSuggestions)
+        .set({ status: "rejected", rejectedAt: now })
+        .where(eq(schema.profileSuggestions.id, existing.profileSuggestionId))
+        .run();
+    }
+    if (existing.sourceType === "vocabulary" && existing.vocabularySuggestionId) {
+      db.update(schema.vocabularySuggestions)
+        .set({ status: "rejected", rejectedAt: now })
+        .where(eq(schema.vocabularySuggestions.id, existing.vocabularySuggestionId))
+        .run();
+    }
+
     const result = db
       .update(schema.tasks)
       .set({
@@ -1343,70 +1468,6 @@ export function createTasksRouter(db: AdasDatabase) {
       .get();
 
     return c.json(result);
-  });
-
-  /**
-   * PATCH /api/tasks/batch
-   *
-   * 一括ステータス更新
-   * Body: { ids: number[], status: TaskStatus, reason?: string }
-   */
-  router.patch("/batch", async (c) => {
-    const body = await c.req.json<{
-      ids: number[];
-      status: TaskStatus;
-      reason?: string;
-    }>();
-
-    if (!body.ids || body.ids.length === 0) {
-      return c.json({ error: "ids is required" }, 400);
-    }
-
-    if (!body.status) {
-      return c.json({ error: "status is required" }, 400);
-    }
-
-    const now = new Date().toISOString();
-    const updates: Record<string, unknown> = {
-      status: body.status,
-      updatedAt: now,
-    };
-
-    if (body.status === "accepted") {
-      updates.acceptedAt = now;
-    } else if (body.status === "rejected") {
-      updates.rejectedAt = now;
-      if (body.reason) {
-        updates.rejectReason = body.reason;
-      }
-    } else if (body.status === "in_progress") {
-      updates.startedAt = now;
-    } else if (body.status === "paused") {
-      updates.pausedAt = now;
-      if (body.reason) {
-        updates.pauseReason = body.reason;
-      }
-    } else if (body.status === "completed") {
-      updates.completedAt = now;
-    }
-
-    const results = [];
-    for (const id of body.ids) {
-      const result = db
-        .update(schema.tasks)
-        .set(updates)
-        .where(eq(schema.tasks.id, id))
-        .returning()
-        .get();
-      if (result) {
-        results.push(result);
-      }
-    }
-
-    return c.json({
-      updated: results.length,
-      tasks: results,
-    });
   });
 
   /**
@@ -1918,6 +1979,40 @@ async function applyVocabularySuggestion(
       acceptedAt: now,
     })
     .where(eq(schema.vocabularySuggestions.id, suggestionId))
+    .run();
+}
+
+/**
+ * プロンプト改善を適用
+ */
+async function applyPromptImprovement(
+  db: AdasDatabase,
+  improvementId: number,
+  now: string,
+): Promise<void> {
+  const improvement = db
+    .select()
+    .from(schema.promptImprovements)
+    .where(eq(schema.promptImprovements.id, improvementId))
+    .get();
+
+  if (!improvement || improvement.status !== "pending") {
+    return;
+  }
+
+  // プロンプトファイルを更新
+  const promptPath = getPromptFilePath(improvement.target as PromptTarget);
+  writeFileSync(promptPath, improvement.newPrompt, "utf-8");
+
+  consola.info(`[tasks] Applied prompt improvement for: ${improvement.target}`);
+
+  // 提案ステータスを更新
+  db.update(schema.promptImprovements)
+    .set({
+      status: "approved",
+      approvedAt: now,
+    })
+    .where(eq(schema.promptImprovements.id, improvementId))
     .run();
 }
 

@@ -7,6 +7,7 @@ import { startClaudeCodeSystem } from "../claude-code/scheduler.js";
 import type { AdasConfig } from "../config.js";
 import { loadConfig } from "../config.js";
 import { startGitHubSystem } from "../github/scheduler.js";
+import { startPromptImprovementScheduler } from "../prompt-improvement/scheduler.js";
 import { createApp } from "../server/app.js";
 import { startSlackSystem } from "../slack/scheduler.js";
 import { startScheduler } from "../summarizer/scheduler.js";
@@ -100,5 +101,8 @@ export function registerServeCommand(program: Command): void {
       if (stopGitHub) {
         consola.success("GitHub integration started");
       }
+
+      // Start Prompt Improvement scheduler
+      startPromptImprovementScheduler(db);
     });
 }

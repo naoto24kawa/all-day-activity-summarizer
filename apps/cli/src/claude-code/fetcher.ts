@@ -16,6 +16,7 @@ import consola from "consola";
 import { eq } from "drizzle-orm";
 import type { AdasConfig } from "../config.js";
 import { getTodayDateString } from "../utils/date.js";
+import { findProjectByPathFuzzy } from "../utils/project-lookup.js";
 import type { ClaudeCodeClient } from "./client.js";
 import { extractAndSaveLearnings } from "./extractor.js";
 
@@ -92,16 +93,21 @@ function upsertSession(db: AdasDatabase, session: NewClaudeCodeSession): boolean
     .get();
 
   if (existing) {
-    // Update if changed
+    // Update if changed (including projectId if not already set)
+    const updateData: Partial<typeof session> = {
+      startTime: session.startTime,
+      endTime: session.endTime,
+      userMessageCount: session.userMessageCount,
+      assistantMessageCount: session.assistantMessageCount,
+      toolUseCount: session.toolUseCount,
+      summary: session.summary,
+    };
+    // Only update projectId if existing is null and new one is provided
+    if (existing.projectId === null && session.projectId !== null) {
+      updateData.projectId = session.projectId;
+    }
     db.update(schema.claudeCodeSessions)
-      .set({
-        startTime: session.startTime,
-        endTime: session.endTime,
-        userMessageCount: session.userMessageCount,
-        assistantMessageCount: session.assistantMessageCount,
-        toolUseCount: session.toolUseCount,
-        summary: session.summary,
-      })
+      .set(updateData)
       .where(eq(schema.claudeCodeSessions.sessionId, session.sessionId))
       .run();
     return false; // Updated, not inserted
@@ -135,6 +141,9 @@ export async function fetchProjectSessions(
   const projectName = basename(projectPath);
   const sessions = await client.listSessions(projectPath);
 
+  // Find ADAS project ID for auto-linking
+  const projectId = findProjectByPathFuzzy(db, projectPath);
+
   for (const sessionInfo of sessions) {
     try {
       const detail = await client.getSessionDetail(projectPath, sessionInfo.id);
@@ -154,6 +163,7 @@ export async function fetchProjectSessions(
         assistantMessageCount: detail.summary.assistantMessageCount,
         toolUseCount: detail.summary.toolUseCount,
         summary,
+        projectId,
       });
 
       // Save messages for this session

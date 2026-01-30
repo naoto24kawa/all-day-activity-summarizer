@@ -66,6 +66,7 @@ error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 | 抽出ログ | [docs/features.md](docs/features.md#抽出ログの統一管理) |
 | プロフィール | [docs/features.md](docs/features.md#ユーザープロフィール) |
 | プロジェクト | [docs/features.md](docs/features.md#プロジェクト管理) |
+| プロンプト定期見直し | [docs/features.md](docs/features.md#プロンプト定期見直し) |
 | フィードバックループ | [docs/feedback-loop.md](docs/feedback-loop.md) |
 | API エンドポイント | [docs/api.md](docs/api.md) |
 | アーキテクチャ | [docs/architecture.md](docs/architecture.md) |

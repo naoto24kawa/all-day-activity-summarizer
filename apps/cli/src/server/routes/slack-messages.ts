@@ -4,8 +4,34 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
+
+/**
+ * チャンネル一覧を取得してマップを作成
+ */
+function getChannelProjectMap(db: AdasDatabase): Map<string, number | null> {
+  const channels = db.select().from(schema.slackChannels).all();
+  const map = new Map<string, number | null>();
+  for (const channel of channels) {
+    map.set(channel.channelId, channel.projectId);
+  }
+  return map;
+}
+
+/**
+ * メッセージに effectiveProjectId を付加
+ * 優先順位: メッセージの projectId > チャンネルの projectId
+ */
+function addEffectiveProjectId<T extends { channelId: string; projectId: number | null }>(
+  messages: T[],
+  channelProjectMap: Map<string, number | null>,
+): (T & { effectiveProjectId: number | null })[] {
+  return messages.map((msg) => ({
+    ...msg,
+    effectiveProjectId: msg.projectId ?? channelProjectMap.get(msg.channelId) ?? null,
+  }));
+}
 
 export function createSlackMessagesRouter(db: AdasDatabase) {
   const router = new Hono();
@@ -17,12 +43,16 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
    * - date: YYYY-MM-DD (optional, defaults to today)
    * - type: mention | channel | dm (optional, filters by type)
    * - unread: true | false (optional, filters by read status)
+   * - projectId: number (optional, filters by project)
+   * - noProject: true (optional, filters messages without project)
    * - limit: number (optional, defaults to 100)
    */
   router.get("/", (c) => {
     const date = c.req.query("date");
     const type = c.req.query("type") as "mention" | "channel" | "dm" | undefined;
     const unreadStr = c.req.query("unread");
+    const projectIdStr = c.req.query("projectId");
+    const noProject = c.req.query("noProject") === "true";
     const limitStr = c.req.query("limit");
 
     const limit = limitStr ? Number.parseInt(limitStr, 10) : 100;
@@ -44,6 +74,14 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
       conditions.push(eq(schema.slackMessages.isRead, true));
     }
 
+    // Project filtering
+    if (projectIdStr) {
+      const projectId = Number.parseInt(projectIdStr, 10);
+      conditions.push(eq(schema.slackMessages.projectId, projectId));
+    } else if (noProject) {
+      conditions.push(isNull(schema.slackMessages.projectId));
+    }
+
     // Execute query
     let query = db
       .select()
@@ -57,7 +95,11 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
 
     const messages = query.all();
 
-    return c.json(messages);
+    // effectiveProjectId を計算して付加
+    const channelProjectMap = getChannelProjectMap(db);
+    const messagesWithEffective = addEffectiveProjectId(messages, channelProjectMap);
+
+    return c.json(messagesWithEffective);
   });
 
   /**
@@ -125,6 +167,49 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
     const result = db
       .update(schema.slackMessages)
       .set({ isRead: true })
+      .where(eq(schema.slackMessages.id, id))
+      .returning()
+      .get();
+
+    return c.json(result);
+  });
+
+  /**
+   * PUT /api/slack-messages/:id
+   *
+   * Update a message (currently supports projectId update)
+   * Body: { projectId?: number | null }
+   */
+  router.put("/:id", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const existing = db
+      .select()
+      .from(schema.slackMessages)
+      .where(eq(schema.slackMessages.id, id))
+      .get();
+
+    if (!existing) {
+      return c.json({ error: "Message not found" }, 404);
+    }
+
+    const body = await c.req.json<{ projectId?: number | null }>();
+    const updateData: Partial<typeof existing> = {};
+
+    if (body.projectId !== undefined) {
+      updateData.projectId = body.projectId;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return c.json(existing);
+    }
+
+    const result = db
+      .update(schema.slackMessages)
+      .set(updateData)
       .where(eq(schema.slackMessages.id, id))
       .returning()
       .get();

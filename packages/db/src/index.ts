@@ -30,6 +30,7 @@ export type {
   NewProject,
   NewPromptImprovement,
   NewSegmentFeedback,
+  NewSlackChannel,
   NewSlackMessage,
   NewSlackQueueJob,
   NewSummary,
@@ -43,6 +44,7 @@ export type {
   Project,
   PromptImprovement,
   SegmentFeedback,
+  SlackChannel,
   SlackMessage,
   SlackQueueJob,
   Summary,
@@ -1075,6 +1077,33 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_ai_processing_logs_date ON ai_processing_logs(date);
     CREATE INDEX IF NOT EXISTS idx_ai_processing_logs_type ON ai_processing_logs(process_type);
     CREATE INDEX IF NOT EXISTS idx_ai_processing_logs_status ON ai_processing_logs(status);
+  `);
+
+  // Migration: create slack_channels table (for channel-level project linking)
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS slack_channels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      channel_id TEXT NOT NULL UNIQUE,
+      channel_name TEXT,
+      project_id INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_slack_channels_channel_id ON slack_channels(channel_id);
+    CREATE INDEX IF NOT EXISTS idx_slack_channels_project ON slack_channels(project_id);
+  `);
+
+  // Migration: add project_id to slack_messages (for message-level project linking)
+  addColumnIfNotExists(sqlite, "slack_messages", "project_id", "INTEGER");
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS idx_slack_messages_project ON slack_messages(project_id);
+  `);
+
+  // Migration: add project_id to claude_code_sessions (for session-level project linking)
+  addColumnIfNotExists(sqlite, "claude_code_sessions", "project_id", "INTEGER");
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS idx_claude_code_sessions_project ON claude_code_sessions(project_id);
   `);
 
   return db;

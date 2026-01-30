@@ -123,7 +123,7 @@ interface LogViewProps {
   loading: boolean;
   error: string | null;
   refetch: () => void;
-  scrollRef?: React.RefObject<HTMLDivElement>;
+  scrollRef?: React.RefObject<HTMLDivElement | null>;
   onScroll?: () => void;
 }
 
