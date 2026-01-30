@@ -2,7 +2,13 @@
  * Tasks Hook
  */
 
-import type { Task, TaskStats, TaskStatus } from "@repo/types";
+import type {
+  CreateMergeTaskResponse,
+  DetectDuplicatesResponse,
+  Task,
+  TaskStats,
+  TaskStatus,
+} from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
 import { deleteAdasApi, fetchAdasApi, patchAdasApi, postAdasApi } from "@/lib/adas-api";
 
@@ -130,6 +136,32 @@ export function useTasks(date?: string) {
     [fetchTasks],
   );
 
+  const detectDuplicates = useCallback(
+    async (options?: { date?: string; projectId?: number; minSimilarity?: number }) => {
+      const result = await postAdasApi<DetectDuplicatesResponse>(
+        "/api/tasks/detect-duplicates",
+        options ?? {},
+      );
+      return result;
+    },
+    [],
+  );
+
+  const createMergeTask = useCallback(
+    async (options: {
+      sourceTaskIds: number[];
+      title: string;
+      description?: string;
+      priority?: "high" | "medium" | "low";
+      projectId?: number;
+    }) => {
+      const result = await postAdasApi<CreateMergeTaskResponse>("/api/tasks/merge", options);
+      await fetchTasks(true);
+      return result;
+    },
+    [fetchTasks],
+  );
+
   return {
     tasks,
     error,
@@ -142,6 +174,8 @@ export function useTasks(date?: string) {
     extractGitHubCommentTasks,
     extractMemoTasks,
     extractVocabularyTerms,
+    detectDuplicates,
+    createMergeTask,
   };
 }
 

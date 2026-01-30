@@ -4,9 +4,9 @@ AI アシスタント向け共通ドキュメント。常に日本語で回答�
 
 ## プロジェクト概要
 
-**All Day Activity Summarizer (ADAS)** - PCの音声入出力を監視し、WhisperX(ローカル)で文字起こし + 話者識別、Claude Code CLI で要約するアプリケーション。
+**All Day Activity Summarizer (ADAS)** - PCの音声入出力を監視し、WhisperX (ローカル) で文字起こし + 話者識別、Claude Code CLI で要約するアプリケーション。
 
-詳細なドキュメントは以下を参照:
+## ドキュメント
 
 | ドキュメント | 内容 |
 |-------------|------|
@@ -14,8 +14,9 @@ AI アシスタント向け共通ドキュメント。常に日本語で回答�
 | [docs/setup.md](docs/setup.md) | セットアップ、設定、トラブルシューティング |
 | [docs/cli.md](docs/cli.md) | CLI コマンドリファレンス |
 | [docs/api.md](docs/api.md) | API エンドポイント |
-| [docs/features.md](docs/features.md) | 機能詳細 (タスク、プロフィール、プロジェクト) |
 | [docs/architecture.md](docs/architecture.md) | モノレポ構造、DB スキーマ |
+| [docs/integrations.md](docs/integrations.md) | 外部サービス連携 |
+| [docs/development.md](docs/development.md) | 開発ワークフロー |
 | [docs/feedback-loop.md](docs/feedback-loop.md) | フィードバックループ |
 
 ## 開発ガイドライン
@@ -42,7 +43,7 @@ AI アシスタント向け共通ドキュメント。常に日本語で回答�
 
 ### Lint (Biome)
 
-警告レベルのルール(即時対応不要):
+警告レベルのルール (即時対応不要):
 - `noExcessiveCognitiveComplexity`: 複雑度 15 超過
 - `noNonNullAssertion`: 非 null アサーション使用
 - `useExhaustiveDependencies`: 依存配列不足

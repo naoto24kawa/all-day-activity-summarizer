@@ -5,6 +5,7 @@
  */
 
 import {
+  type DuplicateTaskPair,
   isApprovalOnlyTask,
   type Project,
   type SuggestCompletionsResponse,
@@ -27,6 +28,7 @@ import {
   Filter,
   FolderGit2,
   Github,
+  GitMerge,
   MessageSquare,
   MessageSquareMore,
   Mic,
@@ -78,6 +80,7 @@ import {
 } from "@/hooks/use-prompt-improvements";
 import { useTaskStats, useTasks } from "@/hooks/use-tasks";
 import { ADAS_API_URL } from "@/lib/adas-api";
+import { DuplicateSuggestionsPanel } from "./duplicate-suggestions-panel";
 
 interface TasksPanelProps {
   date: string;
@@ -96,6 +99,8 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     extractGitHubTasks,
     extractGitHubCommentTasks,
     extractMemoTasks,
+    detectDuplicates,
+    createMergeTask,
   } = useTasks(date);
   const { stats } = useTaskStats(date);
   const { projects } = useProjects();
@@ -117,6 +122,10 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     SuggestCompletionsResponse["evaluated"] | null
   >(null);
 
+  // 重複検出
+  const [detectingDuplicates, setDetectingDuplicates] = useState(false);
+  const [duplicateSuggestions, setDuplicateSuggestions] = useState<DuplicateTaskPair[]>([]);
+
   const getSourceLabel = (sourceType: string) => {
     switch (sourceType) {
       case "github":
@@ -129,6 +138,8 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
         return "改善";
       case "vocabulary":
         return "用語";
+      case "merge":
+        return "統合";
       default:
         return "Slack";
     }
@@ -285,6 +296,53 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     setCompletionSuggestions((prev) => prev.filter((s) => s.taskId !== taskId));
   };
 
+  const handleDetectDuplicates = async () => {
+    setDetectingDuplicates(true);
+    setDuplicateSuggestions([]);
+    try {
+      const result = await detectDuplicates({ date });
+      setDuplicateSuggestions(result.duplicates);
+    } catch (err) {
+      console.error("Failed to detect duplicates:", err);
+    } finally {
+      setDetectingDuplicates(false);
+    }
+  };
+
+  const handleMergeDuplicates = async (
+    pair: DuplicateTaskPair,
+    title: string,
+    description: string | null,
+  ) => {
+    try {
+      await createMergeTask({
+        sourceTaskIds: [pair.taskAId, pair.taskBId],
+        title,
+        description: description ?? undefined,
+      });
+      // 統合済みのペアを除外
+      setDuplicateSuggestions((prev) =>
+        prev.filter(
+          (p) =>
+            !(p.taskAId === pair.taskAId && p.taskBId === pair.taskBId) &&
+            !(p.taskAId === pair.taskBId && p.taskBId === pair.taskAId),
+        ),
+      );
+    } catch (err) {
+      console.error("Failed to create merge task:", err);
+    }
+  };
+
+  const handleDismissDuplicate = (pair: DuplicateTaskPair) => {
+    setDuplicateSuggestions((prev) =>
+      prev.filter(
+        (p) =>
+          !(p.taskAId === pair.taskAId && p.taskBId === pair.taskBId) &&
+          !(p.taskAId === pair.taskBId && p.taskBId === pair.taskAId),
+      ),
+    );
+  };
+
   const suggestionTaskIds = new Set(completionSuggestions.map((s) => s.taskId));
 
   if (loading) {
@@ -420,6 +478,16 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
             >
               <Search className={`mr-1 h-3 w-3 ${checkingCompletion ? "animate-pulse" : ""}`} />
               {checkingCompletion ? "..." : "完了チェック"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDetectDuplicates}
+              disabled={detectingDuplicates || stats.accepted < 2}
+              title="Detect duplicate tasks"
+            >
+              <GitMerge className={`mr-1 h-3 w-3 ${detectingDuplicates ? "animate-pulse" : ""}`} />
+              {detectingDuplicates ? "..." : "重複検出"}
             </Button>
             {permission === "default" && (
               <Button
@@ -677,6 +745,13 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               />
             </TabsContent>
             <TabsContent value="accepted" className="min-h-0 flex-1 space-y-2">
+              {/* 重複候補パネル */}
+              <DuplicateSuggestionsPanel
+                duplicates={duplicateSuggestions}
+                onMerge={handleMergeDuplicates}
+                onDismiss={handleDismissDuplicate}
+              />
+
               {completionSuggestions.length > 0 && (
                 <div className="rounded-md border border-green-200 bg-green-50 p-2 dark:border-green-800 dark:bg-green-950">
                   <div className="mb-2 flex items-center gap-1 text-sm font-medium text-green-700 dark:text-green-300">
@@ -1085,6 +1160,12 @@ function TaskItem({
                   <Badge variant="default" className="text-xs bg-teal-500">
                     <BookOpen className="mr-1 h-3 w-3" />
                     用語
+                  </Badge>
+                )}
+                {task.sourceType === "merge" && (
+                  <Badge variant="default" className="text-xs bg-amber-500">
+                    <GitMerge className="mr-1 h-3 w-3" />
+                    統合
                   </Badge>
                 )}
               </div>

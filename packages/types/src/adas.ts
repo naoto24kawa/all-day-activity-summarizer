@@ -262,6 +262,16 @@ export interface RpcHealthResponse {
   claude: boolean;
 }
 
+/** RPC Suggest Memo Tags リクエスト */
+export interface RpcSuggestMemoTagsRequest {
+  content: string;
+}
+
+/** RPC Suggest Memo Tags レスポンス */
+export interface RpcSuggestMemoTagsResponse {
+  tags: MemoTag[];
+}
+
 // ========== Browser Recording 型定義 ==========
 
 /** ブラウザ録音チャンクのメタデータ */
@@ -552,13 +562,15 @@ export type TaskSourceType =
   | "manual"
   | "prompt-improvement"
   | "profile-suggestion"
-  | "vocabulary";
+  | "vocabulary"
+  | "merge";
 
 /** 承認のみで完了するタスクのソース種別 */
 export const APPROVAL_ONLY_SOURCE_TYPES: TaskSourceType[] = [
   "prompt-improvement",
   "profile-suggestion",
   "vocabulary",
+  "merge",
 ];
 
 /** 承認のみで完了するタスクかどうかを判定 */
@@ -607,6 +619,10 @@ export interface Task {
   similarToTitle: string | null; // 類似する過去タスクのタイトル
   similarToStatus: "completed" | "rejected" | null; // 類似タスクのステータス
   similarToReason: string | null; // 類似と判断した理由
+  // マージ関連
+  mergeSourceTaskIds: string | null; // JSON array: 統合元タスクのID配列 (sourceType="merge" 時のみ)
+  mergeTargetTaskId: number | null; // 統合先タスクID (統合された側に設定)
+  mergedAt: string | null; // 統合された日時 (統合された側に設定)
   createdAt: string;
   updatedAt: string;
 }
@@ -744,6 +760,86 @@ export interface CheckCompletionResponse {
   evidence?: string;
 }
 
+// ========== タスク重複検出 型定義 ==========
+
+/** 重複タスクペア */
+export interface DuplicateTaskPair {
+  /** タスク A の ID */
+  taskAId: number;
+  /** タスク A のタイトル */
+  taskATitle: string;
+  /** タスク B の ID */
+  taskBId: number;
+  /** タスク B のタイトル */
+  taskBTitle: string;
+  /** 類似度 (0-1) */
+  similarity: number;
+  /** 重複と判断した理由 */
+  reason: string;
+  /** 統合後のタイトル案 */
+  mergedTitle: string;
+  /** 統合後の説明案 */
+  mergedDescription: string | null;
+}
+
+/** 重複検出リクエスト */
+export interface DetectDuplicatesRequest {
+  /** 対象日付 (省略時は全 accepted タスク) */
+  date?: string;
+  /** 対象プロジェクト ID */
+  projectId?: number;
+  /** 最小類似度 (0-1, デフォルト: 0.7) */
+  minSimilarity?: number;
+}
+
+/** 重複検出レスポンス */
+export interface DetectDuplicatesResponse {
+  /** 検出された重複ペア */
+  duplicates: DuplicateTaskPair[];
+  /** 評価したタスク数 */
+  evaluated: number;
+}
+
+/** マージタスク作成リクエスト */
+export interface CreateMergeTaskRequest {
+  /** 統合元タスク ID の配列 */
+  sourceTaskIds: number[];
+  /** 統合後のタイトル */
+  title: string;
+  /** 統合後の説明 */
+  description?: string;
+  /** 優先度 */
+  priority?: "high" | "medium" | "low";
+  /** プロジェクト ID */
+  projectId?: number;
+}
+
+/** マージタスク作成レスポンス */
+export interface CreateMergeTaskResponse {
+  /** 作成されたマージタスク */
+  mergeTask: Task;
+  /** 統合元タスク */
+  sourceTasks: Task[];
+}
+
+/** Worker: 重複検出リクエスト */
+export interface CheckDuplicatesRequest {
+  /** 評価対象のタスク一覧 */
+  tasks: Array<{
+    id: number;
+    title: string;
+    description: string | null;
+  }>;
+  /** 最小類似度 (0-1, デフォルト: 0.7) */
+  minSimilarity?: number;
+}
+
+/** Worker: 重複検出レスポンス */
+export interface CheckDuplicatesResponse {
+  /** 検出された重複ペア */
+  duplicates: DuplicateTaskPair[];
+}
+
 // ========== User Profile 型定義 ==========
 
 /** ユーザープロフィール */
@@ -862,7 +958,8 @@ export type AiProcessType =
   | "summarize"
   | "check-completion"
   | "extract-terms"
-  | "analyze-profile";
+  | "analyze-profile"
+  | "suggest-tags";
 
 /** AI処理ログのステータス */
 export type AiProcessStatus = "success" | "error";

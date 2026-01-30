@@ -8,7 +8,6 @@ import {
   Activity,
   BookOpen,
   CheckSquare,
-  Clock,
   FileText,
   FolderOpen,
   Github,
@@ -22,8 +21,8 @@ import {
 export type TabGroupId = "overview" | "feeds" | "tools" | "system";
 export type TabId =
   | "activity"
-  | "timeline"
   | "tasks"
+  | "audio"
   | "slack"
   | "github"
   | "claude"
@@ -53,7 +52,6 @@ export const TAB_GROUPS: TabGroupConfig[] = [
     icon: FolderOpen,
     tabs: [
       { id: "activity", label: "Activity", icon: Activity },
-      { id: "timeline", label: "Timeline", icon: Clock },
       { id: "tasks", label: "Tasks", icon: CheckSquare, badgeKey: "tasks" },
     ],
   },
@@ -62,6 +60,7 @@ export const TAB_GROUPS: TabGroupConfig[] = [
     label: "Feeds",
     icon: MessageSquare,
     tabs: [
+      { id: "audio", label: "Audio", icon: Mic },
       { id: "slack", label: "Slack", icon: MessageSquare, badgeKey: "slack" },
       { id: "github", label: "GitHub", icon: Github, badgeKey: "github" },
       { id: "claude", label: "Claude", icon: Terminal },

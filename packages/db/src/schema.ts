@@ -479,6 +479,7 @@ export const tasks = sqliteTable("tasks", {
       "prompt-improvement",
       "profile-suggestion",
       "vocabulary",
+      "merge",
     ],
   })
     .notNull()
@@ -510,6 +511,10 @@ export const tasks = sqliteTable("tasks", {
   similarToTitle: text("similar_to_title"), // 類似する過去タスクのタイトル
   similarToStatus: text("similar_to_status", { enum: ["completed", "rejected"] }), // 類似タスクのステータス
   similarToReason: text("similar_to_reason"), // 類似と判断した理由
+  // マージ関連
+  mergeSourceTaskIds: text("merge_source_task_ids"), // JSON array: 統合元タスクのID配列 (sourceType="merge" 時のみ)
+  mergeTargetTaskId: integer("merge_target_task_id"), // 統合先タスクID (統合された側に設定)
+  mergedAt: text("merged_at"), // 統合された日時 (統合された側に設定)
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),

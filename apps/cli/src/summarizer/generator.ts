@@ -5,12 +5,13 @@ import type {
   GitHubItem,
   Learning,
   Memo,
+  Project,
   SlackMessage,
   Task,
   TranscriptionSegment,
 } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, between, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, between, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { loadConfig } from "../config.js";
 import { generateSummary, getModelName } from "./client.js";
 import { buildDailySummaryPrompt, buildHourlySummaryPrompt } from "./prompts.js";
@@ -146,6 +147,66 @@ function classifyActivities(
 }
 
 // ---------------------------------------------------------------------------
+// Project helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * アクティブなプロジェクト一覧を取得
+ */
+function fetchActiveProjects(db: AdasDatabase): Project[] {
+  return db.select().from(schema.projects).where(eq(schema.projects.isActive, true)).all();
+}
+
+/**
+ * プロジェクトIDからプロジェクト名を取得するマップを作成
+ */
+function buildProjectNameMap(projects: Project[]): Map<number | null, string> {
+  const map = new Map<number | null, string>();
+  for (const project of projects) {
+    map.set(project.id, project.name);
+  }
+  map.set(null, "その他");
+  return map;
+}
+
+interface ProjectGroupedItems<T> {
+  projectId: number | null;
+  projectName: string;
+  items: T[];
+}
+
+/**
+ * アイテムをprojectIdでグループ化する汎用関数
+ */
+function groupItemsByProject<T extends { projectId: number | null }>(
+  items: T[],
+  projectNameMap: Map<number | null, string>,
+): ProjectGroupedItems<T>[] {
+  const groups = new Map<number | null, T[]>();
+
+  for (const item of items) {
+    const projectId = item.projectId;
+    if (!groups.has(projectId)) {
+      groups.set(projectId, []);
+    }
+    groups.get(projectId)!.push(item);
+  }
+
+  // プロジェクトIDでソート (nullは最後)
+  const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return a - b;
+  });
+
+  return sortedKeys.map((projectId) => ({
+    projectId,
+    projectName: projectNameMap.get(projectId) ?? "その他",
+    items: groups.get(projectId)!,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Text building helpers
 // ---------------------------------------------------------------------------
 
@@ -191,20 +252,98 @@ function formatClaudeSessions(claudeSessions: ClaudeCodeSession[]): string {
     .join("\n");
 }
 
+interface ActionableTask {
+  task: Task;
+  isBlocked: boolean;
+  blockedBy: { id: number; title: string; status: string }[];
+}
+
 /**
- * タスクをテキスト形式に変換
+ * 着手すべきタスク (承認済み・未完了) を優先度順・ブロック状態付きで取得
  */
-function formatTasks(tasks: Task[]): string {
-  const acceptedTasks = tasks.filter((t) => t.status === "accepted" || t.status === "completed");
-  return acceptedTasks
-    .map((t) => {
-      const priorityLabel = t.priority ? `[${t.priority}]` : "";
-      const statusLabel = t.status === "completed" ? "[完了]" : "";
-      const source =
-        t.sourceType === "github" ? "[GitHub]" : t.sourceType === "manual" ? "[手動]" : "";
-      return `- ${priorityLabel}${statusLabel}${source} ${t.title}`;
-    })
-    .join("\n");
+function fetchActionableTasks(db: AdasDatabase, limit = 10): ActionableTask[] {
+  const tasks = db
+    .select()
+    .from(schema.tasks)
+    .where(eq(schema.tasks.status, "accepted"))
+    .orderBy(desc(schema.tasks.priority), desc(schema.tasks.acceptedAt))
+    .limit(limit)
+    .all();
+
+  const result: ActionableTask[] = [];
+
+  for (const task of tasks) {
+    const blockedByDeps = db
+      .select()
+      .from(schema.taskDependencies)
+      .where(
+        and(
+          eq(schema.taskDependencies.taskId, task.id),
+          eq(schema.taskDependencies.dependencyType, "blocks"),
+        ),
+      )
+      .all();
+
+    const blockers: { id: number; title: string; status: string }[] = [];
+    for (const dep of blockedByDeps) {
+      const blockerTask = db
+        .select({ id: schema.tasks.id, title: schema.tasks.title, status: schema.tasks.status })
+        .from(schema.tasks)
+        .where(eq(schema.tasks.id, dep.dependsOnTaskId))
+        .get();
+
+      if (blockerTask && blockerTask.status !== "completed") {
+        blockers.push(blockerTask);
+      }
+    }
+
+    result.push({
+      task,
+      isBlocked: blockers.length > 0,
+      blockedBy: blockers,
+    });
+  }
+
+  // ブロックされていないタスクを先に、次に優先度順
+  return result.sort((a, b) => {
+    if (a.isBlocked !== b.isBlocked) {
+      return a.isBlocked ? 1 : -1;
+    }
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    const aPriority = priorityOrder[a.task.priority as keyof typeof priorityOrder] ?? 1;
+    const bPriority = priorityOrder[b.task.priority as keyof typeof priorityOrder] ?? 1;
+    return aPriority - bPriority;
+  });
+}
+
+/**
+ * 着手すべきタスクをテキスト形式に変換
+ */
+function formatActionableTasks(actionableTasks: ActionableTask[]): string {
+  if (actionableTasks.length === 0) {
+    return "";
+  }
+
+  const lines: string[] = [];
+  const blockedCount = actionableTasks.filter((t) => t.isBlocked).length;
+  const availableCount = actionableTasks.length - blockedCount;
+
+  lines.push(`${actionableTasks.length}件のタスクがあります。`);
+  if (blockedCount > 0) {
+    lines.push(`(${availableCount}件が着手可能、${blockedCount}件がブロック中)`);
+  }
+  lines.push("");
+
+  for (const { task, isBlocked, blockedBy } of actionableTasks) {
+    const blockedStatus = isBlocked ? " [BLOCKED]" : "";
+    const priorityLabel = task.priority ? `[${task.priority}]` : "";
+    lines.push(`- ${priorityLabel}${blockedStatus} ${task.title}`);
+    if (isBlocked && blockedBy.length > 0) {
+      lines.push(`  ブロッカー: ${blockedBy.map((b) => `#${b.id} ${b.title}`).join(", ")}`);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 /**
@@ -272,10 +411,22 @@ function formatGitHubComments(comments: GitHubComment[]): string {
 }
 
 /**
- * 活動データ (セグメント、メモ、Slack、Claude Code、タスク、学び、GitHub) を
- * 「個人作業」と「チーム活動」のセクションに分けてプロンプト用のテキストを生成する。
+ * 活動データをプロジェクト別にグループ化してテキストを生成する。
+ * 「個人作業 / チーム活動」分類の中で、プロジェクト別にサブセクションを作成。
+ *
+ * 出力例:
+ * ### 個人作業
+ * #### メモ [プロジェクト名]
+ * ...
+ * #### Claude Code [プロジェクト名]
+ * ...
+ * #### タスク [プロジェクト名]
+ * ...
+ * ### チーム活動
+ * #### ミーティング
+ * ...
  */
-function buildActivityTextWithSections(
+function buildActivityTextWithProjectSections(
   segments: TranscriptionSegment[],
   memos: Memo[],
   slackMessages: SlackMessage[],
@@ -284,6 +435,7 @@ function buildActivityTextWithSections(
   learnings: Learning[],
   githubItems: GitHubItem[],
   githubComments: GitHubComment[],
+  projectNameMap: Map<number | null, string>,
 ): string {
   const classified = classifyActivities(
     segments,
@@ -298,34 +450,73 @@ function buildActivityTextWithSections(
 
   const sections: string[] = [];
 
-  // ========== 個人作業セクション ==========
+  // ========== 個人作業セクション (プロジェクト別) ==========
   const personalSections: string[] = [];
 
-  // 音声・メモ (個人の独り言)
-  const personalTranscription = formatSegmentsAndMemos(
-    classified.personal.segments,
-    classified.personal.memos,
+  // 音声は projectId がないので、そのまま出力
+  if (classified.personal.segments.length > 0) {
+    const segmentText = formatSegmentsAndMemos(classified.personal.segments, []);
+    personalSections.push(`#### 音声 (独り言)\n${segmentText}`);
+  }
+
+  // メモをプロジェクト別にグループ化
+  const memoGroups = groupItemsByProject(classified.personal.memos, projectNameMap);
+  for (const group of memoGroups) {
+    if (group.items.length > 0) {
+      const memoEntries = group.items.map((m) => {
+        const time = isoToJstTime(m.createdAt);
+        return `[${time}] ${m.content}`;
+      });
+      const projectLabel =
+        group.projectId !== null ? `#### メモ [${group.projectName}]` : "#### メモ (その他)";
+      personalSections.push(`${projectLabel}\n${memoEntries.join("\n")}`);
+    }
+  }
+
+  // Claude Code セッションをプロジェクト別にグループ化
+  const claudeGroups = groupItemsByProject(classified.personal.claudeSessions, projectNameMap);
+  for (const group of claudeGroups) {
+    if (group.items.length > 0) {
+      const claudeText = formatClaudeSessions(group.items);
+      const projectLabel =
+        group.projectId !== null
+          ? `#### Claude Code [${group.projectName}]`
+          : "#### Claude Code (その他)";
+      personalSections.push(`${projectLabel}\n${claudeText}`);
+    }
+  }
+
+  // タスクをプロジェクト別にグループ化
+  const acceptedTasks = classified.personal.tasks.filter(
+    (t) => t.status === "accepted" || t.status === "completed",
   );
-  if (personalTranscription) {
-    personalSections.push(`#### 音声・メモ\n${personalTranscription}`);
+  const taskGroups = groupItemsByProject(acceptedTasks, projectNameMap);
+  for (const group of taskGroups) {
+    if (group.items.length > 0) {
+      const taskText = group.items
+        .map((t) => {
+          const priorityLabel = t.priority ? `[${t.priority}]` : "";
+          const statusLabel = t.status === "completed" ? "[完了]" : "";
+          const source =
+            t.sourceType === "github" ? "[GitHub]" : t.sourceType === "manual" ? "[手動]" : "";
+          return `- ${priorityLabel}${statusLabel}${source} ${t.title}`;
+        })
+        .join("\n");
+      const projectLabel =
+        group.projectId !== null ? `#### タスク [${group.projectName}]` : "#### タスク (その他)";
+      personalSections.push(`${projectLabel}\n${taskText}`);
+    }
   }
 
-  // Claude Code セッション
-  if (classified.personal.claudeSessions.length > 0) {
-    const claudeText = formatClaudeSessions(classified.personal.claudeSessions);
-    personalSections.push(`#### Claude Code\n${claudeText}`);
-  }
-
-  // タスク
-  const taskText = formatTasks(classified.personal.tasks);
-  if (taskText) {
-    personalSections.push(`#### タスク\n${taskText}`);
-  }
-
-  // 学び
-  if (classified.personal.learnings.length > 0) {
-    const learningText = formatLearnings(classified.personal.learnings);
-    personalSections.push(`#### 学び\n${learningText}`);
+  // 学びをプロジェクト別にグループ化
+  const learningGroups = groupItemsByProject(classified.personal.learnings, projectNameMap);
+  for (const group of learningGroups) {
+    if (group.items.length > 0) {
+      const learningText = formatLearnings(group.items);
+      const projectLabel =
+        group.projectId !== null ? `#### 学び [${group.projectName}]` : "#### 学び (その他)";
+      personalSections.push(`${projectLabel}\n${learningText}`);
+    }
   }
 
   if (personalSections.length > 0) {
@@ -341,13 +532,13 @@ function buildActivityTextWithSections(
     teamSections.push(`#### ミーティング\n${meetingText}`);
   }
 
-  // Slack メッセージ
+  // Slack メッセージ (プロジェクト情報なし)
   if (classified.team.slackMessages.length > 0) {
     const slackText = formatSlackMessages(classified.team.slackMessages);
     teamSections.push(`#### Slack\n${slackText}`);
   }
 
-  // GitHub Items
+  // GitHub Items (リポジトリ名からプロジェクトを推測可能だが、直接的なprojectIdはない)
   if (classified.team.githubItems.length > 0) {
     const githubItemsText = formatGitHubItems(classified.team.githubItems);
     teamSections.push(`#### GitHub (Issue/PR)\n${githubItemsText}`);
@@ -375,6 +566,7 @@ interface ActivityData {
   learnings: Learning[];
   githubItems: GitHubItem[];
   githubComments: GitHubComment[];
+  projectNameMap: Map<number | null, string>;
 }
 
 /**
@@ -497,6 +689,10 @@ function fetchActivityData(
     )
     .all();
 
+  // アクティブなプロジェクト一覧を取得
+  const projects = fetchActiveProjects(db);
+  const projectNameMap = buildProjectNameMap(projects);
+
   return {
     segments,
     memos,
@@ -506,6 +702,7 @@ function fetchActivityData(
     learnings,
     githubItems,
     githubComments,
+    projectNameMap,
   };
 }
 
@@ -558,6 +755,7 @@ export async function generatePomodoroSummary(
     learnings,
     githubItems,
     githubComments,
+    projectNameMap,
   } = fetchActivityData(db, date, startTime, endTime);
 
   const hasData =
@@ -574,7 +772,8 @@ export async function generatePomodoroSummary(
     return null;
   }
 
-  const activityText = buildActivityTextWithSections(
+  // プロジェクト別にグループ化した活動テキストを生成
+  const activityText = buildActivityTextWithProjectSections(
     segments,
     memos,
     slackMessages,
@@ -583,8 +782,14 @@ export async function generatePomodoroSummary(
     learnings,
     githubItems,
     githubComments,
+    projectNameMap,
   );
-  const prompt = await buildHourlySummaryPrompt(activityText, db);
+
+  // 着手すべきタスクを取得してプロンプトに追加
+  const actionableTasks = fetchActionableTasks(db, 5);
+  const actionableTasksText = formatActionableTasks(actionableTasks);
+
+  const prompt = await buildHourlySummaryPrompt(activityText, db, actionableTasksText || undefined);
   const content = await generateSummary(prompt);
   const segmentIds = segments.map((s) => s.id);
 
@@ -656,7 +861,15 @@ export async function generateHourlySummary(
       .map((s) => `### ${s.periodStart} - ${s.periodEnd}\n${s.content}`)
       .join("\n\n");
 
-    const prompt = await buildHourlySummaryPrompt(summariesText, db);
+    // 着手すべきタスクを取得してプロンプトに追加
+    const actionableTasks = fetchActionableTasks(db, 5);
+    const actionableTasksText = formatActionableTasks(actionableTasks);
+
+    const prompt = await buildHourlySummaryPrompt(
+      summariesText,
+      db,
+      actionableTasksText || undefined,
+    );
     const content = await generateSummary(prompt);
     const allSegmentIds = pomodoroSummaries.flatMap((s) => JSON.parse(s.segmentIds) as number[]);
 
@@ -697,6 +910,7 @@ export async function generateHourlySummary(
     learnings,
     githubItems,
     githubComments,
+    projectNameMap,
   } = fetchActivityData(db, date, startTime, endTime);
 
   const hasData =
@@ -713,7 +927,8 @@ export async function generateHourlySummary(
     return null;
   }
 
-  const activityText = buildActivityTextWithSections(
+  // プロジェクト別にグループ化した活動テキストを生成
+  const activityText = buildActivityTextWithProjectSections(
     segments,
     memos,
     slackMessages,
@@ -722,8 +937,18 @@ export async function generateHourlySummary(
     learnings,
     githubItems,
     githubComments,
+    projectNameMap,
   );
-  const prompt = await buildHourlySummaryPrompt(activityText, db);
+
+  // 着手すべきタスクを取得してプロンプトに追加
+  const hourlyActionableTasks = fetchActionableTasks(db, 5);
+  const hourlyActionableTasksText = formatActionableTasks(hourlyActionableTasks);
+
+  const prompt = await buildHourlySummaryPrompt(
+    activityText,
+    db,
+    hourlyActionableTasksText || undefined,
+  );
   const content = await generateSummary(prompt);
   const segmentIds = segments.map((s) => s.id);
 
@@ -781,7 +1006,11 @@ export async function generateDailySummary(db: AdasDatabase, date: string): Prom
     .map((s) => `### ${s.periodStart} - ${s.periodEnd}\n${s.content}`)
     .join("\n\n");
 
-  const prompt = await buildDailySummaryPrompt(summariesText, db);
+  // 着手すべきタスクを取得してプロンプトに追加
+  const actionableTasks = fetchActionableTasks(db, 10);
+  const actionableTasksText = formatActionableTasks(actionableTasks);
+
+  const prompt = await buildDailySummaryPrompt(summariesText, db, actionableTasksText || undefined);
   const content = await generateSummary(prompt);
   const allSegmentIds = hourlySummaries.flatMap((s) => JSON.parse(s.segmentIds) as number[]);
 

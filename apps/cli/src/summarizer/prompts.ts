@@ -12,10 +12,15 @@ function readPrompt(name: string): string {
  * 時間帯別サマリー用プロンプトを構築
  * DB が渡された場合、フィードバックを few-shot examples として挿入
  * また、vocabulary から用語セクションを追加
+ *
+ * @param transcription - 文字起こしデータ
+ * @param db - データベース接続 (オプション)
+ * @param actionableTasks - 着手すべきタスクのテキスト (オプション)
  */
 export async function buildHourlySummaryPrompt(
   transcription: string,
   db?: AdasDatabase,
+  actionableTasks?: string,
 ): Promise<string> {
   let template = readPrompt("summarize-hourly");
 
@@ -28,17 +33,28 @@ export async function buildHourlySummaryPrompt(
     }
   }
 
-  return `${template}\n\n---\n文字起こしデータ:\n${transcription}`;
+  let result = `${template}\n\n---\n文字起こしデータ:\n${transcription}`;
+
+  if (actionableTasks) {
+    result += `\n\n---\n着手すべきタスク:\n${actionableTasks}`;
+  }
+
+  return result;
 }
 
 /**
  * 日次サマリー用プロンプトを構築
  * DB が渡された場合、フィードバックを few-shot examples として挿入
  * また、vocabulary から用語セクションを追加
+ *
+ * @param summaries - 時間帯別要約テキスト
+ * @param db - データベース接続 (オプション)
+ * @param actionableTasks - 着手すべきタスクのテキスト (オプション)
  */
 export async function buildDailySummaryPrompt(
   summaries: string,
   db?: AdasDatabase,
+  actionableTasks?: string,
 ): Promise<string> {
   let template = readPrompt("summarize-daily");
 
@@ -51,5 +67,11 @@ export async function buildDailySummaryPrompt(
     }
   }
 
-  return `${template}\n\n---\n時間帯別要約:\n${summaries}`;
+  let result = `${template}\n\n---\n時間帯別要約:\n${summaries}`;
+
+  if (actionableTasks) {
+    result += `\n\n---\n着手すべきタスク:\n${actionableTasks}`;
+  }
+
+  return result;
 }

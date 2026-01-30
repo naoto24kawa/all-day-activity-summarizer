@@ -4,6 +4,24 @@ Claude Code 向け指示書。
 
 **共通情報**: [AGENTS.md](AGENTS.md) を参照。
 
+## 機能別ルール
+
+機能の実装詳細は `.claude/rules/` を参照:
+
+| 機能 | ルールファイル |
+|------|---------------|
+| タスク管理・完了検知 | `.claude/rules/tasks.md` |
+| 単語帳 (Vocabulary) | `.claude/rules/vocabulary.md` |
+| サマリ生成 | `.claude/rules/summary.md` |
+| プロフィール | `.claude/rules/profile.md` |
+| プロジェクト管理 | `.claude/rules/projects.md` |
+| プロンプト改善 | `.claude/rules/prompt-improvement.md` |
+| 抽出ログ | `.claude/rules/extraction-log.md` |
+| Whisper 対策 | `.claude/rules/whisper.md` |
+| 連携設定 | `.claude/rules/integrations-config.md` |
+
+---
+
 ## ツール使用ポリシー
 
 - ファイル検索は `Glob` / `Grep` ツールを優先
@@ -52,24 +70,6 @@ error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 
 - `apps/cli/src/utils/date.ts` の `getTodayDateString()` / `getDateString()` を使用
 - `.split("T")[0]!` の non-null assertion を避ける
-
----
-
-## 機能別ガイド
-
-| 機能 | 詳細ドキュメント |
-|------|-----------------|
-| タスク管理 | [docs/features.md](docs/features.md#タスク管理) |
-| タスク完了検知 | [docs/features.md](docs/features.md#タスク完了検知) |
-| 単語帳 (Vocabulary) | [docs/features.md](docs/features.md#単語帳-vocabulary) |
-| サマリ生成 | [docs/features.md](docs/features.md#サマリ生成) |
-| 抽出ログ | [docs/features.md](docs/features.md#抽出ログの統一管理) |
-| プロフィール | [docs/features.md](docs/features.md#ユーザープロフィール) |
-| プロジェクト | [docs/features.md](docs/features.md#プロジェクト管理) |
-| プロンプト定期見直し | [docs/features.md](docs/features.md#プロンプト定期見直し) |
-| フィードバックループ | [docs/feedback-loop.md](docs/feedback-loop.md) |
-| API エンドポイント | [docs/api.md](docs/api.md) |
-| アーキテクチャ | [docs/architecture.md](docs/architecture.md) |
 
 ---
 

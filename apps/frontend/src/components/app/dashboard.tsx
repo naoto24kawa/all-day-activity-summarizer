@@ -42,7 +42,7 @@ export function Dashboard() {
   const [activeGroup, setActiveGroup] = useState<TabGroupId>("overview");
   const [activeTabs, setActiveTabs] = useState<Record<TabGroupId, TabId>>({
     overview: "activity",
-    feeds: "slack",
+    feeds: "audio",
     tools: "learnings",
     system: "logs",
   });
@@ -145,16 +145,16 @@ export function Dashboard() {
               <TabsContent value="activity" className="min-h-0 flex-1">
                 <SummaryView date={date} className="h-full" />
               </TabsContent>
-              <TabsContent value="timeline" className="min-h-0 flex-1">
-                <div className="grid h-full gap-4 lg:grid-cols-2">
-                  <ActivityFeed date={date} className="h-full" />
-                  <Timeline date={date} className="h-full" />
-                </div>
-              </TabsContent>
               <TabsContent value="tasks" className="min-h-0 flex-1">
                 <div className="grid h-full gap-4 lg:grid-cols-[3fr_2fr]">
                   <TasksPanel date={date} className="h-full" />
                   <ProjectsPanel />
+                </div>
+              </TabsContent>
+              <TabsContent value="audio" className="min-h-0 flex-1">
+                <div className="grid h-full gap-4 lg:grid-cols-2">
+                  <ActivityFeed date={date} className="h-full" />
+                  <Timeline date={date} className="h-full" />
                 </div>
               </TabsContent>
               <TabsContent value="slack" className="min-h-0 flex-1">

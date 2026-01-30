@@ -2,6 +2,7 @@ import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
+import { suggestMemoTags } from "../../memo/tag-suggester.js";
 import { getTodayDateString } from "../../utils/date.js";
 import { findProjectFromContent } from "../../utils/project-lookup.js";
 
@@ -34,7 +35,18 @@ export function createMemosRouter(db: AdasDatabase) {
     }
 
     const date = body.date || getTodayDateString();
-    const tags = body.tags && body.tags.length > 0 ? JSON.stringify(body.tags) : null;
+
+    // Auto-suggest tags if not specified
+    let tags: string | null = null;
+    if (body.tags && body.tags.length > 0) {
+      tags = JSON.stringify(body.tags);
+    } else {
+      // AI auto-tagging
+      const suggestedTags = await suggestMemoTags(body.content.trim());
+      if (suggestedTags.length > 0) {
+        tags = JSON.stringify(suggestedTags);
+      }
+    }
 
     // Auto-link project if not specified
     let projectId = body.projectId ?? null;
@@ -84,6 +96,12 @@ export function createMemosRouter(db: AdasDatabase) {
     // tags が明示的に渡された場合のみ更新 (undefined なら既存値を維持)
     if (body.tags !== undefined) {
       updateData.tags = body.tags && body.tags.length > 0 ? JSON.stringify(body.tags) : null;
+    } else if (!existing.tags) {
+      // tags が未指定かつ既存タグがない場合のみ AI 自動付与
+      const suggestedTags = await suggestMemoTags(body.content.trim());
+      if (suggestedTags.length > 0) {
+        updateData.tags = JSON.stringify(suggestedTags);
+      }
     }
 
     // projectId が明示的に渡された場合のみ更新

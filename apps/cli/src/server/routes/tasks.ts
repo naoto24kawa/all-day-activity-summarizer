@@ -11,6 +11,9 @@ import { schema } from "@repo/db";
 import {
   type CheckCompletionRequest,
   type CheckCompletionResponse,
+  type CheckDuplicatesResponse,
+  type CreateMergeTaskResponse,
+  type DetectDuplicatesResponse,
   isApprovalOnlyTask,
   type PromptTarget,
   type SuggestCompletionsResponse,
@@ -1384,6 +1387,11 @@ export function createTasksRouter(db: AdasDatabase) {
         await applyVocabularySuggestion(db, existing.vocabularySuggestionId, now);
       }
 
+      // merge の場合、統合処理を実行
+      if (existing.sourceType === "merge" && existing.mergeSourceTaskIds) {
+        await executeMerge(db, existing, now);
+      }
+
       const result = db
         .update(schema.tasks)
         .set({
@@ -1596,6 +1604,174 @@ export function createTasksRouter(db: AdasDatabase) {
       suggestions,
       evaluated,
     } satisfies SuggestCompletionsResponse);
+  });
+
+  /**
+   * POST /api/tasks/detect-duplicates
+   *
+   * 承認済みタスク間の重複を検出
+   * Body: { date?: string, projectId?: number, minSimilarity?: number }
+   */
+  router.post("/detect-duplicates", async (c) => {
+    const body = await c.req
+      .json<{
+        date?: string;
+        projectId?: number;
+        minSimilarity?: number;
+      }>()
+      .catch(() => ({}) as { date?: string; projectId?: number; minSimilarity?: number });
+
+    const minSimilarity = body.minSimilarity ?? 0.7;
+
+    // accepted 状態のタスクを取得
+    const conditions = [eq(schema.tasks.status, "accepted")];
+    if (body.date) {
+      conditions.push(eq(schema.tasks.date, body.date));
+    }
+    if (body.projectId) {
+      conditions.push(eq(schema.tasks.projectId, body.projectId));
+    }
+
+    const acceptedTasks = db
+      .select({
+        id: schema.tasks.id,
+        title: schema.tasks.title,
+        description: schema.tasks.description,
+      })
+      .from(schema.tasks)
+      .where(and(...conditions))
+      .all();
+
+    if (acceptedTasks.length < 2) {
+      return c.json({
+        duplicates: [],
+        evaluated: acceptedTasks.length,
+      } satisfies DetectDuplicatesResponse);
+    }
+
+    // Worker で AI 判定
+    const config = loadConfig();
+    const workerUrl = config.worker?.url ?? "http://localhost:3100";
+
+    try {
+      const response = await fetch(`${workerUrl}/rpc/check-duplicates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tasks: acceptedTasks,
+          minSimilarity,
+        }),
+      });
+
+      if (!response.ok) {
+        consola.warn(`[detect-duplicates] Worker returned ${response.status}`);
+        return c.json({
+          duplicates: [],
+          evaluated: acceptedTasks.length,
+        } satisfies DetectDuplicatesResponse);
+      }
+
+      const result = (await response.json()) as CheckDuplicatesResponse;
+
+      return c.json({
+        duplicates: result.duplicates,
+        evaluated: acceptedTasks.length,
+      } satisfies DetectDuplicatesResponse);
+    } catch (err) {
+      consola.error("[detect-duplicates] Worker call failed:", err);
+      return c.json({
+        duplicates: [],
+        evaluated: acceptedTasks.length,
+        error: err instanceof Error ? err.message : "Worker error",
+      });
+    }
+  });
+
+  /**
+   * POST /api/tasks/merge
+   *
+   * マージタスクを作成
+   * Body: { sourceTaskIds: number[], title: string, description?: string, priority?: string, projectId?: number }
+   */
+  router.post("/merge", async (c) => {
+    const body = await c.req.json<{
+      sourceTaskIds: number[];
+      title: string;
+      description?: string;
+      priority?: "high" | "medium" | "low";
+      projectId?: number;
+    }>();
+
+    if (!body.sourceTaskIds || body.sourceTaskIds.length < 2) {
+      return c.json({ error: "At least 2 sourceTaskIds are required" }, 400);
+    }
+
+    if (!body.title) {
+      return c.json({ error: "title is required" }, 400);
+    }
+
+    // 統合元タスクを取得 (accepted のみ)
+    const sourceTasks = db
+      .select()
+      .from(schema.tasks)
+      .where(and(inArray(schema.tasks.id, body.sourceTaskIds), eq(schema.tasks.status, "accepted")))
+      .all();
+
+    if (sourceTasks.length !== body.sourceTaskIds.length) {
+      return c.json(
+        {
+          error: "Some source tasks are not found or not in accepted status",
+          found: sourceTasks.length,
+          requested: body.sourceTaskIds.length,
+        },
+        400,
+      );
+    }
+
+    // プロジェクト ID を決定 (指定がなければ統合元の最初のタスクから)
+    const projectId = body.projectId ?? sourceTasks[0]?.projectId ?? null;
+
+    // 優先度を決定 (指定がなければ統合元の最高優先度)
+    let priority = body.priority;
+    if (!priority) {
+      const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+      const highestPriority = sourceTasks.reduce(
+        (acc, task) => {
+          if (!task.priority) return acc;
+          if (!acc) return task.priority;
+          return priorityOrder[task.priority]! < priorityOrder[acc]! ? task.priority : acc;
+        },
+        null as "high" | "medium" | "low" | null,
+      );
+      priority = highestPriority ?? undefined;
+    }
+
+    const date = getTodayDateString();
+
+    // マージタスクを作成 (pending として)
+    const mergeTask = db
+      .insert(schema.tasks)
+      .values({
+        date,
+        sourceType: "merge",
+        title: body.title,
+        description: body.description ?? null,
+        priority: priority ?? null,
+        projectId,
+        mergeSourceTaskIds: JSON.stringify(body.sourceTaskIds),
+        confidence: 1.0,
+      })
+      .returning()
+      .get();
+
+    consola.info(
+      `[tasks/merge] Created merge task #${mergeTask.id} from tasks: ${body.sourceTaskIds.join(", ")}`,
+    );
+
+    return c.json({
+      mergeTask,
+      sourceTasks,
+    } satisfies CreateMergeTaskResponse);
   });
 
   return router;
@@ -2483,4 +2659,103 @@ function saveDependencies(db: AdasDatabase, tasksWithDeps: TaskWithDependencies[
       }
     }
   }
+}
+
+// ========== マージ実行関数 ==========
+
+/**
+ * タスク統合を実行
+ * 1. 統合元タスクを completed に更新 (mergedAt, mergeTargetTaskId を設定)
+ * 2. 依存関係を統合先に移行
+ * @param db データベース
+ * @param mergeTask マージタスク
+ * @param now 現在時刻
+ */
+async function executeMerge(
+  db: AdasDatabase,
+  mergeTask: typeof schema.tasks.$inferSelect,
+  now: string,
+): Promise<void> {
+  if (!mergeTask.mergeSourceTaskIds) {
+    consola.warn(`[executeMerge] No source task IDs for merge task #${mergeTask.id}`);
+    return;
+  }
+
+  const sourceTaskIds: number[] = JSON.parse(mergeTask.mergeSourceTaskIds);
+
+  if (sourceTaskIds.length === 0) {
+    consola.warn(`[executeMerge] Empty source task IDs for merge task #${mergeTask.id}`);
+    return;
+  }
+
+  consola.info(`[executeMerge] Merging tasks ${sourceTaskIds.join(", ")} into #${mergeTask.id}`);
+
+  // 1. 統合元タスクを completed に更新
+  for (const sourceTaskId of sourceTaskIds) {
+    db.update(schema.tasks)
+      .set({
+        status: "completed",
+        completedAt: now,
+        mergeTargetTaskId: mergeTask.id,
+        mergedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(schema.tasks.id, sourceTaskId))
+      .run();
+  }
+
+  // 2. 依存関係を統合先に移行
+  // 統合元タスクがブロックしていたタスク → 統合先がブロックするように変更
+  for (const sourceTaskId of sourceTaskIds) {
+    const blocksDeps = db
+      .select()
+      .from(schema.taskDependencies)
+      .where(eq(schema.taskDependencies.dependsOnTaskId, sourceTaskId))
+      .all();
+
+    for (const dep of blocksDeps) {
+      // 統合先タスク自身への依存は除外
+      if (dep.taskId === mergeTask.id) continue;
+      // 他の統合元タスクへの依存も除外 (統合後は不要)
+      if (sourceTaskIds.includes(dep.taskId)) continue;
+
+      // 既に同じ依存関係がないかチェック
+      const existing = db
+        .select()
+        .from(schema.taskDependencies)
+        .where(
+          and(
+            eq(schema.taskDependencies.taskId, dep.taskId),
+            eq(schema.taskDependencies.dependsOnTaskId, mergeTask.id),
+          ),
+        )
+        .get();
+
+      if (!existing) {
+        // 新しい依存関係を作成
+        db.insert(schema.taskDependencies)
+          .values({
+            taskId: dep.taskId,
+            dependsOnTaskId: mergeTask.id,
+            dependencyType: dep.dependencyType,
+            confidence: dep.confidence,
+            reason: `Migrated from merged task #${sourceTaskId}: ${dep.reason ?? ""}`,
+            sourceType: "auto",
+          })
+          .run();
+      }
+
+      // 元の依存関係は削除
+      db.delete(schema.taskDependencies).where(eq(schema.taskDependencies.id, dep.id)).run();
+    }
+  }
+
+  // 統合元タスクをブロックしていた依存関係は削除 (統合元は completed になるため)
+  for (const sourceTaskId of sourceTaskIds) {
+    db.delete(schema.taskDependencies)
+      .where(eq(schema.taskDependencies.taskId, sourceTaskId))
+      .run();
+  }
+
+  consola.info(`[executeMerge] Successfully merged tasks into #${mergeTask.id}`);
 }

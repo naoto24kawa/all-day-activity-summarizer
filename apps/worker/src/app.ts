@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { timingMiddleware } from "./middleware/timing.js";
 import { createAnalyzeProfileRouter } from "./routes/analyze-profile.js";
 import { createCheckCompletionRouter } from "./routes/check-completion.js";
+import { createCheckDuplicatesRouter } from "./routes/check-duplicates.js";
 import { createEvaluateRouter } from "./routes/evaluate.js";
 import { createExplainLearningRouter } from "./routes/explain-learning.js";
 import { createExtractLearningsRouter } from "./routes/extract-learnings.js";
@@ -10,6 +11,7 @@ import { createExtractTermsRouter } from "./routes/extract-terms.js";
 import { createHealthRouter } from "./routes/health.js";
 import { createInterpretRouter } from "./routes/interpret.js";
 import { createLogsRouter } from "./routes/logs.js";
+import { createSuggestMemoTagsRouter } from "./routes/suggest-memo-tags.js";
 import { createSummarizeRouter } from "./routes/summarize.js";
 import { createTranscribeRouter } from "./routes/transcribe.js";
 
@@ -28,6 +30,8 @@ export function createWorkerApp() {
   app.route("/rpc/explain-learning", createExplainLearningRouter());
   app.route("/rpc/analyze-profile", createAnalyzeProfileRouter());
   app.route("/rpc/check-completion", createCheckCompletionRouter());
+  app.route("/rpc/check-duplicates", createCheckDuplicatesRouter());
+  app.route("/rpc/suggest-memo-tags", createSuggestMemoTagsRouter());
   app.route("/rpc/logs", createLogsRouter());
   app.route("/rpc/health", createHealthRouter());
 
