@@ -82,3 +82,20 @@ error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 - ダッシュボード: `apps/frontend/src/components/app/dashboard.tsx`
 - ADAS API 接続: `apps/frontend/src/hooks/use-adas-api.ts` のヘルパーを使用
 - shadcn/ui コンポーネント追加は `apps/frontend` ディレクトリで実行
+
+### Vite 開発サーバーがハングする場合
+
+`bun run dev` でハングする場合、Vite キャッシュをクリア:
+
+```bash
+rm -rf apps/frontend/node_modules/.vite
+bun run dev
+```
+
+それでもダメな場合は依存関係を再インストール:
+
+```bash
+rm -rf node_modules bun.lock
+bun install
+bun run dev
+```
