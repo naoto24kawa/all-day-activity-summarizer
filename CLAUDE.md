@@ -104,10 +104,41 @@ error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 | GitHub Comments | `POST /api/tasks/extract-github-comments` | `github.username` |
 | Memos | `POST /api/tasks/extract-memos` | - |
 
+**タスクライフサイクル**:
+```
+pending → accepted → in_progress → completed
+                  ↘ paused ↗
+        → rejected
+```
+
+- `pending`: 抽出直後、承認待ち
+- `accepted`: 承認済み、未着手
+- `in_progress`: 実行中 (`POST /api/tasks/:id/start`)
+- `paused`: 中断 (`POST /api/tasks/:id/pause`)
+- `completed`: 完了 (`POST /api/tasks/:id/complete`)
+- `rejected`: 却下済み
+
 **フィードバックループ**:
 - 承認/却下履歴から few-shot examples を自動構築
 - 却下理由も学習に活用
 - プロンプト改善案はタスクとして登録 (`sourceType: "prompt-improvement"`)
+- プロフィール提案もタスクとして登録 (`sourceType: "profile-suggestion"`)
+
+### タスク完了検知
+
+- **API**: `POST /api/tasks/suggest-completions`
+- **Worker**: `apps/worker/src/routes/check-completion.ts`
+- **GitHub クライアント**: `apps/cli/src/github/client.ts` の `getItemState()`
+
+**検知ソース** (優先度順):
+| ソース | 判定方法 | 確実性 |
+|--------|---------|-------|
+| GitHub | Issue/PR のクローズ・マージを API で確認 | 最高 |
+| Claude Code | セッションログから AI 判定 | 中 |
+| Slack | スレッド後続メッセージから AI 判定 | 中 |
+| Transcribe | 音声書き起こしから AI 判定 | 低 |
+
+**フロントエンド**: Tasks タブの「承認済み」タブに「完了チェック」ボタン
 
 ### ユーザープロフィール
 
@@ -116,6 +147,22 @@ error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 - **フロントエンド**: `apps/frontend/src/components/app/profile-panel.tsx`
 - **Worker**: `apps/worker/src/routes/analyze-profile.ts` (提案生成)
 - 学び抽出時にプロフィール情報を参照して精度向上 (`apps/cli/src/claude-code/extractor.ts`)
+- **タスク統合**: プロフィール提案はタスクとして Tasks タブに表示
+  - 承認するとプロフィールに自動反映
+  - 却下すると提案も自動的に却下
+
+### プロジェクト管理
+
+- **DB テーブル**: `projects`
+- **API**: `apps/cli/src/server/routes/projects.ts`
+- **フロントエンド**: `apps/frontend/src/components/app/projects-panel.tsx` (Tasks タブ内)
+- **フック**: `apps/frontend/src/hooks/use-projects.ts`
+
+**機能**:
+- プロジェクトの CRUD 操作
+- Claude Code プロジェクトパスからの自動検出
+- GitHub リポジトリとの紐付け (owner/repo)
+- タスク・学びのプロジェクト別集計
 
 ### フロントエンド
 

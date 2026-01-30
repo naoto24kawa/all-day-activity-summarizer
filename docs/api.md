@@ -70,13 +70,31 @@
 | GET | `/api/tasks?date=YYYY-MM-DD&status=pending` | タスク一覧 |
 | GET | `/api/tasks/stats` | タスク統計 |
 | PATCH | `/api/tasks/:id` | タスク更新 (承認/却下/完了) |
+| POST | `/api/tasks/:id/start` | タスクを実行中にする |
+| POST | `/api/tasks/:id/pause` | タスクを中断する |
+| POST | `/api/tasks/:id/complete` | タスクを完了にする |
+| POST | `/api/tasks/:id/accept` | タスクを承認する |
+| POST | `/api/tasks/:id/reject` | タスクを却下する |
 | POST | `/api/tasks/extract` | Slack メッセージからタスク抽出 |
 | POST | `/api/tasks/extract-github` | GitHub Items からタスク抽出 (※) |
 | POST | `/api/tasks/extract-github-comments` | GitHub Comments からタスク抽出 (※) |
 | POST | `/api/tasks/extract-memos` | メモからタスク抽出 |
+| POST | `/api/tasks/suggest-completions` | 完了候補を検知・提案 |
 | DELETE | `/api/tasks/:id` | タスク削除 |
 
 ※ `github.username` の設定が必要 (自分宛てのタスクのみ抽出)
+
+### プロジェクト
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/projects?active=true` | プロジェクト一覧 |
+| POST | `/api/projects` | プロジェクト作成 |
+| GET | `/api/projects/:id` | プロジェクト取得 |
+| PATCH | `/api/projects/:id` | プロジェクト更新 |
+| DELETE | `/api/projects/:id` | プロジェクト削除 |
+| GET | `/api/projects/:id/stats` | プロジェクト別統計 (タスク・学び数) |
+| POST | `/api/projects/auto-detect` | Claude Code パスからプロジェクト自動検出 |
 
 ### フィードバック
 
@@ -128,3 +146,4 @@
 | POST | `/rpc/evaluate` | ハルシネーション評価 |
 | POST | `/rpc/extract-learnings` | 学び抽出 (userProfile 対応) |
 | POST | `/rpc/analyze-profile` | プロフィール提案生成 |
+| POST | `/rpc/check-completion` | タスク完了判定 (AI) |
