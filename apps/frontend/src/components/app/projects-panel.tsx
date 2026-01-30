@@ -5,6 +5,7 @@
  */
 
 import type { Project, ProjectStats } from "@repo/types";
+import { FolderKanban, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useProjects } from "@/hooks/use-projects";
@@ -100,35 +100,48 @@ export function ProjectsPanel() {
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>
+      <Card className="flex min-h-0 flex-col overflow-hidden">
+        <CardHeader className="shrink-0">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <FolderKanban className="h-5 w-5 text-indigo-500" />
               Projects
               {projects.length > 0 && (
-                <Badge variant="secondary" className="ml-2">
+                <Badge variant="secondary" className="ml-1">
                   {projects.length}
                 </Badge>
               )}
             </CardTitle>
-            <CardDescription>
-              プロジェクトを管理します。タスクや学びをプロジェクトに紐付けできます。
-            </CardDescription>
+            <div className="flex gap-1">
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={handleAutoDetect}
+                disabled={autoDetecting}
+                title="自動検出"
+                className="h-8 w-8"
+              >
+                <Search className={`h-4 w-4 ${autoDetecting ? "animate-pulse" : ""}`} />
+              </Button>
+              <Button
+                size="icon"
+                onClick={() => setCreateDialogOpen(true)}
+                title="新規作成"
+                className="h-8 w-8"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={handleAutoDetect} disabled={autoDetecting}>
-              {autoDetecting ? "検出中..." : "自動検出"}
-            </Button>
-            <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-              新規作成
-            </Button>
-          </div>
+          <CardDescription>
+            プロジェクトを管理します。タスクや学びをプロジェクトに紐付けできます。
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+        <CardContent className="flex min-h-0 flex-1 flex-col">
+          {error && <p className="mb-4 shrink-0 text-sm text-destructive">{error}</p>}
 
           {autoDetectResult && (
-            <p className="mb-4 text-sm text-muted-foreground">
+            <p className="mb-4 shrink-0 text-sm text-muted-foreground">
               {autoDetectResult.detected} 件検出、{autoDetectResult.created} 件作成しました
             </p>
           )}
@@ -138,7 +151,7 @@ export function ProjectsPanel() {
               プロジェクトがありません。「新規作成」または「自動検出」でプロジェクトを追加してください。
             </p>
           ) : (
-            <ScrollArea className="h-[320px]">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               <div className="space-y-3">
                 {projects.map((project) => (
                   <ProjectItem
@@ -150,7 +163,7 @@ export function ProjectsPanel() {
                   />
                 ))}
               </div>
-            </ScrollArea>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -223,17 +236,18 @@ function ProjectItem({ project, stats, onEdit, onDelete }: ProjectItemProps) {
             </p>
           )}
         </div>
-        <div className="flex gap-1">
-          <Button size="sm" variant="ghost" onClick={onEdit}>
-            編集
+        <div className="flex shrink-0 gap-1">
+          <Button size="icon" variant="ghost" onClick={onEdit} title="編集" className="h-7 w-7">
+            <Pencil className="h-3.5 w-3.5" />
           </Button>
           <Button
-            size="sm"
+            size="icon"
             variant="ghost"
             onClick={onDelete}
-            className="text-muted-foreground hover:text-destructive"
+            title="削除"
+            className="h-7 w-7 text-muted-foreground hover:text-destructive"
           >
-            削除
+            <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>

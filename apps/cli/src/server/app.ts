@@ -5,6 +5,7 @@ import type { AudioCapture } from "../audio/capture.js";
 import type { AdasConfig } from "../config.js";
 import { createBrowserRecordingRouter } from "./routes/browser-recording.js";
 import { createClaudeCodeSessionsRouter } from "./routes/claude-code-sessions.js";
+import { createConfigRouter } from "./routes/config.js";
 import { createEvaluatorLogsRouter } from "./routes/evaluator-logs.js";
 import { createFeedbacksRouter, createSegmentFeedbackRouter } from "./routes/feedbacks.js";
 import { createFeedbacksV2Router } from "./routes/feedbacks-v2.js";
@@ -55,10 +56,11 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/server-logs", createServerLogsRouter(options?.config));
   app.route("/api/status", createStatusRouter(db));
   app.route("/api/tasks", createTasksRouter(db));
-  app.route("/api/vocabulary", createVocabularyRouter(db));
+  app.route("/api/vocabulary", createVocabularyRouter(db, options?.config));
   app.route("/api/prompt-improvements", createPromptImprovementsRouter(db));
   app.route("/api/profile", createProfileRouter(db, options?.config));
   app.route("/api/projects", createProjectsRouter(db));
+  app.route("/api/config", createConfigRouter());
 
   if (options?.micCapture || options?.speakerCapture) {
     app.route(

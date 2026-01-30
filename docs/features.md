@@ -49,6 +49,18 @@ pending → accepted → in_progress → completed
 - プロンプト改善案はタスクとして登録 (`sourceType: "prompt-improvement"`)
 - プロフィール提案もタスクとして登録 (`sourceType: "profile-suggestion"`)
 
+### 抽出ログ (重複処理防止)
+
+抽出処理の実行済み記録を `extraction_logs` テーブルで管理。タスクが0件でも「処理済み」として記録され、再処理を防止。
+
+| sourceType | sourceId | 説明 |
+|------------|----------|------|
+| `slack` | メッセージID | Slack メッセージからのタスク抽出 |
+| `github-comment` | コメントID | GitHub コメントからのタスク抽出 |
+| `memo` | メモID | メモからのタスク抽出 |
+
+詳細: [抽出ログの統一管理](#抽出ログの統一管理)
+
 ---
 
 ## タスク完了検知
@@ -161,6 +173,51 @@ Tasks タブの「承認済み」タブに「完了チェック」ボタン。
 
 ---
 
+## 連携機能のオンオフ設定
+
+### 概要
+
+Slack、GitHub、Claude Code などの連携機能を UI から有効/無効に切り替え可能。
+
+### ファイル構成
+
+| 種別 | パス |
+|------|------|
+| API | `apps/cli/src/server/routes/config.ts` |
+| フロントエンド | `apps/frontend/src/components/app/integrations-panel.tsx` |
+| フック | `apps/frontend/src/hooks/use-config.ts` |
+| 設定ファイル | `~/.adas/config.json` |
+
+### API エンドポイント
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `GET` | `/api/config` | 連携設定の取得 (トークン等は除外) |
+| `PATCH` | `/api/config/integrations` | 連携のオンオフ更新 |
+
+### 設定可能な連携
+
+| 連携 | 設定キー | 説明 |
+|------|----------|------|
+| Whisper | `whisper.enabled` | 音声の自動文字起こし |
+| Slack | `slack.enabled` | メンション・キーワード監視 |
+| GitHub | `github.enabled` | Issue/PR 監視 |
+| Claude Code | `claudeCode.enabled` | セッション履歴・学び抽出 |
+| Evaluator | `evaluator.enabled` | 文字起こし品質評価 |
+| Prompt Improvement | `promptImprovement.enabled` | プロンプト自動改善 |
+
+### UI
+
+Settings タブの「Integrations」パネルでトグル操作。
+
+### 注意事項
+
+- 設定変更後はサーバーの再起動が必要
+- 無効化された連携のタブは「無効化されています」メッセージを表示
+- 認証情報 (トークン等) が未設定の場合、トグルは無効化
+
+---
+
 ## サマリ生成
 
 ### 概要
@@ -180,3 +237,61 @@ Tasks タブの「承認済み」タブに「完了チェック」ボタン。
 - Claude Code セッション
 - タスク (承認済み)
 - 学び
+
+---
+
+## 抽出ログの統一管理
+
+### 概要
+
+タスク抽出と学び抽出の処理済みソースを `extraction_logs` テーブルで一元管理。
+0件でも「処理済み」として記録し、不要な AI 呼び出しを防止。
+
+### ファイル構成
+
+| 種別 | パス |
+|------|------|
+| DB テーブル | `extraction_logs` |
+| 共通ユーティリティ | `apps/cli/src/utils/extraction-log.ts` |
+
+### テーブル構造
+
+| カラム | 型 | 説明 |
+|--------|-----|------|
+| `extraction_type` | TEXT | `"task"` \| `"learning"` |
+| `source_type` | TEXT | `"slack"` \| `"github"` \| `"github-comment"` \| `"memo"` \| `"claude-code"` \| `"transcription"` |
+| `source_id` | TEXT | ソースの識別子 (ID または日付ベースの識別子) |
+| `extracted_count` | INTEGER | 抽出された件数 |
+| `extracted_at` | TEXT | 処理日時 |
+
+### ユニーク制約
+
+`(extraction_type, source_type, source_id)` の組み合わせで一意。
+
+### API
+
+```typescript
+import { hasExtractionLog, recordExtractionLog } from "../utils/extraction-log.js";
+
+// 処理済みかチェック
+if (hasExtractionLog(db, "task", "slack", String(messageId))) {
+  return; // スキップ
+}
+
+// 抽出処理実行...
+
+// ログ記録 (0件でも記録)
+recordExtractionLog(db, "task", "slack", String(messageId), extractedCount);
+```
+
+### 対応する抽出処理
+
+| 抽出タイプ | ソース | sourceId の形式 |
+|-----------|--------|----------------|
+| `task` | Slack | メッセージID (数値) |
+| `task` | GitHub Comment | コメントID (数値) |
+| `task` | Memo | メモID (数値) |
+| `learning` | Claude Code | セッションID (UUID) |
+| `learning` | Transcription | `transcription-YYYY-MM-DD` |
+| `learning` | GitHub Comment | `github-comment-YYYY-MM-DD` |
+| `learning` | Slack | `slack-message-YYYY-MM-DD` |

@@ -5,7 +5,7 @@
  */
 
 import type { ClaudeCodeMessage, ClaudeCodeSession } from "@repo/types";
-import { Code, FolderGit2, MessageSquare, RefreshCw, Wrench } from "lucide-react";
+import { Code, FolderGit2, MessageSquare, RefreshCw, Settings, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   Accordion,
@@ -24,6 +24,7 @@ import {
   useClaudeCodeSessions,
   useClaudeCodeStats,
 } from "@/hooks/use-claude-code-sessions";
+import { useConfig } from "@/hooks/use-config";
 import { formatTimeShortJST } from "@/lib/date";
 
 interface ClaudeCodeFeedProps {
@@ -32,11 +33,12 @@ interface ClaudeCodeFeedProps {
 }
 
 export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
+  const { integrations, loading: configLoading } = useConfig();
   const { sessions, loading, error, syncSessions } = useClaudeCodeSessions(date);
   const { stats } = useClaudeCodeStats(date);
   const [selectedSession, setSelectedSession] = useState<ClaudeCodeSession | null>(null);
 
-  // Group sessions by project
+  // Group sessions by project (moved before conditional returns for hooks rules)
   const sessionsByProject = useMemo(() => {
     const grouped = new Map<string, ClaudeCodeSession[]>();
 
@@ -61,6 +63,27 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
 
     return grouped;
   }, [sessions]);
+
+  // 連携が無効な場合
+  if (!configLoading && integrations && !integrations.claudeCode.enabled) {
+    return (
+      <Card className={className}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Code className="h-5 w-5" />
+            Claude Code
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center py-8">
+          <Settings className="mb-2 h-8 w-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Claude Code 連携は無効化されています</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Settings タブの Integrations で有効にできます
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (loading) {
     return (

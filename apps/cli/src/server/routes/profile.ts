@@ -18,6 +18,7 @@ import consola from "consola";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { Hono } from "hono";
 import type { AdasConfig } from "../../config.js";
+import { getDateString, getTodayDateString } from "../../utils/date.js";
 
 interface AnalyzeProfileResponse {
   suggestions: Array<{
@@ -118,7 +119,7 @@ export function createProfileRouter(db: AdasDatabase, config?: AdasConfig) {
           specialties: updateData.specialties ?? null,
           knownTechnologies: updateData.knownTechnologies ?? null,
           learningGoals: updateData.learningGoals ?? null,
-          updatedAt: updateData.updatedAt ?? now,
+          updatedAt: updateData.updatedAt ?? new Date().toISOString(),
         })
         .run();
     } else {
@@ -304,7 +305,7 @@ export function createProfileRouter(db: AdasDatabase, config?: AdasConfig) {
     // 対象期間の日付を計算
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - daysBack);
-    const startDateStr = startDate.toISOString().split("T")[0]!;
+    const startDateStr = getDateString(startDate);
 
     // 現在のプロフィールを取得
     let profile = db.select().from(schema.userProfile).where(eq(schema.userProfile.id, 1)).get();
@@ -321,7 +322,15 @@ export function createProfileRouter(db: AdasDatabase, config?: AdasConfig) {
           updatedAt: new Date().toISOString(),
         })
         .run();
-      profile = db.select().from(schema.userProfile).where(eq(schema.userProfile.id, 1)).get()!;
+      const insertedProfile = db
+        .select()
+        .from(schema.userProfile)
+        .where(eq(schema.userProfile.id, 1))
+        .get();
+      if (!insertedProfile) {
+        return c.json({ error: "Failed to create profile" }, 500);
+      }
+      profile = insertedProfile;
     }
 
     // 活動データを収集
@@ -341,7 +350,7 @@ export function createProfileRouter(db: AdasDatabase, config?: AdasConfig) {
 
     // 新しい提案を保存
     const savedSuggestions: ProfileSuggestion[] = [];
-    const today = new Date().toISOString().split("T")[0]!;
+    const today = getTodayDateString();
     const now = new Date().toISOString();
 
     for (const suggestion of suggestions) {

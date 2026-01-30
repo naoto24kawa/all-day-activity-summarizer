@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { Clock, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -34,7 +34,10 @@ export function Timeline({ date, className }: TimelineProps) {
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardHeader className="flex shrink-0 flex-row items-center justify-between">
-        <CardTitle>Activity Timeline</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <Clock className="h-5 w-5 text-cyan-500" />
+          Activity Timeline
+        </CardTitle>
         <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
           <RefreshCw className="h-4 w-4" />
         </Button>

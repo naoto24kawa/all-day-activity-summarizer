@@ -61,6 +61,7 @@ error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 |------|-----------------|
 | タスク管理 | [docs/features.md](docs/features.md#タスク管理) |
 | タスク完了検知 | [docs/features.md](docs/features.md#タスク完了検知) |
+| 抽出ログ | [docs/features.md](docs/features.md#抽出ログの統一管理) |
 | プロフィール | [docs/features.md](docs/features.md#ユーザープロフィール) |
 | プロジェクト | [docs/features.md](docs/features.md#プロジェクト管理) |
 | フィードバックループ | [docs/feedback-loop.md](docs/feedback-loop.md) |
@@ -82,6 +83,14 @@ error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 **モーダルのキーボードショートカット**:
 - OKボタン (送信/確定) は `Cmd/Ctrl+Enter` で実行可能にする
 - 実装例: `apps/frontend/src/components/app/feedback-dialog.tsx`
+
+### ビルド確認
+
+**重要**: `bun run build` はハングしやすいため、Claude が実行せずユーザーに依頼すること。
+
+```
+ビルドの確認をお願いします: bun run build
+```
 
 ### Vite キャッシュクリア
 

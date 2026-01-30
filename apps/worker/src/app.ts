@@ -5,6 +5,7 @@ import { createAnalyzeProfileRouter } from "./routes/analyze-profile.js";
 import { createCheckCompletionRouter } from "./routes/check-completion.js";
 import { createEvaluateRouter } from "./routes/evaluate.js";
 import { createExtractLearningsRouter } from "./routes/extract-learnings.js";
+import { createExtractTermsRouter } from "./routes/extract-terms.js";
 import { createHealthRouter } from "./routes/health.js";
 import { createInterpretRouter } from "./routes/interpret.js";
 import { createLogsRouter } from "./routes/logs.js";
@@ -21,6 +22,7 @@ export function createWorkerApp() {
   app.route("/rpc/summarize", createSummarizeRouter());
   app.route("/rpc/evaluate", createEvaluateRouter());
   app.route("/rpc/interpret", createInterpretRouter());
+  app.route("/rpc/extract-terms", createExtractTermsRouter());
   app.route("/rpc/extract-learnings", createExtractLearningsRouter());
   app.route("/rpc/analyze-profile", createAnalyzeProfileRouter());
   app.route("/rpc/check-completion", createCheckCompletionRouter());

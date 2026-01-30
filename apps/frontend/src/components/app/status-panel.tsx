@@ -1,4 +1,4 @@
-import { Mic, MicOff, RefreshCw, Volume2, VolumeX } from "lucide-react";
+import { Activity, Mic, MicOff, RefreshCw, Volume2, VolumeX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,6 +55,7 @@ export function StatusPanel() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
+          <Activity className="h-5 w-5 text-green-500" />
           Status
           <Badge variant="default">Online</Badge>
         </CardTitle>

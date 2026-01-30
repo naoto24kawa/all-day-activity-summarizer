@@ -1,3 +1,4 @@
+import { Users } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,7 +49,10 @@ export function SlackUsersPanel() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Slack Users</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-[#4A154B]" />
+            Slack Users
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
@@ -63,7 +67,10 @@ export function SlackUsersPanel() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Slack Users</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-[#4A154B]" />
+            Slack Users
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">{error}</p>
@@ -75,9 +82,10 @@ export function SlackUsersPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <Users className="h-5 w-5 text-[#4A154B]" />
           Slack Users
-          <Badge variant="secondary" className="ml-2">
+          <Badge variant="secondary" className="ml-1">
             {users.length}
           </Badge>
         </CardTitle>

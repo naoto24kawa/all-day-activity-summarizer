@@ -70,6 +70,11 @@ CLI と Worker の間に直接依存はなく、HTTP(RPC)で通信。Worker は�
 | `github_items` | id, date, item_type, repo_owner, repo_name, number, title, state, url, author_login, labels, review_decision, is_review_requested, is_read, synced_at |
 | `github_comments` | id, date, comment_type, repo_owner, repo_name, item_number, comment_id, author_login, body, url, review_state, is_read, synced_at |
 | `claude_code_sessions` | id, date, session_id, project_path, project_name, start_time, end_time, user_message_count, assistant_message_count, tool_use_count, summary, created_at |
+| `tasks` | id, date, slack_message_id, github_comment_id, memo_id, source_type, title, description, status, priority, confidence, due_date, created_at |
+| `learnings` | id, source_type, source_id, project_id, date, content, category, tags, confidence, repetition_count, ease_factor, interval, next_review_at, created_at |
+| `extraction_logs` | id, extraction_type, source_type, source_id, extracted_count, extracted_at |
+| `projects` | id, name, path, github_owner, github_repo, is_active, created_at |
+| `user_profile` | id, experience_years, specialties, known_technologies, learning_goals, updated_at |
 
 ## データフロー
 

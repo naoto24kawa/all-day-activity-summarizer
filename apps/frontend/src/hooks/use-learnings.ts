@@ -57,6 +57,7 @@ export function useLearnings(options?: LearningsOptions) {
       options?.sourceType,
       options?.sourceId,
       options?.dueForReview,
+      options,
     ],
   );
 

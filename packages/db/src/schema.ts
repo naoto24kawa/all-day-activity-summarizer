@@ -411,7 +411,7 @@ export const vocabulary = sqliteTable("vocabulary", {
   term: text("term").notNull().unique(), // 用語
   reading: text("reading"), // 読み仮名(任意)
   category: text("category"), // カテゴリ(任意)
-  source: text("source", { enum: ["manual", "transcribe", "feedback"] }).notNull(), // 登録元
+  source: text("source", { enum: ["manual", "transcribe", "feedback", "interpret"] }).notNull(), // 登録元
   usageCount: integer("usage_count").notNull().default(0),
   createdAt: text("created_at")
     .notNull()
@@ -425,6 +425,34 @@ export type Vocabulary = typeof vocabulary.$inferSelect;
 export type NewVocabulary = typeof vocabulary.$inferInsert;
 
 // ---------------------------------------------------------------------------
+// Vocabulary Suggestions (用語提案 - 承認待ち)
+// ---------------------------------------------------------------------------
+
+export const vocabularySuggestions = sqliteTable("vocabulary_suggestions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  term: text("term").notNull(), // 提案する用語
+  reading: text("reading"), // 読み仮名
+  category: text("category"), // カテゴリ
+  reason: text("reason"), // 提案理由
+  sourceType: text("source_type", {
+    enum: ["interpret", "feedback", "slack", "github", "claude-code", "memo"],
+  }).notNull(), // 抽出元
+  sourceId: integer("source_id"), // source に応じた ID
+  confidence: real("confidence"), // AI確信度 (0-1)
+  status: text("status", { enum: ["pending", "accepted", "rejected"] })
+    .notNull()
+    .default("pending"),
+  acceptedAt: text("accepted_at"),
+  rejectedAt: text("rejected_at"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type VocabularySuggestion = typeof vocabularySuggestions.$inferSelect;
+export type NewVocabularySuggestion = typeof vocabularySuggestions.$inferInsert;
+
+// ---------------------------------------------------------------------------
 // Tasks (Slack メッセージから抽出したタスク)
 // ---------------------------------------------------------------------------
 
@@ -436,6 +464,7 @@ export const tasks = sqliteTable("tasks", {
   memoId: integer("memo_id"), // FK to memos
   promptImprovementId: integer("prompt_improvement_id"), // FK to prompt_improvements (for prompt-improvement type)
   profileSuggestionId: integer("profile_suggestion_id"), // FK to profile_suggestions (for profile-suggestion type)
+  vocabularySuggestionId: integer("vocabulary_suggestion_id"), // FK to vocabulary_suggestions (for vocabulary type)
   projectId: integer("project_id"), // FK to projects (nullable for Slack/Memo tasks)
   sourceType: text("source_type", {
     enum: [
@@ -446,6 +475,7 @@ export const tasks = sqliteTable("tasks", {
       "manual",
       "prompt-improvement",
       "profile-suggestion",
+      "vocabulary",
     ],
   })
     .notNull()
@@ -518,6 +548,29 @@ export const learnings = sqliteTable("learnings", {
 
 export type Learning = typeof learnings.$inferSelect;
 export type NewLearning = typeof learnings.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Extraction Logs (抽出ログ - 処理済みソースの記録)
+// タスク抽出・学び抽出など、各種抽出処理の処理済み記録を統一管理
+// ---------------------------------------------------------------------------
+
+export const extractionLogs = sqliteTable("extraction_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  extractionType: text("extraction_type", {
+    enum: ["task", "learning"],
+  }).notNull(), // 抽出の種類
+  sourceType: text("source_type", {
+    enum: ["slack", "github", "github-comment", "memo", "claude-code", "transcription"],
+  }).notNull(), // ソースの種類
+  sourceId: text("source_id").notNull(), // 各ソースの ID (message_id, session_id など)
+  extractedCount: integer("extracted_count").notNull().default(0), // 抽出された件数
+  extractedAt: text("extracted_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type ExtractionLog = typeof extractionLogs.$inferSelect;
+export type NewExtractionLog = typeof extractionLogs.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // User Profile (ユーザープロフィール - 単一レコード)

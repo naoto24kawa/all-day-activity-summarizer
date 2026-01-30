@@ -15,6 +15,7 @@ import {
   MessageSquare,
   RefreshCw,
   Search,
+  Settings,
 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useConfig } from "@/hooks/use-config";
 import { useSlackMessages, useSlackUnreadCounts } from "@/hooks/use-slack-messages";
 import { formatSlackTsJST } from "@/lib/date";
 
@@ -32,14 +34,39 @@ interface SlackFeedProps {
 }
 
 export function SlackFeed({ date, className }: SlackFeedProps) {
+  const { integrations, loading: configLoading } = useConfig();
   const { messages, loading, error, refetch, markAsRead, markAllAsRead } = useSlackMessages(date);
   const { counts } = useSlackUnreadCounts(date);
+
+  // 連携が無効な場合
+  if (!configLoading && integrations && !integrations.slack.enabled) {
+    return (
+      <Card className={className}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-[#4A154B]" />
+            Slack
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center py-8">
+          <Settings className="mb-2 h-8 w-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Slack 連携は無効化されています</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Settings タブの Integrations で有効にできます
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (loading) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Slack</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-[#4A154B]" />
+            Slack
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
@@ -54,7 +81,10 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Slack</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-[#4A154B]" />
+            Slack
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">{error}</p>
@@ -72,9 +102,10 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardHeader className="flex shrink-0 flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
+          <MessageSquare className="h-5 w-5 text-[#4A154B]" />
           Slack
           {counts.total > 0 && (
-            <Badge variant="destructive" className="ml-2">
+            <Badge variant="destructive" className="ml-1">
               {counts.total} unread
             </Badge>
           )}

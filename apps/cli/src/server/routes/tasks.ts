@@ -22,6 +22,7 @@ import { Hono } from "hono";
 import { loadConfig } from "../../config";
 import { getItemState } from "../../github/client";
 import { getTodayDateString } from "../../utils/date";
+import { hasExtractionLog, recordExtractionLog } from "../../utils/extraction-log.js";
 import { findOrCreateProjectByGitHub } from "../../utils/project-lookup.js";
 
 interface ExtractedTask {
@@ -30,6 +31,46 @@ interface ExtractedTask {
   priority?: "high" | "medium" | "low";
   confidence?: number;
   dueDate?: string;
+}
+
+/**
+ * タスクのアクションコマンドを生成
+ */
+function buildTaskActionCommands(
+  baseUrl: string,
+  taskId: number,
+  format: "detailed" | "compact",
+): string {
+  const startUrl = `${baseUrl}/api/tasks/${taskId}/start`;
+  const completeUrl = `${baseUrl}/api/tasks/${taskId}/complete`;
+  const pauseUrl = `${baseUrl}/api/tasks/${taskId}/pause`;
+
+  if (format === "detailed") {
+    let text = "---\n";
+    text += "作業開始前に以下を実行してください:\n";
+    text += "```bash\n";
+    text += `curl -X POST ${startUrl}\n`;
+    text += "```\n\n";
+    text += "タスク完了時は以下を実行してください:\n";
+    text += "```bash\n";
+    text += `curl -X POST ${completeUrl}\n`;
+    text += "```\n\n";
+    text += "中断する場合は以下を実行してください (理由は任意):\n";
+    text += "```bash\n";
+    text += `curl -X POST ${pauseUrl} -H "Content-Type: application/json" -d '{"reason": "中断理由"}'\n`;
+    text += "```";
+    return text;
+  }
+
+  // compact format
+  const lines: string[] = [];
+  lines.push("アクション:");
+  lines.push(`- 開始: curl -X POST ${startUrl}`);
+  lines.push(`- 完了: curl -X POST ${completeUrl}`);
+  lines.push(
+    `- 中断: curl -X POST ${pauseUrl} -H "Content-Type: application/json" -d '{"reason": "理由"}'`,
+  );
+  return lines.join("\n");
 }
 
 interface ExtractResult {
@@ -86,6 +127,85 @@ export function createTasksRouter(db: AdasDatabase) {
     const tasks = query.all();
 
     return c.json(tasks);
+  });
+
+  /**
+   * GET /api/tasks/for-ai
+   *
+   * AIエージェント向けのタスク一覧 (Markdown形式)
+   * - accepted 状態のタスクのみ
+   * - 優先度順にソート
+   * - 各タスクにアクションURL付き
+   *
+   * Query params:
+   * - date: YYYY-MM-DD (optional)
+   * - projectId: number (optional)
+   * - limit: number (optional, defaults to 20)
+   */
+  router.get("/for-ai", (c) => {
+    const date = c.req.query("date");
+    const projectIdStr = c.req.query("projectId");
+    const limitStr = c.req.query("limit");
+
+    const limit = limitStr ? Number.parseInt(limitStr, 10) : 20;
+
+    const conditions = [eq(schema.tasks.status, "accepted")];
+
+    if (date) {
+      conditions.push(eq(schema.tasks.date, date));
+    }
+
+    if (projectIdStr) {
+      const projectId = Number.parseInt(projectIdStr, 10);
+      if (!Number.isNaN(projectId)) {
+        conditions.push(eq(schema.tasks.projectId, projectId));
+      }
+    }
+
+    const tasks = db
+      .select()
+      .from(schema.tasks)
+      .where(and(...conditions))
+      .orderBy(desc(schema.tasks.priority), desc(schema.tasks.acceptedAt))
+      .limit(limit)
+      .all();
+
+    // ベースURL取得
+    const url = new URL(c.req.url);
+    const baseUrl = `${url.protocol}//${url.host}`;
+
+    // Markdown形式で出力
+    const lines: string[] = [];
+    lines.push("# 未処理タスク一覧");
+    lines.push("");
+
+    if (tasks.length === 0) {
+      lines.push("現在処理すべきタスクはありません。");
+      return c.text(lines.join("\n"));
+    }
+
+    lines.push(`${tasks.length} 件のタスクがあります。`);
+    lines.push("");
+
+    for (const task of tasks) {
+      lines.push(`## Task #${task.id}: ${task.title}`);
+      if (task.priority) {
+        lines.push(`優先度: ${task.priority}`);
+      }
+      if (task.description) {
+        lines.push(`説明: ${task.description}`);
+      }
+      if (task.dueDate) {
+        lines.push(`期限: ${task.dueDate}`);
+      }
+      lines.push("");
+      lines.push(buildTaskActionCommands(baseUrl, task.id, "compact"));
+      lines.push("");
+      lines.push("---");
+      lines.push("");
+    }
+
+    return c.text(lines.join("\n"));
   });
 
   /**
@@ -170,19 +290,8 @@ export function createTasksRouter(db: AdasDatabase) {
     if (task.description) {
       text += `\n\n${task.description}`;
     }
-    text += "\n\n---\n";
-    text += `作業開始前に以下を実行してください:\n`;
-    text += `\`\`\`bash\n`;
-    text += `curl -X POST ${baseUrl}/api/tasks/${task.id}/start\n`;
-    text += `\`\`\`\n\n`;
-    text += `タスク完了時は以下を実行してください:\n`;
-    text += `\`\`\`bash\n`;
-    text += `curl -X POST ${baseUrl}/api/tasks/${task.id}/complete\n`;
-    text += `\`\`\`\n\n`;
-    text += `中断する場合は以下を実行してください (理由は任意):\n`;
-    text += `\`\`\`bash\n`;
-    text += `curl -X POST ${baseUrl}/api/tasks/${task.id}/pause -H "Content-Type: application/json" -d '{"reason": "中断理由"}'\n`;
-    text += `\`\`\``;
+    text += "\n\n";
+    text += buildTaskActionCommands(baseUrl, task.id, "detailed");
 
     return c.text(text);
   });
@@ -239,6 +348,7 @@ export function createTasksRouter(db: AdasDatabase) {
       pauseReason?: string;
       title?: string;
       description?: string;
+      projectId?: number | null;
     }>();
 
     const existing = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
@@ -261,6 +371,11 @@ export function createTasksRouter(db: AdasDatabase) {
         if (existing.sourceType === "profile-suggestion" && existing.profileSuggestionId) {
           await applyProfileSuggestion(db, existing.profileSuggestionId, now);
         }
+
+        // vocabulary の場合、vocabulary テーブルに追加
+        if (existing.sourceType === "vocabulary" && existing.vocabularySuggestionId) {
+          await applyVocabularySuggestion(db, existing.vocabularySuggestionId, now);
+        }
       } else if (body.status === "rejected") {
         updates.rejectedAt = now;
         if (body.rejectReason) {
@@ -272,6 +387,14 @@ export function createTasksRouter(db: AdasDatabase) {
           db.update(schema.profileSuggestions)
             .set({ status: "rejected", rejectedAt: now })
             .where(eq(schema.profileSuggestions.id, existing.profileSuggestionId))
+            .run();
+        }
+
+        // vocabulary の場合、提案も却下
+        if (existing.sourceType === "vocabulary" && existing.vocabularySuggestionId) {
+          db.update(schema.vocabularySuggestions)
+            .set({ status: "rejected", rejectedAt: now })
+            .where(eq(schema.vocabularySuggestions.id, existing.vocabularySuggestionId))
             .run();
         }
       } else if (body.status === "in_progress") {
@@ -302,6 +425,11 @@ export function createTasksRouter(db: AdasDatabase) {
     if (body.description !== undefined && body.description !== existing.description) {
       updates.originalDescription = existing.description;
       updates.description = body.description;
+    }
+
+    // プロジェクト紐付け更新
+    if (body.projectId !== undefined) {
+      updates.projectId = body.projectId;
     }
 
     const result = db
@@ -354,20 +482,10 @@ export function createTasksRouter(db: AdasDatabase) {
       return c.json({ extracted: 0, tasks: [] });
     }
 
-    // 既に抽出済みのメッセージIDを除外
-    const existingTasks = db
-      .select({ slackMessageId: schema.tasks.slackMessageId })
-      .from(schema.tasks)
-      .where(
-        inArray(
-          schema.tasks.slackMessageId,
-          messages.map((m) => m.id),
-        ),
-      )
-      .all();
-
-    const existingMessageIds = new Set(existingTasks.map((t) => t.slackMessageId));
-    const targetMessages = messages.filter((m) => !existingMessageIds.has(m.id));
+    // 既に抽出済みのメッセージを除外 (抽出ログでチェック)
+    const targetMessages = messages.filter(
+      (m) => !hasExtractionLog(db, "task", "slack", String(m.id)),
+    );
 
     if (targetMessages.length === 0) {
       return c.json({ extracted: 0, tasks: [], message: "All messages already processed" });
@@ -393,6 +511,7 @@ export function createTasksRouter(db: AdasDatabase) {
 
         const parsed = parseExtractResult(response);
 
+        let extractedCount = 0;
         if (parsed.tasks.length > 0) {
           for (const extractedTask of parsed.tasks) {
             const task = db
@@ -411,8 +530,11 @@ export function createTasksRouter(db: AdasDatabase) {
               .get();
 
             createdTasks.push(task);
+            extractedCount++;
           }
         }
+        // Record extraction log (even if 0 tasks extracted)
+        recordExtractionLog(db, "task", "slack", String(message.id), extractedCount);
       } catch (error) {
         console.error(`Failed to extract tasks from message ${message.id}:`, error);
       }
@@ -590,20 +712,10 @@ export function createTasksRouter(db: AdasDatabase) {
       return c.json({ extracted: 0, tasks: [] });
     }
 
-    // 既に抽出済みのコメントIDを除外
-    const existingTasks = db
-      .select({ githubCommentId: schema.tasks.githubCommentId })
-      .from(schema.tasks)
-      .where(
-        inArray(
-          schema.tasks.githubCommentId,
-          comments.map((c) => c.id),
-        ),
-      )
-      .all();
-
-    const existingCommentIds = new Set(existingTasks.map((t) => t.githubCommentId));
-    const targetComments = comments.filter((c) => !existingCommentIds.has(c.id));
+    // 既に抽出済みのコメントを除外 (抽出ログでチェック)
+    const targetComments = comments.filter(
+      (c) => !hasExtractionLog(db, "task", "github-comment", String(c.id)),
+    );
 
     if (targetComments.length === 0) {
       return c.json({ extracted: 0, tasks: [], message: "All comments already processed" });
@@ -632,6 +744,7 @@ export function createTasksRouter(db: AdasDatabase) {
 
         const parsed = parseExtractResult(response);
 
+        let extractedCount = 0;
         if (parsed.tasks.length > 0) {
           for (const extractedTask of parsed.tasks) {
             const task = db
@@ -654,8 +767,11 @@ export function createTasksRouter(db: AdasDatabase) {
               .get();
 
             createdTasks.push(task);
+            extractedCount++;
           }
         }
+        // Record extraction log (even if 0 tasks extracted)
+        recordExtractionLog(db, "task", "github-comment", String(comment.id), extractedCount);
       } catch (error) {
         console.error(`Failed to extract tasks from comment ${comment.id}:`, error);
       }
@@ -684,20 +800,8 @@ export function createTasksRouter(db: AdasDatabase) {
       return c.json({ extracted: 0, tasks: [] });
     }
 
-    // 既に抽出済みのメモIDを除外
-    const existingTasks = db
-      .select({ memoId: schema.tasks.memoId })
-      .from(schema.tasks)
-      .where(
-        inArray(
-          schema.tasks.memoId,
-          memos.map((m) => m.id),
-        ),
-      )
-      .all();
-
-    const existingMemoIds = new Set(existingTasks.map((t) => t.memoId));
-    const targetMemos = memos.filter((m) => !existingMemoIds.has(m.id));
+    // 既に抽出済みのメモを除外 (抽出ログでチェック)
+    const targetMemos = memos.filter((m) => !hasExtractionLog(db, "task", "memo", String(m.id)));
 
     if (targetMemos.length === 0) {
       return c.json({ extracted: 0, tasks: [], message: "All memos already processed" });
@@ -723,6 +827,7 @@ export function createTasksRouter(db: AdasDatabase) {
 
         const parsed = parseExtractResult(response);
 
+        let extractedCount = 0;
         if (parsed.tasks.length > 0) {
           for (const extractedTask of parsed.tasks) {
             const task = db
@@ -742,8 +847,11 @@ export function createTasksRouter(db: AdasDatabase) {
               .get();
 
             createdTasks.push(task);
+            extractedCount++;
           }
         }
+        // Record extraction log (even if 0 tasks extracted)
+        recordExtractionLog(db, "task", "memo", String(memo.id), extractedCount);
       } catch (error) {
         console.error(`Failed to extract tasks from memo ${memo.id}:`, error);
       }
@@ -1334,6 +1442,58 @@ async function applyProfileSuggestion(
       acceptedAt: now,
     })
     .where(eq(schema.profileSuggestions.id, suggestionId))
+    .run();
+}
+
+/**
+ * 用語提案を承認して vocabulary テーブルに追加
+ */
+async function applyVocabularySuggestion(
+  db: AdasDatabase,
+  suggestionId: number,
+  now: string,
+): Promise<void> {
+  const suggestion = db
+    .select()
+    .from(schema.vocabularySuggestions)
+    .where(eq(schema.vocabularySuggestions.id, suggestionId))
+    .get();
+
+  if (!suggestion || suggestion.status !== "pending") {
+    return;
+  }
+
+  // 既存の vocabulary をチェック (重複防止)
+  const existing = db
+    .select()
+    .from(schema.vocabulary)
+    .where(eq(schema.vocabulary.term, suggestion.term))
+    .get();
+
+  if (!existing) {
+    // vocabulary テーブルに追加
+    db.insert(schema.vocabulary)
+      .values({
+        term: suggestion.term,
+        reading: suggestion.reading,
+        category: suggestion.category,
+        source: "interpret",
+        usageCount: 0,
+      })
+      .run();
+
+    consola.info(`[tasks] Added vocabulary: ${suggestion.term}`);
+  } else {
+    consola.debug(`[tasks] Vocabulary already exists: ${suggestion.term}`);
+  }
+
+  // 提案ステータスを更新
+  db.update(schema.vocabularySuggestions)
+    .set({
+      status: "accepted",
+      acceptedAt: now,
+    })
+    .where(eq(schema.vocabularySuggestions.id, suggestionId))
     .run();
 }
 

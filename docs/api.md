@@ -133,6 +133,36 @@
 |---------|------|------|
 | GET | `/api/evaluator-logs?date=YYYY-MM-DD` | 評価ログ一覧 |
 
+### 設定
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/config` | 連携設定の取得 (トークン等は除外) |
+| PATCH | `/api/config/integrations` | 連携のオンオフ更新 |
+
+#### PATCH /api/config/integrations
+
+```json
+// リクエスト例
+{
+  "slack": { "enabled": true },
+  "github": { "enabled": false }
+}
+
+// レスポンス
+{
+  "message": "設定を更新しました",
+  "requiresRestart": true,
+  "integrations": {
+    "slack": { "enabled": true },
+    "github": { "enabled": false },
+    "claudeCode": { "enabled": true },
+    "evaluator": { "enabled": true },
+    "promptImprovement": { "enabled": false }
+  }
+}
+```
+
 ---
 
 ## Worker RPCサーバー(:3100)

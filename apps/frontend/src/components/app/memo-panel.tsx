@@ -1,6 +1,6 @@
 import type { Memo, MemoTag } from "@repo/types";
 import { MEMO_TAGS } from "@repo/types";
-import { Check, Mic, MicOff, Pencil, RefreshCw, Trash2, X } from "lucide-react";
+import { Check, Mic, MicOff, Pencil, RefreshCw, Send, StickyNote, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -229,9 +229,10 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardHeader className="flex shrink-0 flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="flex items-center">
+        <CardTitle className="flex items-center gap-2">
+          <StickyNote className="h-5 w-5 text-yellow-500" />
           メモ
-          <Badge variant="secondary" className="ml-2">
+          <Badge variant="secondary" className="ml-1">
             {memos.length}
           </Badge>
         </CardTitle>
@@ -289,6 +290,7 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
                 {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
               </Button>
               <Button onClick={handleSend} disabled={sending || !input.trim()}>
+                <Send className="mr-1 h-4 w-4" />
                 {sending ? "..." : "送信"}
               </Button>
             </div>

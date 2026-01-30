@@ -6,6 +6,7 @@ import {
   Mic,
   RefreshCw,
   Speaker,
+  Speech,
   ThumbsDown,
   ThumbsUp,
 } from "lucide-react";
@@ -71,7 +72,10 @@ export function ActivityFeed({ date, className }: ActivityFeedProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Transcribe</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Speech className="h-5 w-5 text-emerald-500" />
+            Transcribe
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
@@ -86,7 +90,10 @@ export function ActivityFeed({ date, className }: ActivityFeedProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Transcribe</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Speech className="h-5 w-5 text-emerald-500" />
+            Transcribe
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">{error}</p>
@@ -101,9 +108,10 @@ export function ActivityFeed({ date, className }: ActivityFeedProps) {
     <>
       <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
         <CardHeader className="flex shrink-0 flex-row items-center justify-between">
-          <CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Speech className="h-5 w-5 text-emerald-500" />
             Transcribe
-            <Badge variant="secondary" className="ml-2">
+            <Badge variant="secondary" className="ml-1">
               {segments.length}
             </Badge>
           </CardTitle>
@@ -253,13 +261,16 @@ function TranscriptionItem({
         // Popover 内のクリックは除外
         const popoverContent = document.querySelector("[data-slot='popover-content']");
         if (popoverContent?.contains(e.target as Node)) return;
-        handlePopoverClose();
+        // 直接状態を設定 (handlePopoverClose の代わり)
+        setPopoverOpen(false);
+        setSelectedText(null);
+        setAddState("idle");
       }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [popoverOpen, handlePopoverClose]);
+  }, [popoverOpen]);
 
   return (
     <div className="rounded-md border p-3">

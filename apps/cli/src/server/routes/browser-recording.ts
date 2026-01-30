@@ -15,6 +15,7 @@ import type { AdasConfig } from "../../config.js";
 /**
  * バックグラウンドで WebM → WAV 変換と文字起こしを実行する。
  * エラーが発生してもクライアントには影響しない。
+ * whisper.enabled が false の場合は WAV 変換のみ行い、文字起こしはスキップ。
  */
 function processChunkInBackground(
   webmPath: string,
@@ -31,6 +32,12 @@ function processChunkInBackground(
         channels: config.audio.channels,
         deleteInput: true,
       });
+
+      // 文字起こしが無効の場合はスキップ
+      if (!config.whisper.enabled) {
+        consola.info(`Whisper disabled, skipping transcription: ${wavPath}`);
+        return;
+      }
 
       // 文字起こし処理
       await processChunkComplete(wavPath, config, db, audioSource);
@@ -122,6 +129,7 @@ export function createBrowserRecordingRouter(db: AdasDatabase, config: AdasConfi
   router.get("/", (c) => {
     return c.json({
       enabled: true,
+      whisperEnabled: config.whisper.enabled,
       chunkDurationMinutes: config.audio.chunkDurationMinutes,
     });
   });

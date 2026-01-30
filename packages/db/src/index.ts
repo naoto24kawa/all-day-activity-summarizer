@@ -8,6 +8,7 @@ export type {
   ClaudeCodeQueueJob,
   ClaudeCodeSession,
   EvaluatorLog,
+  ExtractionLog,
   Feedback,
   GitHubComment,
   GitHubItem,
@@ -18,6 +19,7 @@ export type {
   NewClaudeCodeQueueJob,
   NewClaudeCodeSession,
   NewEvaluatorLog,
+  NewExtractionLog,
   NewFeedback,
   NewGitHubComment,
   NewGitHubItem,
@@ -35,6 +37,7 @@ export type {
   NewTask,
   NewTranscriptionSegment,
   NewUserProfile,
+  NewVocabularySuggestion,
   ProfileSuggestion,
   Project,
   PromptImprovement,
@@ -46,6 +49,7 @@ export type {
   Task,
   TranscriptionSegment,
   UserProfile,
+  VocabularySuggestion,
 } from "./schema.js";
 
 export type AdasDatabase = ReturnType<typeof createDatabase>;
@@ -462,6 +466,18 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_learnings_date ON learnings(date);
     CREATE INDEX IF NOT EXISTS idx_learnings_category ON learnings(category);
     CREATE INDEX IF NOT EXISTS idx_learnings_next_review ON learnings(next_review_at);
+
+    -- Extraction Logs table (抽出ログ - タスク・学びの処理済みソース記録)
+    CREATE TABLE IF NOT EXISTS extraction_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      extraction_type TEXT NOT NULL CHECK(extraction_type IN ('task', 'learning')),
+      source_type TEXT NOT NULL CHECK(source_type IN ('slack', 'github', 'github-comment', 'memo', 'claude-code', 'transcription')),
+      source_id TEXT NOT NULL,
+      extracted_count INTEGER NOT NULL DEFAULT 0,
+      extracted_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_extraction_logs_unique ON extraction_logs(extraction_type, source_type, source_id);
   `);
 
   // Migration: update CHECK constraint to allow 'pomodoro' summary_type
@@ -829,6 +845,180 @@ export function createDatabase(dbPath: string) {
         CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
         CREATE INDEX IF NOT EXISTS idx_tasks_github_comment ON tasks(github_comment_id);
         CREATE INDEX IF NOT EXISTS idx_tasks_memo ON tasks(memo_id);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: create vocabulary_suggestions table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS vocabulary_suggestions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      term TEXT NOT NULL,
+      reading TEXT,
+      category TEXT,
+      reason TEXT,
+      source_type TEXT NOT NULL CHECK(source_type IN ('interpret', 'feedback', 'slack', 'github', 'claude-code', 'memo')),
+      source_id INTEGER,
+      confidence REAL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected')),
+      accepted_at TEXT,
+      rejected_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vocabulary_suggestions_term ON vocabulary_suggestions(term);
+    CREATE INDEX IF NOT EXISTS idx_vocabulary_suggestions_status ON vocabulary_suggestions(status);
+    CREATE INDEX IF NOT EXISTS idx_vocabulary_suggestions_source ON vocabulary_suggestions(source_type, source_id);
+  `);
+
+  // Migration: add vocabulary_suggestion_id to tasks and update CHECK constraint to include 'vocabulary'
+  addColumnIfNotExists(sqlite, "tasks", "vocabulary_suggestion_id", "INTEGER");
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'",
+      )
+      .get();
+    if (row && !row.sql.includes("'vocabulary'")) {
+      sqlite.exec(`
+        ALTER TABLE tasks RENAME TO tasks_old;
+        CREATE TABLE tasks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          slack_message_id INTEGER,
+          github_comment_id INTEGER,
+          memo_id INTEGER,
+          prompt_improvement_id INTEGER,
+          profile_suggestion_id INTEGER,
+          vocabulary_suggestion_id INTEGER,
+          project_id INTEGER,
+          source_type TEXT NOT NULL DEFAULT 'slack' CHECK(source_type IN ('slack', 'github', 'github-comment', 'memo', 'manual', 'prompt-improvement', 'profile-suggestion', 'vocabulary')),
+          title TEXT NOT NULL,
+          description TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected', 'in_progress', 'paused', 'completed')),
+          priority TEXT CHECK(priority IN ('high', 'medium', 'low')),
+          confidence REAL,
+          due_date TEXT,
+          extracted_at TEXT NOT NULL,
+          accepted_at TEXT,
+          rejected_at TEXT,
+          started_at TEXT,
+          paused_at TEXT,
+          completed_at TEXT,
+          reject_reason TEXT,
+          pause_reason TEXT,
+          original_title TEXT,
+          original_description TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO tasks (id, date, slack_message_id, github_comment_id, memo_id, prompt_improvement_id, profile_suggestion_id, vocabulary_suggestion_id, project_id, source_type, title, description, status, priority, confidence, due_date, extracted_at, accepted_at, rejected_at, started_at, paused_at, completed_at, reject_reason, pause_reason, original_title, original_description, created_at, updated_at)
+          SELECT id, date, slack_message_id, github_comment_id, memo_id, prompt_improvement_id, profile_suggestion_id, NULL, project_id, source_type, title, description, status, priority, confidence, due_date, extracted_at, accepted_at, rejected_at, started_at, paused_at, completed_at, reject_reason, pause_reason, original_title, original_description, created_at, updated_at FROM tasks_old;
+        DROP TABLE tasks_old;
+        CREATE INDEX IF NOT EXISTS idx_tasks_date ON tasks(date);
+        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_slack_message ON tasks(slack_message_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_prompt_improvement ON tasks(prompt_improvement_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_profile_suggestion ON tasks(profile_suggestion_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_vocabulary_suggestion ON tasks(vocabulary_suggestion_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_github_comment ON tasks(github_comment_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_memo ON tasks(memo_id);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: update vocabulary source CHECK constraint to include 'interpret'
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='vocabulary'",
+      )
+      .get();
+    if (row && !row.sql.includes("'interpret'")) {
+      sqlite.exec(`
+        ALTER TABLE vocabulary RENAME TO vocabulary_old;
+        CREATE TABLE vocabulary (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          term TEXT NOT NULL UNIQUE,
+          reading TEXT,
+          category TEXT,
+          source TEXT NOT NULL CHECK(source IN ('manual', 'transcribe', 'feedback', 'interpret')),
+          usage_count INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO vocabulary SELECT * FROM vocabulary_old;
+        DROP TABLE vocabulary_old;
+        CREATE INDEX IF NOT EXISTS idx_vocabulary_term ON vocabulary(term);
+        CREATE INDEX IF NOT EXISTS idx_vocabulary_source ON vocabulary(source);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: migrate learning_extraction_logs to extraction_logs
+  try {
+    const oldTableExists = sqlite
+      .query<{ name: string }, []>(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='learning_extraction_logs'",
+      )
+      .get();
+    if (oldTableExists) {
+      // Migrate existing data with source_type mapping
+      sqlite.exec(`
+        INSERT OR IGNORE INTO extraction_logs (extraction_type, source_type, source_id, extracted_count, extracted_at)
+        SELECT
+          'learning',
+          CASE source_type
+            WHEN 'slack-message' THEN 'slack'
+            ELSE source_type
+          END,
+          source_id,
+          extracted_count,
+          extracted_at
+        FROM learning_extraction_logs;
+        DROP TABLE learning_extraction_logs;
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: update vocabulary_suggestions source_type CHECK constraint to include new sources
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='vocabulary_suggestions'",
+      )
+      .get();
+    if (row && !row.sql.includes("'slack'")) {
+      sqlite.exec(`
+        ALTER TABLE vocabulary_suggestions RENAME TO vocabulary_suggestions_old;
+        CREATE TABLE vocabulary_suggestions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          term TEXT NOT NULL,
+          reading TEXT,
+          category TEXT,
+          reason TEXT,
+          source_type TEXT NOT NULL CHECK(source_type IN ('interpret', 'feedback', 'slack', 'github', 'claude-code', 'memo')),
+          source_id INTEGER,
+          confidence REAL,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected')),
+          accepted_at TEXT,
+          rejected_at TEXT,
+          created_at TEXT NOT NULL
+        );
+        INSERT INTO vocabulary_suggestions SELECT * FROM vocabulary_suggestions_old;
+        DROP TABLE vocabulary_suggestions_old;
+        CREATE INDEX IF NOT EXISTS idx_vocabulary_suggestions_term ON vocabulary_suggestions(term);
+        CREATE INDEX IF NOT EXISTS idx_vocabulary_suggestions_status ON vocabulary_suggestions(status);
+        CREATE INDEX IF NOT EXISTS idx_vocabulary_suggestions_source ON vocabulary_suggestions(source_type, source_id);
       `);
     }
   } catch {

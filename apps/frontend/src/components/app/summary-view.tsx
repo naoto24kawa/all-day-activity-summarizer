@@ -1,5 +1,15 @@
 import type { FeedbackRating, Summary, SummaryIssueType } from "@repo/types";
-import { Minus, RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
+import {
+  Calendar,
+  Clock,
+  FileText,
+  Minus,
+  RefreshCw,
+  Sparkles,
+  ThumbsDown,
+  ThumbsUp,
+  Timer,
+} from "lucide-react";
 import { useState } from "react";
 import { SummaryFeedbackDialog } from "@/components/app/summary-feedback-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -81,9 +91,13 @@ export function SummaryView({ date, className }: SummaryViewProps) {
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle>Summaries</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-blue-500" />
+            Summaries
+          </CardTitle>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={handleGenerate} disabled={generating}>
+              <Sparkles className={`mr-1 h-3 w-3 ${generating ? "animate-pulse" : ""}`} />
               {generating ? "Generating..." : "Generate"}
             </Button>
             <Button variant="ghost" size="icon" onClick={handleRefresh} title="Refresh">
@@ -95,7 +109,8 @@ export function SummaryView({ date, className }: SummaryViewProps) {
       <CardContent className="flex min-h-0 flex-1 flex-col">
         <Tabs defaultValue="pomodoro" className="flex min-h-0 flex-1 flex-col">
           <TabsList className="mb-2 shrink-0">
-            <TabsTrigger value="daily">
+            <TabsTrigger value="daily" className="gap-1">
+              <Calendar className="h-3 w-3" />
               Daily
               {dailySummaries.length > 0 && (
                 <Badge variant="secondary" className="ml-1">
@@ -103,7 +118,8 @@ export function SummaryView({ date, className }: SummaryViewProps) {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="hourly">
+            <TabsTrigger value="hourly" className="gap-1">
+              <Clock className="h-3 w-3" />
               Hourly
               {hourlySummaries.length > 0 && (
                 <Badge variant="secondary" className="ml-1">
@@ -111,7 +127,8 @@ export function SummaryView({ date, className }: SummaryViewProps) {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="pomodoro">
+            <TabsTrigger value="pomodoro" className="gap-1">
+              <Timer className="h-3 w-3" />
               Pomodoro
               {pomodoroSummaries.length > 0 && (
                 <Badge variant="secondary" className="ml-1">

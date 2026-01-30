@@ -7,12 +7,10 @@ import { schema } from "@repo/db";
 import type { LearningSourceType } from "@repo/types";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import {
-  extractAndSaveLearningsFromContent,
-  hasExistingLearnings,
-} from "../../claude-code/extractor.js";
+import { extractAndSaveLearningsFromContent } from "../../claude-code/extractor.js";
 import type { AdasConfig } from "../../config.js";
 import { getTodayDateString } from "../../utils/date.js";
+import { hasExtractionLog } from "../../utils/extraction-log.js";
 
 export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
   const router = new Hono();
@@ -291,11 +289,11 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
     // Use date as source_id (one extraction per day)
     const sourceId = `transcription-${date}`;
 
-    if (hasExistingLearnings(db, "transcription", sourceId)) {
+    if (hasExtractionLog(db, "learning", "transcription", sourceId)) {
       return c.json({
         extracted: 0,
         saved: 0,
-        message: "Learnings already extracted for this date",
+        message: "Already processed for this date",
       });
     }
 
@@ -346,11 +344,11 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
     // Use date as source_id
     const sourceId = `github-comment-${date}`;
 
-    if (hasExistingLearnings(db, "github-comment", sourceId)) {
+    if (hasExtractionLog(db, "learning", "github-comment", sourceId)) {
       return c.json({
         extracted: 0,
         saved: 0,
-        message: "Learnings already extracted for this date",
+        message: "Already processed for this date",
       });
     }
 
@@ -401,11 +399,11 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
     // Use date as source_id
     const sourceId = `slack-message-${date}`;
 
-    if (hasExistingLearnings(db, "slack-message", sourceId)) {
+    if (hasExtractionLog(db, "learning", "slack", sourceId)) {
       return c.json({
         extracted: 0,
         saved: 0,
-        message: "Learnings already extracted for this date",
+        message: "Already processed for this date",
       });
     }
 

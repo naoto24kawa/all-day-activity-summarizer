@@ -1,22 +1,26 @@
-import { HelpCircle, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { AlertTriangle, HelpCircle, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { useState } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { Label } from "@/components/ui/label";
 import { useBrowserRecording } from "@/hooks/use-browser-recording";
+import { useConfig } from "@/hooks/use-config";
 import { formatTimeJST } from "@/lib/date";
 import { BrowserLevelMeter } from "./browser-level-meter";
 import { ScreenShareGuide } from "./screen-share-guide";
 
 export function BrowserRecordingPanel() {
+  const { integrations } = useConfig();
   const browserRecording = useBrowserRecording();
   const [micLoading, setMicLoading] = useState(false);
   const [systemLoading, setSystemLoading] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
 
   const isBrowserRecording = browserRecording.micRecording || browserRecording.systemRecording;
+  const whisperDisabled = integrations && !integrations.whisper.enabled;
 
   const handleBrowserMicToggle = async () => {
     setMicLoading(true);
@@ -67,6 +71,14 @@ export function BrowserRecordingPanel() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {whisperDisabled && (
+          <Alert variant="default" className="py-2">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription className="text-xs">
+              文字起こしは無効化されています。録音は保存されますが、文字起こしは行われません。
+            </AlertDescription>
+          </Alert>
+        )}
         {browserRecording.error && (
           <p className="text-xs text-destructive">{browserRecording.error.message}</p>
         )}

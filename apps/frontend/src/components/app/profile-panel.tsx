@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { Lightbulb, Plus, Sparkles, Target, User, Wrench } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,11 +21,11 @@ export function ProfilePanel() {
   const [generateResult, setGenerateResult] = useState<{ count: number } | null>(null);
 
   // プロフィールが読み込まれたら経験年数を設定
-  useState(() => {
+  useEffect(() => {
     if (profile?.experienceYears !== null && profile?.experienceYears !== undefined) {
       setExperienceYears(profile.experienceYears.toString());
     }
-  });
+  }, [profile?.experienceYears]);
 
   const handleUpdateExperience = async () => {
     const years = experienceYears.trim() ? Number.parseInt(experienceYears, 10) : null;
@@ -113,12 +114,16 @@ export function ProfilePanel() {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
-          <CardTitle>Profile Settings</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <User className="h-5 w-5 text-orange-500" />
+            Profile Settings
+          </CardTitle>
           <CardDescription>
             プロフィール情報は学び抽出時に参照されます。提案は Tasks タブに表示されます。
           </CardDescription>
         </div>
         <Button onClick={handleGenerateSuggestions} disabled={generating} size="sm">
+          <Sparkles className={`mr-1 h-3 w-3 ${generating ? "animate-pulse" : ""}`} />
           {generating ? "生成中..." : "提案を生成"}
         </Button>
       </CardHeader>
@@ -158,7 +163,10 @@ export function ProfilePanel() {
 
         {/* 専門分野 */}
         <div className="space-y-2">
-          <Label>専門分野</Label>
+          <Label className="flex items-center gap-2">
+            <Lightbulb className="h-4 w-4 text-yellow-500" />
+            専門分野
+          </Label>
           <div className="flex flex-wrap gap-2">
             {specialties.map((s) => (
               <Badge
@@ -194,7 +202,7 @@ export function ProfilePanel() {
                 }
                 disabled={updating || !newSpecialty.trim()}
               >
-                +
+                <Plus className="h-3 w-3" />
               </Button>
             </div>
           </div>
@@ -202,7 +210,10 @@ export function ProfilePanel() {
 
         {/* 既知の技術 */}
         <div className="space-y-2">
-          <Label>既知の技術</Label>
+          <Label className="flex items-center gap-2">
+            <Wrench className="h-4 w-4 text-blue-500" />
+            既知の技術
+          </Label>
           <div className="flex flex-wrap gap-2">
             {knownTechnologies.map((t) => (
               <Badge
@@ -240,7 +251,7 @@ export function ProfilePanel() {
                 }
                 disabled={updating || !newTechnology.trim()}
               >
-                +
+                <Plus className="h-3 w-3" />
               </Button>
             </div>
           </div>
@@ -248,7 +259,10 @@ export function ProfilePanel() {
 
         {/* 学習目標 */}
         <div className="space-y-2">
-          <Label>学習目標</Label>
+          <Label className="flex items-center gap-2">
+            <Target className="h-4 w-4 text-green-500" />
+            学習目標
+          </Label>
           <div className="flex flex-wrap gap-2">
             {learningGoals.map((g) => (
               <Badge
@@ -282,7 +296,7 @@ export function ProfilePanel() {
                 }
                 disabled={updating || !newGoal.trim()}
               >
-                +
+                <Plus className="h-3 w-3" />
               </Button>
             </div>
           </div>

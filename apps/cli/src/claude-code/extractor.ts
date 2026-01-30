@@ -10,7 +10,18 @@ import type { LearningCategory, LearningSourceType } from "@repo/types";
 import consola from "consola";
 import { and, eq } from "drizzle-orm";
 import type { AdasConfig } from "../config.js";
+import {
+  type ExtractionSourceType,
+  hasExtractionLog,
+  recordExtractionLog,
+} from "../utils/extraction-log.js";
 import { findProjectByPath } from "../utils/project-lookup.js";
+
+/** Map LearningSourceType to ExtractionSourceType */
+function toExtractionSourceType(sourceType: LearningSourceType): ExtractionSourceType {
+  if (sourceType === "slack-message") return "slack";
+  return sourceType;
+}
 
 /** ユーザープロフィール情報 (学び抽出時に参照) */
 export interface UserProfileContext {
@@ -123,6 +134,13 @@ export async function extractAndSaveLearningsFromContent(
     return { extracted: 0, saved: 0 };
   }
 
+  // Check if this source has already been processed
+  const extractionSourceType = toExtractionSourceType(sourceType);
+  if (hasExtractionLog(db, "learning", extractionSourceType, sourceId)) {
+    consola.debug(`[extractor] Source already processed: ${sourceType}:${sourceId}, skipping`);
+    return { extracted: 0, saved: 0 };
+  }
+
   const { url, timeout } = config.worker;
 
   try {
@@ -153,13 +171,25 @@ export async function extractAndSaveLearningsFromContent(
     const extracted = result.learnings.length;
 
     if (extracted === 0) {
+      // Record extraction log even when no learnings found
+      recordExtractionLog(db, "learning", extractionSourceType, sourceId, 0);
       consola.debug(`[extractor] No learnings found in ${sourceType}:${sourceId}`);
       return { extracted: 0, saved: 0 };
     }
 
-    // Save learnings to DB
+    // Save learnings to DB with deduplication
     let saved = 0;
+    let skipped = 0;
     for (const learning of result.learnings) {
+      // Check for duplicate content before saving
+      if (isDuplicateLearning(db, learning.content, learning.category)) {
+        consola.debug(
+          `[extractor] Skipping duplicate learning: "${learning.content.slice(0, 50)}..."`,
+        );
+        skipped++;
+        continue;
+      }
+
       const newLearning: NewLearning = {
         sourceType,
         sourceId,
@@ -184,6 +214,13 @@ export async function extractAndSaveLearningsFromContent(
         consola.warn(`[extractor] Failed to save learning:`, err);
       }
     }
+
+    if (skipped > 0) {
+      consola.info(`[extractor] ${sourceType}:${sourceId}: skipped ${skipped} duplicates`);
+    }
+
+    // Record extraction log
+    recordExtractionLog(db, "learning", extractionSourceType, sourceId, saved);
 
     consola.info(`[extractor] ${sourceType}:${sourceId}: extracted ${extracted}, saved ${saved}`);
     return { extracted, saved };
@@ -215,4 +252,87 @@ export function hasExistingLearnings(
     .all();
 
   return existing.length > 0;
+}
+
+/**
+ * Check if a learning with similar content already exists
+ *
+ * Uses two-step deduplication:
+ * 1. Exact match: Same content text
+ * 2. Fuzzy match: Same category with high similarity (normalized content)
+ */
+export function isDuplicateLearning(
+  db: AdasDatabase,
+  content: string,
+  category: string | null,
+): boolean {
+  // Step 1: Exact match
+  const exactMatch = db
+    .select()
+    .from(schema.learnings)
+    .where(eq(schema.learnings.content, content))
+    .limit(1)
+    .all();
+
+  if (exactMatch.length > 0) {
+    consola.debug(`[extractor] Duplicate found (exact match): "${content.slice(0, 50)}..."`);
+    return true;
+  }
+
+  // Step 2: Fuzzy match - normalize and compare within same category
+  const normalizedContent = normalizeContent(content);
+
+  if (category) {
+    const sameCategoryLearnings = db
+      .select({ content: schema.learnings.content })
+      .from(schema.learnings)
+      .where(eq(schema.learnings.category, category))
+      .all();
+
+    for (const existing of sameCategoryLearnings) {
+      const existingNormalized = normalizeContent(existing.content);
+      if (isSimilarContent(normalizedContent, existingNormalized)) {
+        consola.debug(
+          `[extractor] Duplicate found (similar content): "${content.slice(0, 50)}..."`,
+        );
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Normalize content for comparison
+ * - Lowercase
+ * - Remove extra whitespace
+ * - Remove punctuation
+ */
+function normalizeContent(content: string): string {
+  return content
+    .toLowerCase()
+    .replace(/[。、．，！？!?.,;:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Check if two normalized contents are similar
+ * Uses simple keyword overlap ratio
+ */
+function isSimilarContent(a: string, b: string, threshold = 0.8): boolean {
+  const wordsA = new Set(a.split(" ").filter((w) => w.length > 2));
+  const wordsB = new Set(b.split(" ").filter((w) => w.length > 2));
+
+  if (wordsA.size === 0 || wordsB.size === 0) {
+    return false;
+  }
+
+  // Calculate Jaccard similarity
+  const intersection = new Set([...wordsA].filter((w) => wordsB.has(w)));
+  const union = new Set([...wordsA, ...wordsB]);
+  const similarity = intersection.size / union.size;
+
+  return similarity >= threshold;
 }

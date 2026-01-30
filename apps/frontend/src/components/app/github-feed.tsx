@@ -11,10 +11,12 @@ import {
   CircleDot,
   ExternalLink,
   Eye,
+  Github,
   GitMerge,
   GitPullRequest,
   MessageSquare,
   RefreshCw,
+  Settings,
   XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useConfig } from "@/hooks/use-config";
 import {
   useGitHubComments,
   useGitHubCommentsUnreadCounts,
@@ -36,6 +39,7 @@ interface GitHubFeedProps {
 }
 
 export function GitHubFeed({ date, className }: GitHubFeedProps) {
+  const { integrations, loading: configLoading } = useConfig();
   const { items, loading, error, refetch, markAsRead, markAllAsRead } = useGitHubItems(date);
   const { counts } = useGitHubUnreadCounts(date);
   const {
@@ -45,11 +49,35 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
   } = useGitHubComments(date);
   const { counts: commentCounts } = useGitHubCommentsUnreadCounts(date);
 
+  // 連携が無効な場合
+  if (!configLoading && integrations && !integrations.github.enabled) {
+    return (
+      <Card className={className}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Github className="h-5 w-5" />
+            GitHub
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center py-8">
+          <Settings className="mb-2 h-8 w-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">GitHub 連携は無効化されています</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Settings タブの Integrations で有効にできます
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (loading) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>GitHub</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Github className="h-5 w-5" />
+            GitHub
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
@@ -64,7 +92,10 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>GitHub</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Github className="h-5 w-5" />
+            GitHub
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">{error}</p>
@@ -83,9 +114,10 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardHeader className="flex shrink-0 flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
+          <Github className="h-5 w-5" />
           GitHub
           {totalUnread > 0 && (
-            <Badge variant="destructive" className="ml-2">
+            <Badge variant="destructive" className="ml-1">
               {totalUnread} unread
             </Badge>
           )}

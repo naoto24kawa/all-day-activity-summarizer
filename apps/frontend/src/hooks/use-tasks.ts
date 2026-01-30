@@ -39,11 +39,12 @@ export function useTasks(date?: string) {
       id: number,
       updates: {
         status?: TaskStatus;
-        priority?: string;
+        priority?: "high" | "medium" | "low" | null;
         dueDate?: string | null;
         rejectReason?: string;
         title?: string;
         description?: string;
+        projectId?: number | null;
       },
     ) => {
       await patchAdasApi(`/api/tasks/${id}`, updates);
@@ -108,6 +109,27 @@ export function useTasks(date?: string) {
     [fetchTasks],
   );
 
+  const extractVocabularyTerms = useCallback(
+    async (options?: {
+      date?: string;
+      source?: "slack" | "github" | "claude-code" | "memo" | "all";
+    }) => {
+      const source = options?.source ?? "all";
+      const endpoint =
+        source === "all" ? "/api/vocabulary/extract/all" : `/api/vocabulary/extract/${source}`;
+      const result = await postAdasApi<{
+        extracted?: number;
+        totalExtracted?: number;
+        skippedDuplicate?: number;
+        tasksCreated?: number;
+        results?: Record<string, { extracted: number; message?: string }>;
+      }>(endpoint, { date: options?.date });
+      await fetchTasks(true);
+      return result;
+    },
+    [fetchTasks],
+  );
+
   return {
     tasks,
     error,
@@ -119,6 +141,7 @@ export function useTasks(date?: string) {
     extractGitHubTasks,
     extractGitHubCommentTasks,
     extractMemoTasks,
+    extractVocabularyTerms,
   };
 }
 
@@ -127,6 +150,8 @@ export function useTaskStats(date?: string) {
     total: 0,
     pending: 0,
     accepted: 0,
+    in_progress: 0,
+    paused: 0,
     rejected: 0,
     completed: 0,
   });

@@ -13,8 +13,10 @@ import type {
   TaskStatus,
 } from "@repo/types";
 import {
+  AlertTriangle,
   Bell,
   BellOff,
+  BookOpen,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -27,9 +29,13 @@ import {
   MessageSquare,
   MessageSquareMore,
   Mic,
+  Minus,
+  Pause,
   Pencil,
+  Play,
   RefreshCw,
   Search,
+  Signal,
   Sparkles,
   Terminal,
   Trash2,
@@ -51,6 +57,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -89,7 +101,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const [completionSuggestions, setCompletionSuggestions] = useState<TaskCompletionSuggestion[]>(
     [],
   );
-  const [completionStats, setCompletionStats] = useState<
+  const [_completionStats, setCompletionStats] = useState<
     SuggestCompletionsResponse["evaluated"] | null
   >(null);
 
@@ -103,6 +115,8 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
         return "Memo";
       case "prompt-improvement":
         return "改善";
+      case "vocabulary":
+        return "用語";
       default:
         return "Slack";
     }
@@ -134,6 +148,23 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     }
 
     return result;
+  };
+
+  // Sort by priority (for accepted tasks)
+  const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+  const sortByPriority = (taskList: Task[]) => {
+    return [...taskList].sort((a, b) => {
+      const aPriority = a.priority ? (priorityOrder[a.priority] ?? 3) : 3;
+      const bPriority = b.priority ? (priorityOrder[b.priority] ?? 3) : 3;
+      return aPriority - bPriority;
+    });
+  };
+
+  // Sort by extractedAt descending (for non-accepted tasks)
+  const sortByDateDesc = (taskList: Task[]) => {
+    return [...taskList].sort((a, b) => {
+      return new Date(b.extractedAt).getTime() - new Date(a.extractedAt).getTime();
+    });
   };
 
   const notifyHighPriorityTasks = (extractedTasks: Task[]) => {
@@ -272,10 +303,14 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     );
   }
 
-  const pendingTasks = filterTasks(tasks.filter((t) => t.status === "pending"));
-  const acceptedTasks = filterTasks(tasks.filter((t) => t.status === "accepted"));
-  const completedTasks = filterTasks(tasks.filter((t) => t.status === "completed"));
-  const rejectedTasks = filterTasks(tasks.filter((t) => t.status === "rejected"));
+  const pendingTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "pending")));
+  const acceptedTasks = sortByPriority(filterTasks(tasks.filter((t) => t.status === "accepted")));
+  const inProgressTasks = sortByDateDesc(
+    filterTasks(tasks.filter((t) => t.status === "in_progress")),
+  );
+  const pausedTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "paused")));
+  const completedTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "completed")));
+  const rejectedTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "rejected")));
 
   // Count tasks by source for filter badges
   const sourceCount = {
@@ -285,6 +320,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
       .length,
     "prompt-improvement": tasks.filter((t) => t.sourceType === "prompt-improvement").length,
     memo: tasks.filter((t) => t.sourceType === "memo").length,
+    vocabulary: tasks.filter((t) => t.sourceType === "vocabulary").length,
   };
 
   // Count tasks by project for filter badges
@@ -362,6 +398,16 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               title="Extract from Memos"
             >
               <FileText className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCheckCompletions}
+              disabled={checkingCompletion || stats.accepted === 0}
+              title="Check task completions"
+            >
+              <Search className={`mr-1 h-3 w-3 ${checkingCompletion ? "animate-pulse" : ""}`} />
+              {checkingCompletion ? "..." : "完了チェック"}
             </Button>
             {permission === "default" && (
               <Button
@@ -448,6 +494,17 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 Memo ({sourceCount.memo})
               </Button>
             )}
+            {sourceCount.vocabulary > 0 && (
+              <Button
+                variant={sourceFilter === "vocabulary" ? "default" : "outline"}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setSourceFilter("vocabulary")}
+              >
+                <BookOpen className="mr-1 h-3 w-3" />
+                用語 ({sourceCount.vocabulary})
+              </Button>
+            )}
           </div>
         )}
 
@@ -516,6 +573,24 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                   </Badge>
                 )}
               </TabsTrigger>
+              <TabsTrigger value="in_progress" className="flex items-center gap-1">
+                <Play className="h-3 w-3" />
+                進行中
+                {stats.in_progress > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
+                    {stats.in_progress}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="paused" className="flex items-center gap-1">
+                <Pause className="h-3 w-3" />
+                中断
+                {stats.paused > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
+                    {stats.paused}
+                  </Badge>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="completed" className="flex items-center gap-1">
                 <CheckCircle2 className="h-3 w-3" />
                 完了
@@ -540,32 +615,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               />
             </TabsContent>
             <TabsContent value="accepted" className="min-h-0 flex-1 space-y-2">
-              <div className="flex items-center justify-between">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCheckCompletions}
-                  disabled={checkingCompletion || acceptedTasks.length === 0}
-                  className="gap-1"
-                >
-                  <Search className="h-3 w-3" />
-                  {checkingCompletion ? "チェック中..." : "完了チェック"}
-                </Button>
-                {completionStats && (
-                  <div className="flex gap-2 text-xs text-muted-foreground">
-                    <span>評価: {completionStats.total}件</span>
-                    {completionStats.github > 0 && <span>GitHub: {completionStats.github}</span>}
-                    {completionStats.claudeCode > 0 && (
-                      <span>Claude: {completionStats.claudeCode}</span>
-                    )}
-                    {completionStats.slack > 0 && <span>Slack: {completionStats.slack}</span>}
-                    {completionStats.transcribe > 0 && (
-                      <span>Transcribe: {completionStats.transcribe}</span>
-                    )}
-                  </div>
-                )}
-              </div>
-
               {completionSuggestions.length > 0 && (
                 <div className="rounded-md border border-green-200 bg-green-50 p-2 dark:border-green-800 dark:bg-green-950">
                   <div className="mb-2 flex items-center gap-1 text-sm font-medium text-green-700 dark:text-green-300">
@@ -589,8 +638,26 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
-                showCompleteAction
+                showAcceptedActions
                 suggestionTaskIds={suggestionTaskIds}
+              />
+            </TabsContent>
+            <TabsContent value="in_progress" className="min-h-0 flex-1">
+              <TaskList
+                tasks={inProgressTasks}
+                projects={projects}
+                onUpdateTask={updateTask}
+                onDeleteTask={deleteTask}
+                showInProgressActions
+              />
+            </TabsContent>
+            <TabsContent value="paused" className="min-h-0 flex-1">
+              <TaskList
+                tasks={pausedTasks}
+                projects={projects}
+                onUpdateTask={updateTask}
+                onDeleteTask={deleteTask}
+                showPausedActions
               />
             </TabsContent>
             <TabsContent value="completed" className="min-h-0 flex-1">
@@ -685,18 +752,29 @@ function TaskList({
   onUpdateTask,
   onDeleteTask,
   showActions = false,
-  showCompleteAction = false,
+  showAcceptedActions = false,
+  showInProgressActions = false,
+  showPausedActions = false,
   suggestionTaskIds,
 }: {
   tasks: Task[];
   projects: Project[];
   onUpdateTask: (
     id: number,
-    updates: { status?: TaskStatus; rejectReason?: string; title?: string; description?: string },
+    updates: {
+      status?: TaskStatus;
+      rejectReason?: string;
+      title?: string;
+      description?: string;
+      priority?: "high" | "medium" | "low" | null;
+      projectId?: number | null;
+    },
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
   showActions?: boolean;
-  showCompleteAction?: boolean;
+  showAcceptedActions?: boolean;
+  showInProgressActions?: boolean;
+  showPausedActions?: boolean;
   suggestionTaskIds?: Set<number>;
 }) {
   if (tasks.length === 0) {
@@ -714,7 +792,9 @@ function TaskList({
             onUpdateTask={onUpdateTask}
             onDeleteTask={onDeleteTask}
             showActions={showActions}
-            showCompleteAction={showCompleteAction}
+            showAcceptedActions={showAcceptedActions}
+            showInProgressActions={showInProgressActions}
+            showPausedActions={showPausedActions}
             isSuggested={suggestionTaskIds?.has(task.id)}
           />
         ))}
@@ -728,19 +808,30 @@ function TaskItem({
   projects,
   onUpdateTask,
   onDeleteTask,
-  showActions,
-  showCompleteAction,
+  showActions: _showActions,
+  showAcceptedActions: _showAcceptedActions,
+  showInProgressActions: _showInProgressActions,
+  showPausedActions: _showPausedActions,
   isSuggested,
 }: {
   task: Task;
   projects: Project[];
   onUpdateTask: (
     id: number,
-    updates: { status?: TaskStatus; rejectReason?: string; title?: string; description?: string },
+    updates: {
+      status?: TaskStatus;
+      rejectReason?: string;
+      title?: string;
+      description?: string;
+      priority?: "high" | "medium" | "low" | null;
+      projectId?: number | null;
+    },
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
   showActions?: boolean;
-  showCompleteAction?: boolean;
+  showAcceptedActions?: boolean;
+  showInProgressActions?: boolean;
+  showPausedActions?: boolean;
   isSuggested?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -759,13 +850,13 @@ function TaskItem({
 
   const projectName = getProjectName(projects, task.projectId);
 
-  const priorityColors: Record<string, string> = {
+  const _priorityColors: Record<string, string> = {
     high: "text-red-500",
     medium: "text-yellow-500",
     low: "text-green-500",
   };
 
-  const confidenceLabel = (confidence: number | null) => {
+  const _confidenceLabel = (confidence: number | null) => {
     if (confidence === null) return null;
     if (confidence >= 0.9) return "High";
     if (confidence >= 0.7) return "Medium";
@@ -822,11 +913,52 @@ function TaskItem({
     if (task.description) {
       text += `\n\n${task.description}`;
     }
-    text += "\n\n---\n";
-    text += `タスク完了時は以下を実行してください:\n`;
-    text += `\`\`\`bash\n`;
-    text += `curl -X POST ${ADAS_API_URL}/api/tasks/${task.id}/complete\n`;
-    text += `\`\`\``;
+
+    // ステータスに応じたアクションコマンドを生成
+    const baseUrl = ADAS_API_URL;
+    const startUrl = `${baseUrl}/api/tasks/${task.id}/start`;
+    const completeUrl = `${baseUrl}/api/tasks/${task.id}/complete`;
+    const pauseUrl = `${baseUrl}/api/tasks/${task.id}/pause`;
+
+    if (task.status === "accepted") {
+      // 承認済み: 開始 → 完了/中断
+      text += "\n\n---\n";
+      text += "作業開始前に以下を実行してください:\n";
+      text += "```bash\n";
+      text += `curl -X POST ${startUrl}\n`;
+      text += "```\n\n";
+      text += "タスク完了時は以下を実行してください:\n";
+      text += "```bash\n";
+      text += `curl -X POST ${completeUrl}\n`;
+      text += "```\n\n";
+      text += "中断する場合は、中断理由を確認してから以下を実行してください:\n";
+      text += "```bash\n";
+      text += `curl -X POST ${pauseUrl} -H "Content-Type: application/json" -d '{"reason": "中断理由をここに記入"}'\n`;
+      text += "```";
+    } else if (task.status === "in_progress") {
+      // 進行中: 完了/中断
+      text += "\n\n---\n";
+      text += "タスク完了時は以下を実行してください:\n";
+      text += "```bash\n";
+      text += `curl -X POST ${completeUrl}\n`;
+      text += "```\n\n";
+      text += "中断する場合は、中断理由を確認してから以下を実行してください:\n";
+      text += "```bash\n";
+      text += `curl -X POST ${pauseUrl} -H "Content-Type: application/json" -d '{"reason": "中断理由をここに記入"}'\n`;
+      text += "```";
+    } else if (task.status === "paused") {
+      // 中断: 再開 → 完了
+      text += "\n\n---\n";
+      text += "作業再開時は以下を実行してください:\n";
+      text += "```bash\n";
+      text += `curl -X POST ${startUrl}\n`;
+      text += "```\n\n";
+      text += "タスク完了時は以下を実行してください:\n";
+      text += "```bash\n";
+      text += `curl -X POST ${completeUrl}\n`;
+      text += "```";
+    }
+    // pending, completed, rejected はアクションコマンドなし
 
     await navigator.clipboard.writeText(text);
     setCopied(true);
@@ -844,32 +976,31 @@ function TaskItem({
                 ? "opacity-50"
                 : task.status === "pending"
                   ? "border-primary/30 bg-primary/5"
-                  : isSuggested
-                    ? "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-950"
-                    : ""
+                  : task.status === "in_progress"
+                    ? "border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-950"
+                    : task.status === "paused"
+                      ? "border-yellow-400 bg-yellow-50 dark:border-yellow-600 dark:bg-yellow-950"
+                      : isSuggested
+                        ? "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-950"
+                        : ""
           }`}
         >
+          {/* ヘッダー: タイトル + ソースバッジ */}
           <CollapsibleTrigger className="flex w-full items-start justify-between text-left">
             <div className="flex-1">
-              <div className="mb-1 flex items-center gap-2">
-                {task.priority && (
-                  <span className={`text-xs font-medium ${priorityColors[task.priority] ?? ""}`}>
-                    {task.priority.toUpperCase()}
-                  </span>
-                )}
+              <div className="mb-1 flex flex-wrap items-center gap-2">
                 <span className="font-medium">{task.title}</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                {task.confidence !== null && (
-                  <Badge variant="outline" className="text-xs">
-                    Confidence: {confidenceLabel(task.confidence)}
-                  </Badge>
-                )}
-                {task.dueDate && (
-                  <Badge variant="outline" className="text-xs">
-                    Due: {task.dueDate}
-                  </Badge>
-                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEditDialog("edit");
+                  }}
+                  className="p-0.5 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                  title="編集"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
                 {task.sourceType === "slack" && (
                   <Badge variant="secondary" className="text-xs">
                     Slack
@@ -896,19 +1027,207 @@ function TaskItem({
                     改善
                   </Badge>
                 )}
-                {projectName && (
-                  <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200">
-                    <FolderGit2 className="mr-1 h-3 w-3" />
-                    {projectName}
+                {task.sourceType === "vocabulary" && (
+                  <Badge variant="default" className="text-xs bg-teal-500">
+                    <BookOpen className="mr-1 h-3 w-3" />
+                    用語
                   </Badge>
                 )}
               </div>
+              {(task.dueDate || projectName) && (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  {task.dueDate && (
+                    <Badge variant="outline" className="text-xs">
+                      Due: {task.dueDate}
+                    </Badge>
+                  )}
+                  {projectName && (
+                    <Badge
+                      variant="outline"
+                      className="text-xs bg-blue-50 border-blue-200 dark:bg-blue-950"
+                    >
+                      <FolderGit2 className="mr-1 h-3 w-3" />
+                      {projectName}
+                    </Badge>
+                  )}
+                </div>
+              )}
             </div>
             <ChevronDown
-              className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+              className={`ml-2 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
             />
           </CollapsibleTrigger>
 
+          {/* アクションボタン - 常に表示 */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {/* 優先度変更 */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={`gap-1 ${task.priority === "high" ? "text-red-500 border-red-200" : task.priority === "medium" ? "text-yellow-500 border-yellow-200" : task.priority === "low" ? "text-green-500 border-green-200" : ""}`}
+                >
+                  {task.priority === "high" ? (
+                    <AlertTriangle className="h-3 w-3" />
+                  ) : task.priority === "medium" ? (
+                    <Signal className="h-3 w-3" />
+                  ) : task.priority === "low" ? (
+                    <Minus className="h-3 w-3" />
+                  ) : (
+                    <Circle className="h-3 w-3" />
+                  )}
+                  {task.priority ? task.priority.toUpperCase() : "優先度"}
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem
+                  onClick={() => onUpdateTask(task.id, { priority: "high" })}
+                  className="text-red-500"
+                >
+                  <AlertTriangle className="mr-2 h-4 w-4" />
+                  HIGH - 高優先度
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => onUpdateTask(task.id, { priority: "medium" })}
+                  className="text-yellow-500"
+                >
+                  <Signal className="mr-2 h-4 w-4" />
+                  MEDIUM - 中優先度
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => onUpdateTask(task.id, { priority: "low" })}
+                  className="text-green-500"
+                >
+                  <Minus className="mr-2 h-4 w-4" />
+                  LOW - 低優先度
+                </DropdownMenuItem>
+                {task.priority && (
+                  <DropdownMenuItem
+                    onClick={() => onUpdateTask(task.id, { priority: null })}
+                    className="text-muted-foreground"
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    優先度を解除
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* 承認・修正して承認・却下ボタン (承認待ちのみ) */}
+            {task.status === "pending" && (
+              <>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => onUpdateTask(task.id, { status: "accepted" })}
+                >
+                  <Check className="mr-1 h-3 w-3" />
+                  承認
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => openEditDialog("edit-approve")}
+                >
+                  <Wand2 className="mr-1 h-3 w-3" />
+                  修正して承認
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setRejectDialogOpen(true)}>
+                  <X className="mr-1 h-3 w-3" />
+                  却下
+                </Button>
+              </>
+            )}
+
+            {/* 進行状態プルダウン (承認済み以降のみ) */}
+            {task.status !== "pending" && task.status !== "rejected" && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={`gap-1 ${
+                      task.status === "accepted"
+                        ? ""
+                        : task.status === "in_progress"
+                          ? "border-green-200 text-green-600"
+                          : task.status === "paused"
+                            ? "border-yellow-200 text-yellow-600"
+                            : "border-gray-200 text-gray-600"
+                    }`}
+                  >
+                    {task.status === "accepted" && <Circle className="h-3 w-3" />}
+                    {task.status === "in_progress" && <Play className="h-3 w-3" />}
+                    {task.status === "paused" && <Pause className="h-3 w-3" />}
+                    {task.status === "completed" && <CheckCircle2 className="h-3 w-3" />}
+                    {task.status === "accepted" && "未着手"}
+                    {task.status === "in_progress" && "進行中"}
+                    {task.status === "paused" && "中断"}
+                    {task.status === "completed" && "完了"}
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem
+                    onClick={() => onUpdateTask(task.id, { status: "accepted" })}
+                    className={task.status === "accepted" ? "bg-accent" : ""}
+                  >
+                    <Circle className="mr-2 h-4 w-4" />
+                    未着手
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => onUpdateTask(task.id, { status: "in_progress" })}
+                    className={task.status === "in_progress" ? "bg-accent" : ""}
+                  >
+                    <Play className="mr-2 h-4 w-4 text-green-500" />
+                    進行中
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => onUpdateTask(task.id, { status: "paused" })}
+                    className={task.status === "paused" ? "bg-accent" : ""}
+                  >
+                    <Pause className="mr-2 h-4 w-4 text-yellow-500" />
+                    中断
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => onUpdateTask(task.id, { status: "completed" })}
+                    className={task.status === "completed" ? "bg-accent" : ""}
+                  >
+                    <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
+                    完了
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            {/* 補助アクション */}
+            <Button variant="outline" size="sm" onClick={copyToClipboard}>
+              {copied ? (
+                <>
+                  <Check className="mr-1 h-3 w-3" />
+                  コピー済み
+                </>
+              ) : (
+                <>
+                  <ClipboardCopy className="mr-1 h-3 w-3" />
+                  AIに渡す
+                </>
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive"
+              onClick={() => onDeleteTask(task.id)}
+            >
+              <Trash2 className="mr-1 h-3 w-3" />
+              削除
+            </Button>
+          </div>
+
+          {/* 詳細 (展開時のみ) */}
           <CollapsibleContent className="mt-3 space-y-3">
             {/* 詳細: インライン編集 or マークダウン表示 */}
             {inlineEditing ? (
@@ -968,71 +1287,6 @@ function TaskItem({
                 <span className="font-medium">却下理由:</span> {task.rejectReason}
               </p>
             )}
-
-            <div className="flex items-center gap-2">
-              {showActions && (
-                <>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={() => onUpdateTask(task.id, { status: "accepted" })}
-                  >
-                    <Check className="mr-1 h-3 w-3" />
-                    承認
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => openEditDialog("edit-approve")}
-                  >
-                    <Wand2 className="mr-1 h-3 w-3" />
-                    修正して承認
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setRejectDialogOpen(true)}>
-                    <X className="mr-1 h-3 w-3" />
-                    却下
-                  </Button>
-                </>
-              )}
-              {showCompleteAction && (
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={() => onUpdateTask(task.id, { status: "completed" })}
-                >
-                  <CheckCircle2 className="mr-1 h-3 w-3" />
-                  完了
-                </Button>
-              )}
-              {!showActions && (
-                <Button variant="outline" size="sm" onClick={() => openEditDialog("edit")}>
-                  <Pencil className="mr-1 h-3 w-3" />
-                  編集
-                </Button>
-              )}
-              <Button variant="outline" size="sm" onClick={copyToClipboard}>
-                {copied ? (
-                  <>
-                    <Check className="mr-1 h-3 w-3" />
-                    コピー済み
-                  </>
-                ) : (
-                  <>
-                    <ClipboardCopy className="mr-1 h-3 w-3" />
-                    AIに渡す
-                  </>
-                )}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive"
-                onClick={() => onDeleteTask(task.id)}
-              >
-                <Trash2 className="mr-1 h-3 w-3" />
-                削除
-              </Button>
-            </div>
           </CollapsibleContent>
         </div>
       </Collapsible>

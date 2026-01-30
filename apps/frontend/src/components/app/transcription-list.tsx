@@ -1,9 +1,14 @@
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTranscriptions } from "@/hooks/use-transcriptions";
 import { formatTimeJST } from "@/lib/date";
+import { cn } from "@/lib/utils";
+
+type SpeakerFilter = "all" | "me" | "others";
 
 interface TranscriptionListProps {
   date: string;
@@ -11,6 +16,13 @@ interface TranscriptionListProps {
 
 export function TranscriptionList({ date }: TranscriptionListProps) {
   const { segments, error, loading } = useTranscriptions(date);
+  const [speakerFilter, setSpeakerFilter] = useState<SpeakerFilter>("all");
+
+  const filteredSegments = useMemo(() => {
+    if (speakerFilter === "all") return segments;
+    if (speakerFilter === "me") return segments.filter((s) => s.speaker === "Me");
+    return segments.filter((s) => s.speaker !== "Me");
+  }, [segments, speakerFilter]);
 
   if (loading) {
     return (
@@ -43,20 +55,43 @@ export function TranscriptionList({ date }: TranscriptionListProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>
-          Transcriptions
-          <Badge variant="secondary" className="ml-2">
-            {segments.length}
-          </Badge>
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center">
+            Transcriptions
+            <Badge variant="secondary" className="ml-2">
+              {filteredSegments.length}
+              {speakerFilter !== "all" && `/${segments.length}`}
+            </Badge>
+          </CardTitle>
+          <div className="flex gap-1">
+            {(["all", "me", "others"] as const).map((filter) => (
+              <Button
+                key={filter}
+                variant={speakerFilter === filter ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSpeakerFilter(filter)}
+                className={cn(
+                  "h-7 px-2 text-xs",
+                  speakerFilter === filter && "pointer-events-none",
+                )}
+              >
+                {filter === "all" ? "All" : filter === "me" ? "Me" : "Others"}
+              </Button>
+            ))}
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <ScrollArea className="h-[400px]">
-          {segments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No transcriptions for this date.</p>
+          {filteredSegments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {segments.length === 0
+                ? "No transcriptions for this date."
+                : `No transcriptions matching filter "${speakerFilter}".`}
+            </p>
           ) : (
             <div className="space-y-3">
-              {[...segments].reverse().map((segment) => (
+              {[...filteredSegments].reverse().map((segment) => (
                 <div key={segment.id} className="rounded-md border p-3">
                   <div className="mb-1 flex items-center gap-2">
                     <span className="text-xs font-medium text-muted-foreground">

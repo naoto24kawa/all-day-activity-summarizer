@@ -1,3 +1,4 @@
+import { Book, FileText, Github, MessageSquare, Sparkles, Terminal } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,14 +7,62 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useVocabulary } from "@/hooks/use-vocabulary";
+import { postAdasApi } from "@/lib/adas-api";
+import { getTodayDateString } from "@/lib/date";
 
-export function VocabularyPanel() {
-  const { terms, loading, error, addTerm, removeTerm } = useVocabulary();
+interface VocabularyPanelProps {
+  date?: string;
+}
+
+export function VocabularyPanel({ date }: VocabularyPanelProps) {
+  const { terms, loading, error, addTerm, removeTerm, refresh } = useVocabulary();
   const [newTerm, setNewTerm] = useState("");
   const [newReading, setNewReading] = useState("");
   const [newCategory, setNewCategory] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractResult, setExtractResult] = useState<{
+    totalExtracted?: number;
+    results?: Record<string, { extracted: number; message?: string }>;
+  } | null>(null);
+
+  const targetDate = date ?? getTodayDateString();
+
+  const handleExtractAll = async () => {
+    setExtracting(true);
+    setExtractResult(null);
+    try {
+      const result = await postAdasApi<{
+        totalExtracted: number;
+        results: Record<string, { extracted: number; message?: string }>;
+      }>("/api/vocabulary/extract/all", { date: targetDate });
+      setExtractResult(result);
+      await refresh();
+    } catch (err) {
+      console.error("Failed to extract vocabulary:", err);
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const handleExtractSource = async (source: "slack" | "github" | "claude-code" | "memo") => {
+    setExtracting(true);
+    setExtractResult(null);
+    try {
+      const result = await postAdasApi<{
+        extracted: number;
+        skippedDuplicate: number;
+        tasksCreated: number;
+      }>(`/api/vocabulary/extract/${source}`, { date: targetDate });
+      setExtractResult({ totalExtracted: result.extracted });
+      await refresh();
+    } catch (err) {
+      console.error(`Failed to extract vocabulary from ${source}:`, err);
+    } finally {
+      setExtracting(false);
+    }
+  };
 
   const handleAdd = async () => {
     if (!newTerm.trim()) return;
@@ -74,13 +123,69 @@ export function VocabularyPanel() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>
-          Vocabulary
-          <Badge variant="secondary" className="ml-2">
-            {terms.length}
-          </Badge>
-        </CardTitle>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Book className="h-5 w-5 text-purple-500" />
+            Vocabulary
+            <Badge variant="secondary" className="ml-1">
+              {terms.length}
+            </Badge>
+          </CardTitle>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExtractAll}
+              disabled={extracting}
+              title="Extract vocabulary from all feeds"
+            >
+              <Sparkles className={`mr-1 h-3 w-3 ${extracting ? "animate-pulse" : ""}`} />
+              {extracting ? "..." : "用語抽出"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleExtractSource("slack")}
+              disabled={extracting}
+              title="Extract from Slack"
+            >
+              <MessageSquare className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleExtractSource("github")}
+              disabled={extracting}
+              title="Extract from GitHub"
+            >
+              <Github className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleExtractSource("claude-code")}
+              disabled={extracting}
+              title="Extract from Claude Code"
+            >
+              <Terminal className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleExtractSource("memo")}
+              disabled={extracting}
+              title="Extract from Memos"
+            >
+              <FileText className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        {extractResult && (
+          <p className="text-xs text-muted-foreground">
+            {extractResult.totalExtracted ?? 0} 件の用語をタスクとして登録しました
+          </p>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Add form */}

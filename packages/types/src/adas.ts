@@ -164,9 +164,19 @@ export interface RpcInterpretRequest {
   context?: string;
 }
 
+/** 抽出された用語 */
+export interface ExtractedTerm {
+  term: string;
+  reading?: string;
+  category?: string;
+  confidence: number;
+  reason?: string;
+}
+
 /** RPC Interpret レスポンス */
 export interface RpcInterpretResponse {
   interpretedText: string;
+  extractedTerms?: ExtractedTerm[];
 }
 
 /** プロンプト改善ターゲット */
@@ -473,7 +483,7 @@ export interface StorageMetrics {
 // ========== Vocabulary 型定義 ==========
 
 /** 用語登録元 */
-export type VocabularySource = "manual" | "transcribe" | "feedback";
+export type VocabularySource = "manual" | "transcribe" | "feedback" | "interpret";
 
 /** 用語辞書エントリ */
 export interface Vocabulary {
@@ -487,6 +497,34 @@ export interface Vocabulary {
   updatedAt: string;
 }
 
+/** 用語提案ソース種別 */
+export type VocabularySuggestionSourceType =
+  | "interpret"
+  | "feedback"
+  | "slack"
+  | "github"
+  | "claude-code"
+  | "memo";
+
+/** 用語提案ステータス */
+export type VocabularySuggestionStatus = "pending" | "accepted" | "rejected";
+
+/** 用語提案 */
+export interface VocabularySuggestion {
+  id: number;
+  term: string;
+  reading: string | null;
+  category: string | null;
+  reason: string | null;
+  sourceType: VocabularySuggestionSourceType;
+  sourceId: number | null;
+  confidence: number | null;
+  status: VocabularySuggestionStatus;
+  acceptedAt: string | null;
+  rejectedAt: string | null;
+  createdAt: string;
+}
+
 // ========== Task 型定義 ==========
 
 /** タスクソース種別 */
@@ -497,7 +535,8 @@ export type TaskSourceType =
   | "memo"
   | "manual"
   | "prompt-improvement"
-  | "profile-suggestion";
+  | "profile-suggestion"
+  | "vocabulary";
 
 /** タスクステータス */
 export type TaskStatus =
@@ -518,6 +557,7 @@ export interface Task {
   slackMessageId: number | null;
   promptImprovementId: number | null;
   profileSuggestionId: number | null;
+  vocabularySuggestionId: number | null;
   projectId: number | null;
   sourceType: TaskSourceType;
   title: string;

@@ -6,6 +6,7 @@ export interface AdasConfig {
   recordingsDir: string;
   dbPath: string;
   whisper: {
+    enabled: boolean;
     modelName: string;
     language: string;
     installDir: string;
@@ -64,6 +65,7 @@ const defaultConfig: AdasConfig = {
   recordingsDir: join(ADAS_HOME, "recordings"),
   dbPath: join(ADAS_HOME, "adas.db"),
   whisper: {
+    enabled: true,
     modelName: "ggml-large-v3-turbo-q5_0.bin",
     language: "ja",
     installDir: join(ADAS_HOME, "whisper.cpp"),
