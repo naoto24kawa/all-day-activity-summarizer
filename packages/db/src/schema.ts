@@ -105,6 +105,13 @@ export const promptImprovements = sqliteTable("prompt_improvements", {
   goodCount: integer("good_count").notNull(),
   badCount: integer("bad_count").notNull(),
   improvementReason: text("improvement_reason"),
+  status: text("status", {
+    enum: ["pending", "approved", "rejected"],
+  })
+    .notNull()
+    .default("pending"),
+  approvedAt: text("approved_at"),
+  rejectedAt: text("rejected_at"),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -425,7 +432,7 @@ export const tasks = sqliteTable("tasks", {
   date: text("date").notNull(), // YYYY-MM-DD
   slackMessageId: integer("slack_message_id"), // FK to slack_messages (nullable for manual tasks)
   sourceType: text("source_type", {
-    enum: ["slack", "github", "manual"],
+    enum: ["slack", "github", "github-comment", "memo", "manual"],
   })
     .notNull()
     .default("slack"),
@@ -460,12 +467,17 @@ export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 
 // ---------------------------------------------------------------------------
-// Learnings (Claude Code セッションから抽出した学び)
+// Learnings (各種ソースから抽出した学び)
 // ---------------------------------------------------------------------------
 
 export const learnings = sqliteTable("learnings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  sessionId: text("session_id").notNull(), // FK to claude_code_sessions
+  sourceType: text("source_type", {
+    enum: ["claude-code", "transcription", "github-comment", "slack-message"],
+  })
+    .notNull()
+    .default("claude-code"),
+  sourceId: text("source_id").notNull(), // 各ソースの ID (session_id, segment_id, comment_id, message_id)
   date: text("date").notNull(), // YYYY-MM-DD
   content: text("content").notNull(), // 学びの内容
   category: text("category"), // "typescript" | "react" | "architecture" など

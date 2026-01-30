@@ -10,6 +10,7 @@ import { GitHubFeed } from "./github-feed";
 import { LearningsFeed } from "./learnings-feed";
 import { MemoPanel } from "./memo-panel";
 import { MonitoringPanel } from "./monitoring-panel";
+import { PromptImprovementsPanel } from "./prompt-improvements-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
 import { SlackUsersPanel } from "./slack-users-panel";
@@ -51,6 +52,8 @@ export function Dashboard() {
       <Tabs defaultValue="activity" className="mt-4 flex min-h-0 flex-1 flex-col">
         <TabsList className="shrink-0">
           <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="tasks">Tasks</TabsTrigger>
+          <TabsTrigger value="learnings">Learnings</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="slack">Slack</TabsTrigger>
           <TabsTrigger value="github">GitHub</TabsTrigger>
@@ -64,11 +67,11 @@ export function Dashboard() {
             <MemoPanel date={date} className="h-full" />
           </div>
         </TabsContent>
+        <TabsContent value="learnings" className="min-h-0 flex-1">
+          <LearningsFeed date={date} className="h-full" />
+        </TabsContent>
         <TabsContent value="claude" className="min-h-0 flex-1">
-          <div className="grid h-full gap-4 lg:grid-cols-2">
-            <ClaudeCodeFeed date={date} className="h-full" />
-            <LearningsFeed date={date} className="h-full" />
-          </div>
+          <ClaudeCodeFeed date={date} className="h-full" />
         </TabsContent>
         <TabsContent value="timeline" className="min-h-0 flex-1">
           <div className="grid h-full gap-4 lg:grid-cols-2">
@@ -76,20 +79,25 @@ export function Dashboard() {
             <Timeline date={date} className="h-full" />
           </div>
         </TabsContent>
+        <TabsContent value="tasks" className="min-h-0 flex-1">
+          <TasksPanel date={date} className="h-full" />
+        </TabsContent>
         <TabsContent value="slack" className="min-h-0 flex-1">
-          <div className="grid h-full gap-4 lg:grid-cols-2">
-            <SlackFeed date={date} className="h-full" />
-            <TasksPanel date={date} className="h-full" />
-          </div>
+          <SlackFeed date={date} className="h-full" />
         </TabsContent>
         <TabsContent value="github" className="min-h-0 flex-1">
           <GitHubFeed date={date} className="h-full" />
         </TabsContent>
         <TabsContent value="settings" className="min-h-0 flex-1 overflow-auto">
           <div className="grid gap-4 lg:grid-cols-2">
-            <VocabularyPanel />
-            <SlackUsersPanel />
-            <MonitoringPanel />
+            <div className="space-y-4">
+              <VocabularyPanel />
+              <SlackUsersPanel />
+            </div>
+            <div className="space-y-4">
+              <PromptImprovementsPanel />
+              <MonitoringPanel />
+            </div>
           </div>
         </TabsContent>
         <TabsContent value="logs" className="min-h-0 flex-1 overflow-auto">

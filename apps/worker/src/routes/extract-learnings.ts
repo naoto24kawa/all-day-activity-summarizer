@@ -1,5 +1,5 @@
 import { runClaude } from "@repo/core";
-import type { LearningCategory } from "@repo/types";
+import type { LearningCategory, LearningSourceType } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
 
@@ -7,10 +7,12 @@ const EXTRACT_MODEL = "haiku";
 
 interface ExtractLearningsRequestBody {
   messages: Array<{
-    role: "user" | "assistant";
+    role: string;
     content: string;
   }>;
+  sourceType?: LearningSourceType;
   projectName?: string;
+  contextInfo?: string;
 }
 
 export interface ExtractedLearning {
@@ -35,7 +37,12 @@ export function createExtractLearningsRouter() {
         return c.json({ error: "messages is required" }, 400);
       }
 
-      const result = await extractLearningsWithClaude(body.messages, body.projectName);
+      const result = await extractLearningsWithClaude(
+        body.messages,
+        body.sourceType || "claude-code",
+        body.projectName,
+        body.contextInfo,
+      );
       return c.json(result);
     } catch (err) {
       consola.error("[worker/extract-learnings] Error:", err);
@@ -46,20 +53,33 @@ export function createExtractLearningsRouter() {
   return router;
 }
 
-async function extractLearningsWithClaude(
-  messages: Array<{ role: "user" | "assistant"; content: string }>,
+function buildPrompt(
+  sourceType: LearningSourceType,
+  conversation: string,
   projectName?: string,
-): Promise<ExtractLearningsResponse> {
-  // メッセージを会話形式に整形
-  const conversation = messages
-    .map((m) => `[${m.role === "user" ? "User" : "Assistant"}]: ${m.content}`)
-    .join("\n\n");
-
+  contextInfo?: string,
+): string {
   const projectInfo = projectName ? `プロジェクト: ${projectName}\n\n` : "";
+  const contextSection = contextInfo ? `コンテキスト: ${contextInfo}\n\n` : "";
 
-  const prompt = `以下の Claude Code セッションの会話から、ユーザーが学んだと思われる技術的な知見を抽出してください。
+  const categoryList = `"typescript" | "react" | "architecture" | "testing" | "devops" | "database" | "api" | "security" | "performance" | "communication" | "other"`;
 
-${projectInfo}会話:
+  const jsonFormat = `{
+  "learnings": [
+    {
+      "content": "学びの内容",
+      "category": ${categoryList},
+      "tags": ["関連タグ1", "関連タグ2"],
+      "confidence": 0.0-1.0
+    }
+  ]
+}`;
+
+  switch (sourceType) {
+    case "claude-code":
+      return `以下の Claude Code セッションの会話から、ユーザーが学んだと思われる技術的な知見を抽出してください。
+
+${projectInfo}${contextSection}会話:
 ${conversation}
 
 ルール:
@@ -70,18 +90,84 @@ ${conversation}
 - 最大5つまで抽出する
 
 JSON形式で出力:
-{
-  "learnings": [
-    {
-      "content": "学びの内容",
-      "category": "typescript" | "react" | "architecture" | "testing" | "devops" | "database" | "api" | "security" | "performance" | "other",
-      "tags": ["関連タグ1", "関連タグ2"],
-      "confidence": 0.0-1.0
-    }
-  ]
-}`;
+${jsonFormat}`;
 
-  consola.info(`[worker/extract-learnings] Extracting from ${messages.length} messages...`);
+    case "transcription":
+      return `以下の音声文字起こしから、会話中で共有された技術的な知見やノウハウを抽出してください。
+
+${projectInfo}${contextSection}会話:
+${conversation}
+
+ルール:
+- 会議やディスカッションで共有された技術的な知見を抽出する
+- 単なる進捗報告や挨拶は除外する
+- 具体的なノウハウ、ベストプラクティス、注意点を優先する
+- 各学びは簡潔に1-2文でまとめる
+- 学びがない場合は空の配列を返す
+- 最大5つまで抽出する
+
+JSON形式で出力:
+${jsonFormat}`;
+
+    case "github-comment":
+      return `以下の GitHub PR レビューコメントから、コードレビューで指摘された技術的な知見を抽出してください。
+
+${projectInfo}${contextSection}コメント:
+${conversation}
+
+ルール:
+- コードレビューで指摘された改善点、ベストプラクティスを抽出する
+- 単純な typo 修正や軽微な指摘は除外する
+- 設計パターン、セキュリティ、パフォーマンスに関する指摘を優先する
+- 各学びは簡潔に1-2文でまとめる
+- 学びがない場合は空の配列を返す
+- 最大5つまで抽出する
+
+JSON形式で出力:
+${jsonFormat}`;
+
+    case "slack-message":
+      return `以下の Slack メッセージから、チームで共有された技術的な知見やノウハウを抽出してください。
+
+${projectInfo}${contextSection}メッセージ:
+${conversation}
+
+ルール:
+- 技術的な質問と回答から学びを抽出する
+- 単なる業務連絡や挨拶は除外する
+- トラブルシューティングの解決策、Tips を優先する
+- 各学びは簡潔に1-2文でまとめる
+- 学びがない場合は空の配列を返す
+- 最大5つまで抽出する
+
+JSON形式で出力:
+${jsonFormat}`;
+
+    default:
+      return `以下の内容から技術的な知見を抽出してください。
+
+${projectInfo}${contextSection}内容:
+${conversation}
+
+JSON形式で出力:
+${jsonFormat}`;
+  }
+}
+
+async function extractLearningsWithClaude(
+  messages: Array<{ role: string; content: string }>,
+  sourceType: LearningSourceType,
+  projectName?: string,
+  contextInfo?: string,
+): Promise<ExtractLearningsResponse> {
+  // メッセージを会話形式に整形
+  const conversation = messages.map((m) => `[${m.role}]: ${m.content}`).join("\n\n");
+
+  const prompt = buildPrompt(sourceType, conversation, projectName, contextInfo);
+
+  consola.info(
+    `[worker/extract-learnings] Extracting from ${messages.length} messages (source: ${sourceType})...`,
+  );
 
   const result = await runClaude(prompt, {
     model: EXTRACT_MODEL,

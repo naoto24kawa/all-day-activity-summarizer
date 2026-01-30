@@ -315,10 +315,18 @@ export interface ClaudeCodeMessage {
   createdAt: string;
 }
 
-/** 学び (Claude Code セッションから抽出) */
+/** 学びソース種別 */
+export type LearningSourceType =
+  | "claude-code"
+  | "transcription"
+  | "github-comment"
+  | "slack-message";
+
+/** 学び (各種ソースから抽出) */
 export interface Learning {
   id: number;
-  sessionId: string;
+  sourceType: LearningSourceType;
+  sourceId: string;
   date: string;
   content: string;
   category: string | null;
@@ -346,6 +354,7 @@ export type LearningCategory =
   | "api"
   | "security"
   | "performance"
+  | "communication"
   | "other";
 
 // ========== GitHub 型定義 ==========
@@ -464,7 +473,7 @@ export interface Vocabulary {
 // ========== Task 型定義 ==========
 
 /** タスクソース種別 */
-export type TaskSourceType = "slack" | "github" | "manual";
+export type TaskSourceType = "slack" | "github" | "github-comment" | "memo" | "manual";
 
 /** タスクステータス */
 export type TaskStatus = "pending" | "accepted" | "rejected" | "completed";

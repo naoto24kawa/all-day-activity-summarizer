@@ -178,10 +178,19 @@ export function createDatabase(dbPath: string) {
       good_count INTEGER NOT NULL,
       bad_count INTEGER NOT NULL,
       improvement_reason TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+      approved_at TEXT,
+      rejected_at TEXT,
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_prompt_improvements_target ON prompt_improvements(target);
+    CREATE INDEX IF NOT EXISTS idx_prompt_improvements_status ON prompt_improvements(status);
   `);
+
+  // Migration: add status columns to prompt_improvements
+  addColumnIfNotExists(sqlite, "prompt_improvements", "status", "TEXT NOT NULL DEFAULT 'pending'");
+  addColumnIfNotExists(sqlite, "prompt_improvements", "approved_at", "TEXT");
+  addColumnIfNotExists(sqlite, "prompt_improvements", "rejected_at", "TEXT");
 
   // Migration: create summary_queue table
   sqlite.exec(`
@@ -401,7 +410,7 @@ export function createDatabase(dbPath: string) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       date TEXT NOT NULL,
       slack_message_id INTEGER,
-      source_type TEXT NOT NULL DEFAULT 'slack' CHECK(source_type IN ('slack', 'github', 'manual')),
+      source_type TEXT NOT NULL DEFAULT 'slack' CHECK(source_type IN ('slack', 'github', 'github-comment', 'memo', 'manual')),
       title TEXT NOT NULL,
       description TEXT,
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected', 'completed')),
@@ -421,10 +430,11 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
     CREATE INDEX IF NOT EXISTS idx_tasks_slack_message ON tasks(slack_message_id);
 
-    -- Learnings table (Claude Code セッションから抽出した学び)
+    -- Learnings table (各種ソースから抽出した学び)
     CREATE TABLE IF NOT EXISTS learnings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
+      source_type TEXT NOT NULL DEFAULT 'claude-code' CHECK(source_type IN ('claude-code', 'transcription', 'github-comment', 'slack-message')),
+      source_id TEXT NOT NULL,
       date TEXT NOT NULL,
       content TEXT NOT NULL,
       category TEXT,
@@ -438,7 +448,7 @@ export function createDatabase(dbPath: string) {
       created_at TEXT NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_learnings_session ON learnings(session_id);
+    CREATE INDEX IF NOT EXISTS idx_learnings_source ON learnings(source_type, source_id);
     CREATE INDEX IF NOT EXISTS idx_learnings_date ON learnings(date);
     CREATE INDEX IF NOT EXISTS idx_learnings_category ON learnings(category);
     CREATE INDEX IF NOT EXISTS idx_learnings_next_review ON learnings(next_review_at);
@@ -538,6 +548,45 @@ export function createDatabase(dbPath: string) {
         CREATE INDEX IF NOT EXISTS idx_slack_messages_channel ON slack_messages(channel_id);
         CREATE INDEX IF NOT EXISTS idx_slack_messages_type ON slack_messages(message_type);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_slack_messages_unique ON slack_messages(channel_id, message_ts);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: update learnings table to add source_type and rename session_id to source_id
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='learnings'",
+      )
+      .get();
+    if (row && row.sql.includes("session_id") && !row.sql.includes("source_type")) {
+      sqlite.exec(`
+        ALTER TABLE learnings RENAME TO learnings_old;
+        CREATE TABLE learnings (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          source_type TEXT NOT NULL DEFAULT 'claude-code' CHECK(source_type IN ('claude-code', 'transcription', 'github-comment', 'slack-message')),
+          source_id TEXT NOT NULL,
+          date TEXT NOT NULL,
+          content TEXT NOT NULL,
+          category TEXT,
+          tags TEXT,
+          confidence REAL,
+          repetition_count INTEGER NOT NULL DEFAULT 0,
+          ease_factor REAL NOT NULL DEFAULT 2.5,
+          interval INTEGER NOT NULL DEFAULT 0,
+          next_review_at TEXT,
+          last_reviewed_at TEXT,
+          created_at TEXT NOT NULL
+        );
+        INSERT INTO learnings (id, source_type, source_id, date, content, category, tags, confidence, repetition_count, ease_factor, interval, next_review_at, last_reviewed_at, created_at)
+          SELECT id, 'claude-code', session_id, date, content, category, tags, confidence, repetition_count, ease_factor, interval, next_review_at, last_reviewed_at, created_at FROM learnings_old;
+        DROP TABLE learnings_old;
+        CREATE INDEX IF NOT EXISTS idx_learnings_source ON learnings(source_type, source_id);
+        CREATE INDEX IF NOT EXISTS idx_learnings_date ON learnings(date);
+        CREATE INDEX IF NOT EXISTS idx_learnings_category ON learnings(category);
+        CREATE INDEX IF NOT EXISTS idx_learnings_next_review ON learnings(next_review_at);
       `);
     }
   } catch {
