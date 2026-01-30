@@ -458,6 +458,8 @@ export const tasks = sqliteTable("tasks", {
   rejectedAt: text("rejected_at"),
   completedAt: text("completed_at"),
   rejectReason: text("reject_reason"), // 却下理由
+  originalTitle: text("original_title"), // 修正前のタイトル (修正して承認した場合のみ)
+  originalDescription: text("original_description"), // 修正前の説明 (修正して承認した場合のみ)
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),

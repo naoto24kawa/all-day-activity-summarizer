@@ -523,6 +523,8 @@ export interface Task {
   rejectedAt: string | null;
   completedAt: string | null;
   rejectReason: string | null;
+  originalTitle: string | null; // 修正前のタイトル (修正して承認した場合のみ)
+  originalDescription: string | null; // 修正前の説明 (修正して承認した場合のみ)
   createdAt: string;
   updatedAt: string;
 }

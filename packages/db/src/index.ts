@@ -710,5 +710,9 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_learnings_project ON learnings(project_id);
   `);
 
+  // Migration: add original_title and original_description to tasks (for corrected approval)
+  addColumnIfNotExists(sqlite, "tasks", "original_title", "TEXT");
+  addColumnIfNotExists(sqlite, "tasks", "original_description", "TEXT");
+
   return db;
 }

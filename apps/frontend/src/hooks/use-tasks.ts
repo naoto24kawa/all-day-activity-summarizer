@@ -42,6 +42,8 @@ export function useTasks(date?: string) {
         priority?: string;
         dueDate?: string | null;
         rejectReason?: string;
+        title?: string;
+        description?: string;
       },
     ) => {
       await patchAdasApi(`/api/tasks/${id}`, updates);

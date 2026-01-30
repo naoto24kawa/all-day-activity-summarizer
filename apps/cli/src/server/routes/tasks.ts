@@ -135,6 +135,7 @@ export function createTasksRouter(db: AdasDatabase) {
    * PATCH /api/tasks/:id
    *
    * タスクのステータス更新
+   * 修正して承認する場合は title/description を渡すと originalTitle/originalDescription に元の値を保存
    */
   router.patch("/:id", async (c) => {
     const id = Number(c.req.param("id"));
@@ -147,6 +148,8 @@ export function createTasksRouter(db: AdasDatabase) {
       priority?: "high" | "medium" | "low";
       dueDate?: string | null;
       rejectReason?: string;
+      title?: string;
+      description?: string;
     }>();
 
     const existing = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
@@ -180,6 +183,16 @@ export function createTasksRouter(db: AdasDatabase) {
 
     if (body.dueDate !== undefined) {
       updates.dueDate = body.dueDate;
+    }
+
+    // 修正して承認: title/description が変更された場合、元の値を保存
+    if (body.title !== undefined && body.title !== existing.title) {
+      updates.originalTitle = existing.title;
+      updates.title = body.title;
+    }
+    if (body.description !== undefined && body.description !== existing.description) {
+      updates.originalDescription = existing.description;
+      updates.description = body.description;
     }
 
     const result = db
@@ -652,17 +665,24 @@ export function createTasksRouter(db: AdasDatabase) {
  * Few-shot examples を構築
  */
 function buildFewShotExamples(db: AdasDatabase): string {
-  // 承認されたタスク (正例)
+  // 承認されたタスク (正例) - 修正なしで承認されたもの
   const acceptedTasks = db
     .select({
       title: schema.tasks.title,
       slackMessageId: schema.tasks.slackMessageId,
+      originalTitle: schema.tasks.originalTitle,
     })
     .from(schema.tasks)
     .where(eq(schema.tasks.status, "accepted"))
     .orderBy(desc(schema.tasks.acceptedAt))
-    .limit(5)
+    .limit(10) // 修正あり/なしを分けるため多めに取得
     .all();
+
+  // 修正なしで承認されたタスク
+  const acceptedWithoutCorrection = acceptedTasks.filter((t) => !t.originalTitle).slice(0, 5);
+
+  // 修正して承認されたタスク (改善例)
+  const acceptedWithCorrection = acceptedTasks.filter((t) => t.originalTitle).slice(0, 5);
 
   // 却下されたタスク (負例)
   const rejectedTasks = db
@@ -677,15 +697,19 @@ function buildFewShotExamples(db: AdasDatabase): string {
     .limit(5)
     .all();
 
-  if (acceptedTasks.length === 0 && rejectedTasks.length === 0) {
+  if (
+    acceptedWithoutCorrection.length === 0 &&
+    acceptedWithCorrection.length === 0 &&
+    rejectedTasks.length === 0
+  ) {
     return "";
   }
 
   let examples = "\n\n## 過去の判断例\n";
 
-  if (acceptedTasks.length > 0) {
+  if (acceptedWithoutCorrection.length > 0) {
     examples += "\n### タスクとして承認されたもの:\n";
-    for (const task of acceptedTasks) {
+    for (const task of acceptedWithoutCorrection) {
       // メッセージ本文を取得
       if (task.slackMessageId) {
         const message = db
@@ -695,6 +719,24 @@ function buildFewShotExamples(db: AdasDatabase): string {
           .get();
         if (message) {
           examples += `- メッセージ: "${message.text.slice(0, 100)}"\n  → タスク: "${task.title}"\n`;
+        }
+      }
+    }
+  }
+
+  if (acceptedWithCorrection.length > 0) {
+    examples += "\n### 修正して承認されたもの (元の抽出は改善が必要):\n";
+    for (const task of acceptedWithCorrection) {
+      if (task.slackMessageId) {
+        const message = db
+          .select({ text: schema.slackMessages.text })
+          .from(schema.slackMessages)
+          .where(eq(schema.slackMessages.id, task.slackMessageId))
+          .get();
+        if (message) {
+          examples += `- メッセージ: "${message.text.slice(0, 100)}"\n`;
+          examples += `  → 元の抽出: "${task.originalTitle}"\n`;
+          examples += `  → 修正後: "${task.title}"\n`;
         }
       }
     }

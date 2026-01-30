@@ -16,7 +16,6 @@ import {
   Filter,
   FolderGit2,
   Github,
-  ListTodo,
   MessageSquare,
   MessageSquareMore,
   RefreshCw,
@@ -255,82 +254,87 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
 
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between">
-        <CardTitle className="flex items-center gap-2">
-          <ListTodo className="h-5 w-5" />
-          Tasks
-          {stats.pending > 0 && (
-            <Badge variant="destructive" className="ml-2">
-              {stats.pending} pending
-            </Badge>
-          )}
-        </CardTitle>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExtractAll}
-            disabled={extracting}
-            title="Extract tasks from Slack and GitHub"
-          >
-            <Sparkles className={`mr-1 h-3 w-3 ${extracting ? "animate-pulse" : ""}`} />
-            {extracting ? "..." : "Extract"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleExtractSlack}
-            disabled={extracting}
-            title="Extract from Slack"
-          >
-            <MessageSquare className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleExtractGitHub}
-            disabled={extracting}
-            title="Extract from GitHub Items"
-          >
-            <Github className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleExtractGitHubComments}
-            disabled={extracting}
-            title="Extract from GitHub Comments"
-          >
-            <MessageSquareMore className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleExtractMemos}
-            disabled={extracting}
-            title="Extract from Memos"
-          >
-            <FileText className="h-4 w-4" />
-          </Button>
-          {permission === "default" && (
+      <CardHeader className="flex shrink-0 flex-col gap-1 space-y-0 pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-purple-500" />
+            Tasks
+            {stats.pending > 0 && (
+              <Badge variant="destructive" className="ml-2">
+                {stats.pending} 件の承認待ち
+              </Badge>
+            )}
+          </CardTitle>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExtractAll}
+              disabled={extracting}
+              title="Extract tasks from Slack and GitHub"
+            >
+              <Sparkles className={`mr-1 h-3 w-3 ${extracting ? "animate-pulse" : ""}`} />
+              {extracting ? "..." : "Extract"}
+            </Button>
             <Button
               variant="ghost"
               size="icon"
-              onClick={requestPermission}
-              title="Enable notifications"
+              onClick={handleExtractSlack}
+              disabled={extracting}
+              title="Extract from Slack"
             >
-              <BellOff className="h-4 w-4" />
+              <MessageSquare className="h-4 w-4" />
             </Button>
-          )}
-          {permission === "granted" && (
-            <Button variant="ghost" size="icon" disabled title="Notifications enabled">
-              <Bell className="h-4 w-4 text-green-500" />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleExtractGitHub}
+              disabled={extracting}
+              title="Extract from GitHub Items"
+            >
+              <Github className="h-4 w-4" />
             </Button>
-          )}
-          <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleExtractGitHubComments}
+              disabled={extracting}
+              title="Extract from GitHub Comments"
+            >
+              <MessageSquareMore className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleExtractMemos}
+              disabled={extracting}
+              title="Extract from Memos"
+            >
+              <FileText className="h-4 w-4" />
+            </Button>
+            {permission === "default" && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={requestPermission}
+                title="Enable notifications"
+              >
+                <BellOff className="h-4 w-4" />
+              </Button>
+            )}
+            {permission === "granted" && (
+              <Button variant="ghost" size="icon" disabled title="Notifications enabled">
+                <Bell className="h-4 w-4 text-green-500" />
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
+        <p className="text-xs text-muted-foreground">
+          AIがSlack/GitHubから抽出したタスク候補です。承認するとタスク化されます。
+        </p>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col">
         {/* Source Filter Buttons */}
@@ -434,10 +438,10 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
 
         {tasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            <ListTodo className="mb-2 h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">No tasks for this date.</p>
+            <Sparkles className="mb-2 h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">AIが抽出したタスク候補はありません</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Click "Extract" to analyze Slack messages.
+              「Extract」をクリックしてSlack/GitHubからタスクを抽出できます
             </p>
           </div>
         ) : (
@@ -445,7 +449,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
             <TabsList className="shrink-0">
               <TabsTrigger value="pending" className="flex items-center gap-1">
                 <Circle className="h-3 w-3" />
-                Pending
+                承認待ち
                 {stats.pending > 0 && (
                   <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
                     {stats.pending}
@@ -454,7 +458,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               </TabsTrigger>
               <TabsTrigger value="accepted" className="flex items-center gap-1">
                 <Check className="h-3 w-3" />
-                Accepted
+                承認済み
                 {stats.accepted > 0 && (
                   <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
                     {stats.accepted}
@@ -463,7 +467,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               </TabsTrigger>
               <TabsTrigger value="completed" className="flex items-center gap-1">
                 <CheckCircle2 className="h-3 w-3" />
-                Done
+                完了
                 {stats.completed > 0 && (
                   <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
                     {stats.completed}
@@ -472,7 +476,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               </TabsTrigger>
               <TabsTrigger value="rejected" className="flex items-center gap-1">
                 <XCircle className="h-3 w-3" />
-                Rejected
+                却下
               </TabsTrigger>
             </TabsList>
             <TabsContent value="pending" className="min-h-0 flex-1">
@@ -528,14 +532,14 @@ function TaskList({
   projects: Project[];
   onUpdateTask: (
     id: number,
-    updates: { status?: TaskStatus; rejectReason?: string },
+    updates: { status?: TaskStatus; rejectReason?: string; title?: string; description?: string },
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
   showActions?: boolean;
   showCompleteAction?: boolean;
 }) {
   if (tasks.length === 0) {
-    return <p className="py-4 text-center text-sm text-muted-foreground">No tasks.</p>;
+    return <p className="py-4 text-center text-sm text-muted-foreground">タスクはありません</p>;
   }
 
   return (
@@ -569,7 +573,7 @@ function TaskItem({
   projects: Project[];
   onUpdateTask: (
     id: number,
-    updates: { status?: TaskStatus; rejectReason?: string },
+    updates: { status?: TaskStatus; rejectReason?: string; title?: string; description?: string },
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
   showActions?: boolean;
@@ -578,6 +582,9 @@ function TaskItem({
   const [isOpen, setIsOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState(task.title);
+  const [editDescription, setEditDescription] = useState(task.description ?? "");
 
   const projectName = getProjectName(projects, task.projectId);
 
@@ -598,6 +605,21 @@ function TaskItem({
     await onUpdateTask(task.id, { status: "rejected", rejectReason: rejectReason || undefined });
     setRejectDialogOpen(false);
     setRejectReason("");
+  };
+
+  const handleEditApprove = async () => {
+    await onUpdateTask(task.id, {
+      status: "accepted",
+      title: editTitle,
+      description: editDescription || undefined,
+    });
+    setEditDialogOpen(false);
+  };
+
+  const openEditDialog = () => {
+    setEditTitle(task.title);
+    setEditDescription(task.description ?? "");
+    setEditDialogOpen(true);
   };
 
   return (
@@ -680,7 +702,7 @@ function TaskItem({
             )}
             {task.rejectReason && (
               <p className="text-sm text-muted-foreground">
-                <span className="font-medium">Reject reason:</span> {task.rejectReason}
+                <span className="font-medium">却下理由:</span> {task.rejectReason}
               </p>
             )}
 
@@ -693,11 +715,15 @@ function TaskItem({
                     onClick={() => onUpdateTask(task.id, { status: "accepted" })}
                   >
                     <Check className="mr-1 h-3 w-3" />
-                    Accept
+                    承認
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={openEditDialog}>
+                    <Wand2 className="mr-1 h-3 w-3" />
+                    修正して承認
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => setRejectDialogOpen(true)}>
                     <X className="mr-1 h-3 w-3" />
-                    Reject
+                    却下
                   </Button>
                 </>
               )}
@@ -708,7 +734,7 @@ function TaskItem({
                   onClick={() => onUpdateTask(task.id, { status: "completed" })}
                 >
                   <CheckCircle2 className="mr-1 h-3 w-3" />
-                  Complete
+                  完了
                 </Button>
               )}
               <Button
@@ -718,7 +744,7 @@ function TaskItem({
                 onClick={() => onDeleteTask(task.id)}
               >
                 <Trash2 className="mr-1 h-3 w-3" />
-                Delete
+                削除
               </Button>
             </div>
           </CollapsibleContent>
@@ -728,9 +754,9 @@ function TaskItem({
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reject Task</DialogTitle>
+            <DialogTitle>タスク候補を却下</DialogTitle>
             <DialogDescription>
-              Why are you rejecting this task? This helps improve future task extraction.
+              このタスク候補を却下する理由を教えてください。AIの抽出精度向上に役立ちます。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -738,10 +764,10 @@ function TaskItem({
               <p className="text-sm font-medium">{task.title}</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="reject-reason">Reason (optional)</Label>
+              <Label htmlFor="reject-reason">理由 (任意)</Label>
               <Textarea
                 id="reject-reason"
-                placeholder="e.g., Not actionable, Already done, Wrong interpretation..."
+                placeholder="例: タスクではない、既に完了済み、誤った解釈..."
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
                 rows={3}
@@ -750,10 +776,53 @@ function TaskItem({
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>
-              Cancel
+              キャンセル
             </Button>
             <Button variant="destructive" onClick={handleReject}>
-              Reject
+              却下
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 修正して承認ダイアログ */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>タスクを修正して承認</DialogTitle>
+            <DialogDescription>
+              タスクの内容を修正してから承認できます。修正内容はAIの学習に活用されます。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-title">タイトル</Label>
+              <input
+                id="edit-title"
+                type="text"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">説明 (任意)</Label>
+              <Textarea
+                id="edit-description"
+                placeholder="タスクの詳細説明..."
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              キャンセル
+            </Button>
+            <Button onClick={handleEditApprove} disabled={!editTitle.trim()}>
+              <Check className="mr-1 h-3 w-3" />
+              修正して承認
             </Button>
           </DialogFooter>
         </DialogContent>
