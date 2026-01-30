@@ -188,13 +188,17 @@ export function createDatabase(dbPath: string) {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_prompt_improvements_target ON prompt_improvements(target);
-    CREATE INDEX IF NOT EXISTS idx_prompt_improvements_status ON prompt_improvements(status);
   `);
 
-  // Migration: add status columns to prompt_improvements
-  addColumnIfNotExists(sqlite, "prompt_improvements", "status", "TEXT NOT NULL DEFAULT 'pending'");
+  // Migration: add status columns to prompt_improvements (for existing tables without these columns)
+  addColumnIfNotExists(sqlite, "prompt_improvements", "status", "TEXT DEFAULT 'pending'");
   addColumnIfNotExists(sqlite, "prompt_improvements", "approved_at", "TEXT");
   addColumnIfNotExists(sqlite, "prompt_improvements", "rejected_at", "TEXT");
+
+  // Create status index after ensuring column exists
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS idx_prompt_improvements_status ON prompt_improvements(status);
+  `);
 
   // Migration: create summary_queue table
   sqlite.exec(`
