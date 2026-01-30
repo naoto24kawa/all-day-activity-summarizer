@@ -376,6 +376,21 @@ export function createDatabase(dbPath: string) {
 
     CREATE INDEX IF NOT EXISTS idx_github_queue_status ON github_queue(status);
     CREATE INDEX IF NOT EXISTS idx_github_queue_run_after ON github_queue(run_after);
+
+    -- Vocabulary table (用語辞書)
+    CREATE TABLE IF NOT EXISTS vocabulary (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      term TEXT NOT NULL UNIQUE,
+      reading TEXT,
+      category TEXT,
+      source TEXT NOT NULL CHECK(source IN ('manual', 'transcribe', 'feedback')),
+      usage_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vocabulary_term ON vocabulary(term);
+    CREATE INDEX IF NOT EXISTS idx_vocabulary_source ON vocabulary(source);
   `);
 
   // Migration: update CHECK constraint to allow 'pomodoro' summary_type
