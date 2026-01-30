@@ -2,25 +2,22 @@
 
 Claude Code 向け指示書。
 
-**共通情報**: [AGENTS.md](AGENTS.md) を参照してください。
+**共通情報**: [AGENTS.md](AGENTS.md) を参照。
 
-## Claude Code 固有の設定
-
-### ツール使用ポリシー
+## ツール使用ポリシー
 
 - ファイル検索は `Glob` / `Grep` ツールを優先
-- 複雑な探索は `Task` ツール(subagent_type=Explore)を使用
+- 複雑な探索は `Task` ツール (subagent_type=Explore) を使用
 - 並列実行可能なツールは同時に呼び出す
 
-### コード参照形式
+## コード参照形式
 
-コード参照時は `file_path:line_number` 形式を使用:
-
+`file_path:line_number` 形式を使用:
 ```
 例: apps/cli/src/commands/serve.ts:15
 ```
 
-### コミットメッセージ
+## コミットメッセージ
 
 ```
 <type>: <description>
@@ -32,7 +29,7 @@ type: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
 
 ---
 
-## プロジェクト固有の注意事項
+## 重要な制約事項
 
 ### Bun モジュール解決
 
@@ -43,13 +40,11 @@ type: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
 error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 ```
 
-**解決策**:
-- `@repo/db` を使用するコードは `packages/core` ではなく `apps/cli` に配置
-- 現在 `apps/cli/src/feedback-injector.ts` はこの理由で CLI 内に配置
+**解決策**: `@repo/db` を使用するコードは `packages/core` ではなく `apps/cli` に配置。
 
 ### DB
 
-- **bun:sqlite** を使用(better-sqlite3 は Bun 未サポート)
+- **bun:sqlite** を使用 (better-sqlite3 は Bun 未サポート)
 - Drizzle ORM ドライバは `drizzle-orm/bun-sqlite`
 - `packages/db/src/index.ts` の `createDatabase()` を使用
 
@@ -58,154 +53,41 @@ error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 - `apps/cli/src/utils/date.ts` の `getTodayDateString()` / `getDateString()` を使用
 - `.split("T")[0]!` の non-null assertion を避ける
 
-### AI 解釈(interpret)
+---
 
-- 共通ロジック: `apps/cli/src/interpreter/run.ts` の `interpretSegments()`
-- `transcribe` コマンド(自動)と `interpret` コマンド(手動)の両方から呼ばれる
-- Worker の `/rpc/interpret` エンドポイントを使用
+## 機能別ガイド
 
-### Whisper ハルシネーション対策
+| 機能 | 詳細ドキュメント |
+|------|-----------------|
+| タスク管理 | [docs/features.md](docs/features.md#タスク管理) |
+| タスク完了検知 | [docs/features.md](docs/features.md#タスク完了検知) |
+| プロフィール | [docs/features.md](docs/features.md#ユーザープロフィール) |
+| プロジェクト | [docs/features.md](docs/features.md#プロジェクト管理) |
+| フィードバックループ | [docs/feedback-loop.md](docs/feedback-loop.md) |
+| API エンドポイント | [docs/api.md](docs/api.md) |
+| アーキテクチャ | [docs/architecture.md](docs/architecture.md) |
 
-- 無音区間での定型文(「ご視聴ありがとうございました」等)をフィルタリング
-- 対象: `apps/cli/src/commands/transcribe.ts` の `HALLUCINATION_PATTERNS` 配列
-- **自動評価**: Claude SDK(haiku)による第2段階フィルタが有効
-- 設定: `~/.adas/config.json` の `evaluator.enabled` / `evaluator.autoApplyPatterns`
+---
 
-### API サーバー
+## フロントエンド開発
 
-- `apps/cli/src/server/app.ts` で Hono アプリ定義
-- `createApp(db)` で DB を注入
-- ルート: `apps/cli/src/server/routes/` 配下
-
-### サマリ生成
-
-- `apps/cli/src/summarizer/generator.ts` の `buildActivityText()` でサマリ内容を構築
-- 含まれるデータ: 音声/メモ、Slack、Claude Code、タスク (承認済み)、学び
-- タスクと学びはサマリに自動で含まれる
-
-### フィードバックループ
-
-- **動的 few-shot 挿入**: `apps/cli/src/feedback-injector.ts`
-- **プロンプト自動改善**: `apps/cli/src/server/routes/prompt-improvements.ts`
-- **プロフィール提案**: `apps/cli/src/server/routes/profile.ts`
-- 詳細: [docs/feedback-loop.md](docs/feedback-loop.md)
-
-### タスク抽出
-
-- **API**: `apps/cli/src/server/routes/tasks.ts`
-- **プロンプト**: `packages/core/prompts/task-extract.md`
-- **フロントエンド**: `apps/frontend/src/components/app/tasks-panel.tsx`
-
-**対応ソース**:
-| ソース | エンドポイント | 必要な設定 |
-|--------|---------------|-----------|
-| Slack | `POST /api/tasks/extract` | `slack.userId` |
-| GitHub Items | `POST /api/tasks/extract-github` | `github.username` |
-| GitHub Comments | `POST /api/tasks/extract-github-comments` | `github.username` |
-| Memos | `POST /api/tasks/extract-memos` | - |
-
-**タスクライフサイクル**:
-```
-pending → accepted → in_progress → completed
-                  ↘ paused ↗
-        → rejected
-```
-
-- `pending`: 抽出直後、承認待ち
-- `accepted`: 承認済み、未着手
-- `in_progress`: 実行中 (`POST /api/tasks/:id/start`)
-- `paused`: 中断 (`POST /api/tasks/:id/pause`)
-- `completed`: 完了 (`POST /api/tasks/:id/complete`)
-- `rejected`: 却下済み
-
-**フィードバックループ**:
-- 承認/却下履歴から few-shot examples を自動構築
-- 却下理由も学習に活用
-- プロンプト改善案はタスクとして登録 (`sourceType: "prompt-improvement"`)
-- プロフィール提案もタスクとして登録 (`sourceType: "profile-suggestion"`)
-
-### タスク完了検知
-
-- **API**: `POST /api/tasks/suggest-completions`
-- **Worker**: `apps/worker/src/routes/check-completion.ts`
-- **GitHub クライアント**: `apps/cli/src/github/client.ts` の `getItemState()`
-
-**検知ソース** (優先度順):
-| ソース | 判定方法 | 確実性 |
-|--------|---------|-------|
-| GitHub | Issue/PR のクローズ・マージを API で確認 | 最高 |
-| Claude Code | セッションログから AI 判定 | 中 |
-| Slack | スレッド後続メッセージから AI 判定 | 中 |
-| Transcribe | 音声書き起こしから AI 判定 | 低 |
-
-**フロントエンド**: Tasks タブの「承認済み」タブに「完了チェック」ボタン
-
-### ユーザープロフィール
-
-- **DB テーブル**: `user_profile` (単一レコード)、`profile_suggestions` (提案)
-- **API**: `apps/cli/src/server/routes/profile.ts`
-- **フロントエンド**: `apps/frontend/src/components/app/profile-panel.tsx`
-- **Worker**: `apps/worker/src/routes/analyze-profile.ts` (提案生成)
-- 学び抽出時にプロフィール情報を参照して精度向上 (`apps/cli/src/claude-code/extractor.ts`)
-- **タスク統合**: プロフィール提案はタスクとして Tasks タブに表示
-  - 承認するとプロフィールに自動反映
-  - 却下すると提案も自動的に却下
-
-### プロジェクト管理
-
-- **DB テーブル**: `projects`
-- **API**: `apps/cli/src/server/routes/projects.ts`
-- **フロントエンド**: `apps/frontend/src/components/app/projects-panel.tsx` (Tasks タブ内)
-- **フック**: `apps/frontend/src/hooks/use-projects.ts`
-
-**機能**:
-- プロジェクトの CRUD 操作
-- Claude Code プロジェクトパスからの自動検出
-- GitHub リポジトリとの紐付け (owner/repo)
-- タスク・学びのプロジェクト別集計
-
-### フロントエンド
+### 基本
 
 - ダッシュボード: `apps/frontend/src/components/app/dashboard.tsx`
 - ADAS API 接続: `apps/frontend/src/hooks/use-adas-api.ts` のヘルパーを使用
 - shadcn/ui コンポーネント追加は `apps/frontend` ディレクトリで実行
 
-#### UI/UX 実装方針
+### UI/UX 実装方針
 
 **モーダルのキーボードショートカット**:
-- OKボタン(送信/確定)は `Command+Enter` (Mac) / `Ctrl+Enter` (Windows) で実行可能にする
-- `useEffect` で `window` の `keydown` イベントをリッスン
+- OKボタン (送信/確定) は `Cmd/Ctrl+Enter` で実行可能にする
 - 実装例: `apps/frontend/src/components/app/feedback-dialog.tsx`
 
-```tsx
-useEffect(() => {
-  if (!open) return;
+### Vite キャッシュクリア
 
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      handleSubmit();
-    }
-  };
-
-  window.addEventListener("keydown", handleKeyDown);
-  return () => window.removeEventListener("keydown", handleKeyDown);
-});
-```
-
-### Vite 開発サーバーがハングする場合
-
-`bun run dev` でハングする場合、Vite キャッシュをクリア:
+`bun run dev` でハングする場合:
 
 ```bash
 rm -rf apps/frontend/node_modules/.vite
-bun run dev
-```
-
-それでもダメな場合は依存関係を再インストール:
-
-```bash
-rm -rf node_modules bun.lock
-bun install
 bun run dev
 ```

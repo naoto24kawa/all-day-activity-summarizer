@@ -59,6 +59,7 @@ bun run cli -- serve
 | [セットアップガイド](docs/setup.md) | インストール、設定、トラブルシューティング |
 | [CLIコマンドリファレンス](docs/cli.md) | 各コマンドの使い方 |
 | [APIエンドポイント](docs/api.md) | CLI APIサーバー・Worker RPC の詳細 |
+| [機能詳細](docs/features.md) | タスク、プロフィール、プロジェクト等の実装詳細 |
 | [外部サービス統合](docs/integrations.md) | GitHub、Slack、Claude Code との連携方法 |
 | [フィードバックループ](docs/feedback-loop.md) | AI出力品質の継続的改善システム |
 | [アーキテクチャ](docs/architecture.md) | モノレポ構造、DBスキーマ、データフロー |
