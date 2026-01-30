@@ -30,36 +30,33 @@ Claude Code 向け指示書。
 
 type: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
 
+---
+
 ## プロジェクト固有の注意事項
 
-### Bun モジュール解決の注意点
+### Bun モジュール解決
 
-**重要**: Bun はパッケージ内の全ファイルを解析するため、`index.ts` からエクスポートしていなくても、パッケージ内に存在するファイルの依存関係が解決される。
+**重要**: Bun はパッケージ内の全ファイルを解析するため、`index.ts` からエクスポートしていなくても依存関係が解決される。
 
-**問題例**:
 ```
+# 例: Worker が @repo/core に依存 → core 内の @repo/db インポートでエラー
 error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 ```
 
-Worker は `@repo/core` に依存しているが `@repo/db` には依存していない。しかし `packages/core` 内に `@repo/db` をインポートするファイルがあると、Worker 起動時にエラーになる。
-
 **解決策**:
-- `@repo/db` を使用するコードは `packages/core` ではなく `apps/cli` に配置する
-- Worker と CLI で共有するコードは DB 依存を持たないようにする
-- 現在 `apps/cli/src/feedback-injector.ts` はこの理由で CLI 内に配置されている
+- `@repo/db` を使用するコードは `packages/core` ではなく `apps/cli` に配置
+- 現在 `apps/cli/src/feedback-injector.ts` はこの理由で CLI 内に配置
 
 ### DB
 
-- **bun:sqlite** を使用すること(better-sqlite3はBun未サポート)
-- Drizzle ORMドライバは `drizzle-orm/bun-sqlite`
+- **bun:sqlite** を使用(better-sqlite3 は Bun 未サポート)
+- Drizzle ORM ドライバは `drizzle-orm/bun-sqlite`
 - `packages/db/src/index.ts` の `createDatabase()` を使用
 
-### CLI
+### 日付ユーティリティ
 
-- エントリポイント: `apps/cli/src/index.ts`
-- 実行: `bun run cli -- <command>`
-- 設定: `~/.adas/config.json`(apps/cli/src/config.ts)
-- 日付ユーティリティ: `apps/cli/src/utils/date.ts` の `getTodayDateString()` / `getDateString()` を使用(.split("T")[0]! のnon-null assertionを避ける)
+- `apps/cli/src/utils/date.ts` の `getTodayDateString()` / `getDateString()` を使用
+- `.split("T")[0]!` の non-null assertion を避ける
 
 ### AI 解釈(interpret)
 
@@ -67,22 +64,14 @@ Worker は `@repo/core` に依存しているが `@repo/db` には依存して�
 - `transcribe` コマンド(自動)と `interpret` コマンド(手動)の両方から呼ばれる
 - Worker の `/rpc/interpret` エンドポイントを使用
 
-```bash
-bun run cli -- interpret                   # 今日の未解釈セグメント
-bun run cli -- interpret -d 2025-01-01     # 日付指定
-bun run cli -- interpret --all             # 全日付の未解釈セグメント一括処理
-bun run cli -- interpret --all --force     # 全セグメントを強制再解釈
-```
-
 ### Whisper ハルシネーション対策
 
-- 無音区間で Whisper が出力する定型文(「ご視聴ありがとうございました」等)をフィルタリングしている
+- 無音区間での定型文(「ご視聴ありがとうございました」等)をフィルタリング
 - 対象: `apps/cli/src/commands/transcribe.ts` の `HALLUCINATION_PATTERNS` 配列
-- 新しいパターンが見つかったら、この配列に正規表現を追加する
-- **自動評価**: Claude SDK(haiku)による第2段階フィルタが有効。既存パターンを通過したテキストを非同期で評価し、ハルシネーション検出時は DB 削除 + パターン自動追加を行う
-- 設定: `~/.adas/config.json` の `evaluator.enabled` / `evaluator.autoApplyPatterns` で制御(デフォルト: 両方 true)
+- **自動評価**: Claude SDK(haiku)による第2段階フィルタが有効
+- 設定: `~/.adas/config.json` の `evaluator.enabled` / `evaluator.autoApplyPatterns`
 
-### APIサーバー
+### API サーバー
 
 - `apps/cli/src/server/app.ts` で Hono アプリ定義
 - `createApp(db)` で DB を注入
@@ -91,22 +80,5 @@ bun run cli -- interpret --all --force     # 全セグメントを強制再解�
 ### フロントエンド
 
 - ダッシュボード: `apps/frontend/src/components/app/dashboard.tsx`
-- ADAS API接続: `apps/frontend/src/hooks/use-adas-api.ts` のヘルパーを使用
+- ADAS API 接続: `apps/frontend/src/hooks/use-adas-api.ts` のヘルパーを使用
 - shadcn/ui コンポーネント追加は `apps/frontend` ディレクトリで実行
-
-### WSL (Worker 実行環境)
-
-Worker は WSL2 上で動作し、GPU (CUDA) を使用して WhisperX を実行する。
-
-**SSH 接続**:
-
-```bash
-ssh naoto24kawa@192.168.1.17
-```
-
-**主要パス (WSL側)**:
-
-- プロジェクト: `~/projects/naoto24kawa/all-day-activity-summarizer`
-- whisperx-venv: `~/.adas/whisperx-venv`
-- 設定: `~/.adas/config.json`
-- 録音データ: `~/.adas/recordings/`
