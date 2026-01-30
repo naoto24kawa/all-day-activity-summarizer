@@ -148,13 +148,14 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
 
     try {
       await client.connect();
-      const result = await fetchAllSessions(db, client, config.claudeCode.projects);
+      const result = await fetchAllSessions(db, client, config.claudeCode.projects, config);
       await client.disconnect();
 
       return c.json({
         success: true,
         fetched: result.fetched,
         stored: result.stored,
+        learnings: result.learnings,
       });
     } catch (error) {
       await client.disconnect();

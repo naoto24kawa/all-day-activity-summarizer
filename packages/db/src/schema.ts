@@ -52,7 +52,7 @@ export const segmentFeedbacks = sqliteTable("segment_feedbacks", {
   segmentId: integer("segment_id").notNull(),
   rating: text("rating", { enum: ["good", "bad"] }).notNull(),
   target: text("target", {
-    enum: ["interpret", "evaluate", "summarize-hourly", "summarize-daily"],
+    enum: ["interpret", "evaluate", "summarize-hourly", "summarize-daily", "task-extract"],
   })
     .notNull()
     .default("interpret"),
@@ -97,7 +97,7 @@ export type NewFeedback = typeof feedbacks.$inferInsert;
 export const promptImprovements = sqliteTable("prompt_improvements", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   target: text("target", {
-    enum: ["interpret", "evaluate", "summarize-hourly", "summarize-daily"],
+    enum: ["interpret", "evaluate", "summarize-hourly", "summarize-daily", "task-extract"],
   }).notNull(),
   previousPrompt: text("previous_prompt").notNull(),
   newPrompt: text("new_prompt").notNull(),
@@ -415,3 +415,74 @@ export const vocabulary = sqliteTable("vocabulary", {
 
 export type Vocabulary = typeof vocabulary.$inferSelect;
 export type NewVocabulary = typeof vocabulary.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Tasks (Slack メッセージから抽出したタスク)
+// ---------------------------------------------------------------------------
+
+export const tasks = sqliteTable("tasks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  date: text("date").notNull(), // YYYY-MM-DD
+  slackMessageId: integer("slack_message_id"), // FK to slack_messages (nullable for manual tasks)
+  sourceType: text("source_type", {
+    enum: ["slack", "github", "manual"],
+  })
+    .notNull()
+    .default("slack"),
+  title: text("title").notNull(), // AI が生成したタスク文
+  description: text("description"), // 詳細説明
+  status: text("status", {
+    enum: ["pending", "accepted", "rejected", "completed"],
+  })
+    .notNull()
+    .default("pending"),
+  priority: text("priority", {
+    enum: ["high", "medium", "low"],
+  }),
+  confidence: real("confidence"), // AI の確信度 (0-1)
+  dueDate: text("due_date"), // 期限 (YYYY-MM-DD)
+  extractedAt: text("extracted_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  acceptedAt: text("accepted_at"),
+  rejectedAt: text("rejected_at"),
+  completedAt: text("completed_at"),
+  rejectReason: text("reject_reason"), // 却下理由
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type Task = typeof tasks.$inferSelect;
+export type NewTask = typeof tasks.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Learnings (Claude Code セッションから抽出した学び)
+// ---------------------------------------------------------------------------
+
+export const learnings = sqliteTable("learnings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sessionId: text("session_id").notNull(), // FK to claude_code_sessions
+  date: text("date").notNull(), // YYYY-MM-DD
+  content: text("content").notNull(), // 学びの内容
+  category: text("category"), // "typescript" | "react" | "architecture" など
+  tags: text("tags"), // JSON array
+  confidence: real("confidence"), // AI の確信度 (0-1)
+
+  // 間隔反復学習用 (SM-2 アルゴリズム)
+  repetitionCount: integer("repetition_count").notNull().default(0),
+  easeFactor: real("ease_factor").notNull().default(2.5),
+  interval: integer("interval").notNull().default(0), // 次回までの間隔 (日)
+  nextReviewAt: text("next_review_at"), // 次回復習日
+  lastReviewedAt: text("last_reviewed_at"), // 最終復習日
+
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type Learning = typeof learnings.$inferSelect;
+export type NewLearning = typeof learnings.$inferInsert;

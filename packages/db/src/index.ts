@@ -12,6 +12,7 @@ export type {
   GitHubComment,
   GitHubItem,
   GitHubQueueJob,
+  Learning,
   Memo,
   NewClaudeCodeMessage,
   NewClaudeCodeQueueJob,
@@ -21,6 +22,7 @@ export type {
   NewGitHubComment,
   NewGitHubItem,
   NewGitHubQueueJob,
+  NewLearning,
   NewMemo,
   NewPromptImprovement,
   NewSegmentFeedback,
@@ -28,6 +30,7 @@ export type {
   NewSlackQueueJob,
   NewSummary,
   NewSummaryQueueJob,
+  NewTask,
   NewTranscriptionSegment,
   PromptImprovement,
   SegmentFeedback,
@@ -35,6 +38,7 @@ export type {
   SlackQueueJob,
   Summary,
   SummaryQueueJob,
+  Task,
   TranscriptionSegment,
 } from "./schema.js";
 
@@ -391,6 +395,53 @@ export function createDatabase(dbPath: string) {
 
     CREATE INDEX IF NOT EXISTS idx_vocabulary_term ON vocabulary(term);
     CREATE INDEX IF NOT EXISTS idx_vocabulary_source ON vocabulary(source);
+
+    -- Tasks table (Slack メッセージから抽出したタスク)
+    CREATE TABLE IF NOT EXISTS tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      slack_message_id INTEGER,
+      source_type TEXT NOT NULL DEFAULT 'slack' CHECK(source_type IN ('slack', 'github', 'manual')),
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected', 'completed')),
+      priority TEXT CHECK(priority IN ('high', 'medium', 'low')),
+      confidence REAL,
+      due_date TEXT,
+      extracted_at TEXT NOT NULL,
+      accepted_at TEXT,
+      rejected_at TEXT,
+      completed_at TEXT,
+      reject_reason TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tasks_date ON tasks(date);
+    CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_tasks_slack_message ON tasks(slack_message_id);
+
+    -- Learnings table (Claude Code セッションから抽出した学び)
+    CREATE TABLE IF NOT EXISTS learnings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      content TEXT NOT NULL,
+      category TEXT,
+      tags TEXT,
+      confidence REAL,
+      repetition_count INTEGER NOT NULL DEFAULT 0,
+      ease_factor REAL NOT NULL DEFAULT 2.5,
+      interval INTEGER NOT NULL DEFAULT 0,
+      next_review_at TEXT,
+      last_reviewed_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_learnings_session ON learnings(session_id);
+    CREATE INDEX IF NOT EXISTS idx_learnings_date ON learnings(date);
+    CREATE INDEX IF NOT EXISTS idx_learnings_category ON learnings(category);
+    CREATE INDEX IF NOT EXISTS idx_learnings_next_review ON learnings(next_review_at);
   `);
 
   // Migration: update CHECK constraint to allow 'pomodoro' summary_type

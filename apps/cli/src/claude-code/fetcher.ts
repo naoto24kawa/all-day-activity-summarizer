@@ -14,8 +14,10 @@ import type {
 import { schema } from "@repo/db";
 import consola from "consola";
 import { eq } from "drizzle-orm";
+import type { AdasConfig } from "../config.js";
 import { getTodayDateString } from "../utils/date.js";
 import type { ClaudeCodeClient } from "./client.js";
+import { extractAndSaveLearnings } from "./extractor.js";
 
 /**
  * Extract date string from ISO8601 timestamp
@@ -124,9 +126,11 @@ export async function fetchProjectSessions(
   db: AdasDatabase,
   client: ClaudeCodeClient,
   projectPath: string,
-): Promise<{ fetched: number; stored: number }> {
+  config?: AdasConfig,
+): Promise<{ fetched: number; stored: number; learnings: number }> {
   let fetched = 0;
   let stored = 0;
+  let totalLearnings = 0;
 
   const projectName = basename(projectPath);
   const sessions = await client.listSessions(projectPath);
@@ -155,6 +159,25 @@ export async function fetchProjectSessions(
       // Save messages for this session
       saveMessages(db, sessionInfo.id, date, detail.messages);
 
+      // Extract learnings from messages (if config is provided)
+      if (config) {
+        const savedMessages = db
+          .select()
+          .from(schema.claudeCodeMessages)
+          .where(eq(schema.claudeCodeMessages.sessionId, sessionInfo.id))
+          .all();
+
+        const learningResult = await extractAndSaveLearnings(
+          db,
+          config,
+          sessionInfo.id,
+          date,
+          savedMessages,
+          projectName,
+        );
+        totalLearnings += learningResult.saved;
+      }
+
       if (inserted) {
         stored++;
       }
@@ -163,7 +186,7 @@ export async function fetchProjectSessions(
     }
   }
 
-  return { fetched, stored };
+  return { fetched, stored, learnings: totalLearnings };
 }
 
 /**
@@ -173,9 +196,11 @@ export async function fetchAllSessions(
   db: AdasDatabase,
   client: ClaudeCodeClient,
   filterProjects?: string[],
-): Promise<{ fetched: number; stored: number }> {
+  config?: AdasConfig,
+): Promise<{ fetched: number; stored: number; learnings: number }> {
   let totalFetched = 0;
   let totalStored = 0;
+  let totalLearnings = 0;
 
   const projects = await client.listProjects();
 
@@ -188,18 +213,19 @@ export async function fetchAllSessions(
     }
 
     try {
-      const result = await fetchProjectSessions(db, client, project.path);
+      const result = await fetchProjectSessions(db, client, project.path, config);
       totalFetched += result.fetched;
       totalStored += result.stored;
+      totalLearnings += result.learnings;
       consola.debug(
-        `[ClaudeCode] Project ${project.path}: fetched ${result.fetched}, stored ${result.stored}`,
+        `[ClaudeCode] Project ${project.path}: fetched ${result.fetched}, stored ${result.stored}, learnings ${result.learnings}`,
       );
     } catch (error) {
       consola.error(`[ClaudeCode] Failed to fetch project ${project.path}:`, error);
     }
   }
 
-  return { fetched: totalFetched, stored: totalStored };
+  return { fetched: totalFetched, stored: totalStored, learnings: totalLearnings };
 }
 
 /**
@@ -210,15 +236,16 @@ export async function processClaudeCodeJob(
   client: ClaudeCodeClient,
   job: ClaudeCodeQueueJob,
   filterProjects?: string[],
+  config?: AdasConfig,
 ): Promise<void> {
   switch (job.jobType) {
     case "fetch_sessions": {
       if (job.projectPath) {
         // Fetch specific project
-        await fetchProjectSessions(db, client, job.projectPath);
+        await fetchProjectSessions(db, client, job.projectPath, config);
       } else {
         // Fetch all projects
-        await fetchAllSessions(db, client, filterProjects);
+        await fetchAllSessions(db, client, filterProjects, config);
       }
       break;
     }

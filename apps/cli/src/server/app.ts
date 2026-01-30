@@ -10,6 +10,7 @@ import { createFeedbacksRouter, createSegmentFeedbackRouter } from "./routes/fee
 import { createFeedbacksV2Router } from "./routes/feedbacks-v2.js";
 import { createGitHubCommentsRouter } from "./routes/github-comments.js";
 import { createGitHubItemsRouter } from "./routes/github-items.js";
+import { createLearningsRouter } from "./routes/learnings.js";
 import { createMemosRouter } from "./routes/memos.js";
 import { createRecordingRouter } from "./routes/recording.js";
 import { createServerLogsRouter } from "./routes/server-logs.js";
@@ -18,6 +19,7 @@ import { createSlackUsersRouter } from "./routes/slack-users.js";
 import { createStatusRouter } from "./routes/status.js";
 import { createStorageRouter } from "./routes/storage.js";
 import { createSummariesRouter } from "./routes/summaries.js";
+import { createTasksRouter } from "./routes/tasks.js";
 import { createTranscriptionsRouter } from "./routes/transcriptions.js";
 import { createVocabularyRouter } from "./routes/vocabulary.js";
 
@@ -46,8 +48,10 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/github-items", createGitHubItemsRouter(db));
   app.route("/api/github-comments", createGitHubCommentsRouter(db));
   app.route("/api/claude-code-sessions", createClaudeCodeSessionsRouter(db, options?.config));
+  app.route("/api/learnings", createLearningsRouter(db));
   app.route("/api/server-logs", createServerLogsRouter(options?.config));
   app.route("/api/status", createStatusRouter(db));
+  app.route("/api/tasks", createTasksRouter(db));
   app.route("/api/vocabulary", createVocabularyRouter(db));
 
   if (options?.micCapture || options?.speakerCapture) {

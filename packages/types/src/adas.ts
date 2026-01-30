@@ -154,7 +154,12 @@ export interface RpcInterpretResponse {
 }
 
 /** プロンプト改善ターゲット */
-export type PromptTarget = "interpret" | "evaluate" | "summarize-hourly" | "summarize-daily";
+export type PromptTarget =
+  | "interpret"
+  | "evaluate"
+  | "summarize-hourly"
+  | "summarize-daily"
+  | "task-extract";
 
 /** セグメントフィードバック (interpret 用) */
 export interface SegmentFeedback {
@@ -310,6 +315,39 @@ export interface ClaudeCodeMessage {
   createdAt: string;
 }
 
+/** 学び (Claude Code セッションから抽出) */
+export interface Learning {
+  id: number;
+  sessionId: string;
+  date: string;
+  content: string;
+  category: string | null;
+  tags: string | null; // JSON array
+  confidence: number | null;
+
+  // 間隔反復学習用 (SM-2)
+  repetitionCount: number;
+  easeFactor: number;
+  interval: number;
+  nextReviewAt: string | null;
+  lastReviewedAt: string | null;
+
+  createdAt: string;
+}
+
+/** 学びカテゴリ */
+export type LearningCategory =
+  | "typescript"
+  | "react"
+  | "architecture"
+  | "testing"
+  | "devops"
+  | "database"
+  | "api"
+  | "security"
+  | "performance"
+  | "other";
+
 // ========== GitHub 型定義 ==========
 
 /** GitHub Item (Issue/PR) */
@@ -421,4 +459,65 @@ export interface Vocabulary {
   usageCount: number;
   createdAt: string;
   updatedAt: string;
+}
+
+// ========== Task 型定義 ==========
+
+/** タスクソース種別 */
+export type TaskSourceType = "slack" | "github" | "manual";
+
+/** タスクステータス */
+export type TaskStatus = "pending" | "accepted" | "rejected" | "completed";
+
+/** タスク優先度 */
+export type TaskPriority = "high" | "medium" | "low";
+
+/** タスク (Slack メッセージから抽出) */
+export interface Task {
+  id: number;
+  date: string;
+  slackMessageId: number | null;
+  sourceType: TaskSourceType;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority | null;
+  confidence: number | null;
+  dueDate: string | null;
+  extractedAt: string;
+  acceptedAt: string | null;
+  rejectedAt: string | null;
+  completedAt: string | null;
+  rejectReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** タスク抽出リクエスト */
+export interface ExtractTasksRequest {
+  date?: string;
+  messageIds?: number[];
+}
+
+/** タスク抽出レスポンス */
+export interface ExtractTasksResponse {
+  extracted: number;
+  tasks: Task[];
+}
+
+/** タスク更新リクエスト */
+export interface UpdateTaskRequest {
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  dueDate?: string | null;
+  rejectReason?: string;
+}
+
+/** タスク統計 */
+export interface TaskStats {
+  total: number;
+  pending: number;
+  accepted: number;
+  rejected: number;
+  completed: number;
 }

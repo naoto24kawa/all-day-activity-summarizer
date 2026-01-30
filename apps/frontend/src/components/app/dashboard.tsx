@@ -7,6 +7,7 @@ import { BrowserRecordingPanel } from "./browser-recording-panel";
 import { ClaudeCodeFeed } from "./claude-code-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
 import { GitHubFeed } from "./github-feed";
+import { LearningsFeed } from "./learnings-feed";
 import { MemoPanel } from "./memo-panel";
 import { MonitoringPanel } from "./monitoring-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
@@ -14,6 +15,7 @@ import { SlackFeed } from "./slack-feed";
 import { SlackUsersPanel } from "./slack-users-panel";
 import { StatusPanel } from "./status-panel";
 import { SummaryView } from "./summary-view";
+import { TasksPanel } from "./tasks-panel";
 import { Timeline } from "./timeline";
 import { VocabularyPanel } from "./vocabulary-panel";
 
@@ -63,7 +65,10 @@ export function Dashboard() {
           </div>
         </TabsContent>
         <TabsContent value="claude" className="min-h-0 flex-1">
-          <ClaudeCodeFeed date={date} className="h-full" />
+          <div className="grid h-full gap-4 lg:grid-cols-2">
+            <ClaudeCodeFeed date={date} className="h-full" />
+            <LearningsFeed date={date} className="h-full" />
+          </div>
         </TabsContent>
         <TabsContent value="timeline" className="min-h-0 flex-1">
           <div className="grid h-full gap-4 lg:grid-cols-2">
@@ -72,7 +77,10 @@ export function Dashboard() {
           </div>
         </TabsContent>
         <TabsContent value="slack" className="min-h-0 flex-1">
-          <SlackFeed date={date} className="h-full" />
+          <div className="grid h-full gap-4 lg:grid-cols-2">
+            <SlackFeed date={date} className="h-full" />
+            <TasksPanel date={date} className="h-full" />
+          </div>
         </TabsContent>
         <TabsContent value="github" className="min-h-0 flex-1">
           <GitHubFeed date={date} className="h-full" />
