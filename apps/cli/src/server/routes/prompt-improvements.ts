@@ -10,7 +10,7 @@ import { getPromptFilePath, runClaude } from "@repo/core";
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import type { PromptTarget } from "@repo/types";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
 const PROMPT_TARGETS: PromptTarget[] = [
