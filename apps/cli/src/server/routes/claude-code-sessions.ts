@@ -4,7 +4,7 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { createClaudeCodeClient } from "../../claude-code/client.js";
 import { fetchAllSessions } from "../../claude-code/fetcher.js";
@@ -114,6 +114,24 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
       totalProjects: projectStats.size,
       projects: Array.from(projectStats.values()),
     });
+  });
+
+  /**
+   * GET /api/claude-code-sessions/:sessionId/messages
+   *
+   * Returns messages for a specific session
+   */
+  router.get("/:sessionId/messages", (c) => {
+    const sessionId = c.req.param("sessionId");
+
+    const messages = db
+      .select()
+      .from(schema.claudeCodeMessages)
+      .where(eq(schema.claudeCodeMessages.sessionId, sessionId))
+      .orderBy(asc(schema.claudeCodeMessages.id))
+      .all();
+
+    return c.json(messages);
   });
 
   /**

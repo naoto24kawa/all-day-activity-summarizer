@@ -2,7 +2,7 @@
  * Claude Code Sessions Hook
  */
 
-import type { ClaudeCodeSession } from "@repo/types";
+import type { ClaudeCodeMessage, ClaudeCodeSession } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
 import { fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
@@ -89,4 +89,36 @@ export function useClaudeCodeStats(date?: string) {
   }, [fetchStats]);
 
   return { stats, error, refetch: fetchStats };
+}
+
+export function useClaudeCodeMessages(sessionId: string | null) {
+  const [messages, setMessages] = useState<ClaudeCodeMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setMessages([]);
+      return;
+    }
+
+    const fetchMessages = async () => {
+      setLoading(true);
+      try {
+        const data = await fetchAdasApi<ClaudeCodeMessage[]>(
+          `/api/claude-code-sessions/${sessionId}/messages`,
+        );
+        setMessages(data);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch messages");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMessages();
+  }, [sessionId]);
+
+  return { messages, loading, error };
 }

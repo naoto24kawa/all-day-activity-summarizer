@@ -5,7 +5,12 @@
  */
 
 import { basename } from "node:path";
-import type { AdasDatabase, ClaudeCodeQueueJob, NewClaudeCodeSession } from "@repo/db";
+import type {
+  AdasDatabase,
+  ClaudeCodeQueueJob,
+  NewClaudeCodeMessage,
+  NewClaudeCodeSession,
+} from "@repo/db";
 import { schema } from "@repo/db";
 import consola from "consola";
 import { eq } from "drizzle-orm";
@@ -40,6 +45,37 @@ function extractSummary(messages: Array<{ role: string; text: string }>): string
     return `${text.slice(0, 197)}...`;
   }
   return text;
+}
+
+/**
+ * Save messages for a session
+ * Deletes existing messages and inserts new ones
+ */
+function saveMessages(
+  db: AdasDatabase,
+  sessionId: string,
+  date: string,
+  messages: Array<{ role: string; text: string; timestamp?: string }>,
+): void {
+  // Delete existing messages for this session
+  db.delete(schema.claudeCodeMessages)
+    .where(eq(schema.claudeCodeMessages.sessionId, sessionId))
+    .run();
+
+  // Insert new messages
+  for (const msg of messages) {
+    if (msg.role !== "user" && msg.role !== "assistant") {
+      continue;
+    }
+    const newMessage: NewClaudeCodeMessage = {
+      sessionId,
+      date,
+      role: msg.role,
+      content: msg.text,
+      timestamp: msg.timestamp ?? null,
+    };
+    db.insert(schema.claudeCodeMessages).values(newMessage).run();
+  }
 }
 
 /**
@@ -115,6 +151,9 @@ export async function fetchProjectSessions(
         toolUseCount: detail.summary.toolUseCount,
         summary,
       });
+
+      // Save messages for this session
+      saveMessages(db, sessionInfo.id, date, detail.messages);
 
       if (inserted) {
         stored++;

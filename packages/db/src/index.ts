@@ -4,6 +4,7 @@ import * as schema from "./schema.js";
 
 export { schema };
 export type {
+  ClaudeCodeMessage,
   ClaudeCodeQueueJob,
   ClaudeCodeSession,
   EvaluatorLog,
@@ -12,6 +13,7 @@ export type {
   GitHubItem,
   GitHubQueueJob,
   Memo,
+  NewClaudeCodeMessage,
   NewClaudeCodeQueueJob,
   NewClaudeCodeSession,
   NewEvaluatorLog,
@@ -288,6 +290,20 @@ export function createDatabase(dbPath: string) {
 
     CREATE INDEX IF NOT EXISTS idx_claude_code_queue_status ON claude_code_queue(status);
     CREATE INDEX IF NOT EXISTS idx_claude_code_queue_run_after ON claude_code_queue(run_after);
+
+    -- Claude Code messages table
+    CREATE TABLE IF NOT EXISTS claude_code_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+      content TEXT NOT NULL,
+      timestamp TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_claude_code_messages_session ON claude_code_messages(session_id);
+    CREATE INDEX IF NOT EXISTS idx_claude_code_messages_date ON claude_code_messages(date);
 
     -- GitHub Items table (Issues & PRs)
     CREATE TABLE IF NOT EXISTS github_items (

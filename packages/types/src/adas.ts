@@ -168,6 +168,12 @@ export interface SegmentFeedback {
   createdAt: string;
 }
 
+/** セグメントフィードバック作成レスポンス */
+export interface SegmentFeedbackResponse extends SegmentFeedback {
+  /** 抽出された用語候補 (vocabulary 未登録のもの) */
+  suggestedTerms: string[];
+}
+
 /** interpret フィードバックの問題点タイプ */
 export type InterpretIssueType =
   | "meaning_changed" // 意味が変わった
@@ -290,6 +296,17 @@ export interface ClaudeCodeSession {
   assistantMessageCount: number;
   toolUseCount: number;
   summary: string | null;
+  createdAt: string;
+}
+
+/** Claude Code メッセージ */
+export interface ClaudeCodeMessage {
+  id: number;
+  sessionId: string;
+  date: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string | null;
   createdAt: string;
 }
 

@@ -285,6 +285,25 @@ export type ClaudeCodeQueueJob = typeof claudeCodeQueue.$inferSelect;
 export type NewClaudeCodeQueueJob = typeof claudeCodeQueue.$inferInsert;
 
 // ---------------------------------------------------------------------------
+// Claude Code Messages
+// ---------------------------------------------------------------------------
+
+export const claudeCodeMessages = sqliteTable("claude_code_messages", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sessionId: text("session_id").notNull(),
+  date: text("date").notNull(),
+  role: text("role", { enum: ["user", "assistant"] }).notNull(),
+  content: text("content").notNull(),
+  timestamp: text("timestamp"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type ClaudeCodeMessage = typeof claudeCodeMessages.$inferSelect;
+export type NewClaudeCodeMessage = typeof claudeCodeMessages.$inferInsert;
+
+// ---------------------------------------------------------------------------
 // GitHub Items (Issues & PRs)
 // ---------------------------------------------------------------------------
 

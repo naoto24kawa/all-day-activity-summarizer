@@ -1,6 +1,5 @@
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import consola from "consola";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 
@@ -95,26 +94,24 @@ export function createSegmentFeedbackRouter(db: AdasDatabase) {
       .returning()
       .get();
 
-    // bad フィードバックで correctedText がある場合、vocabulary へ自動登録を試みる
+    // bad フィードバックで correctedText がある場合、用語候補を抽出(登録はしない)
+    let suggestedTerms: string[] = [];
     if (body.rating === "bad" && body.correctedText) {
-      extractAndRegisterTerms(db, body.correctedText, segment.transcription);
+      suggestedTerms = extractTerms(db, body.correctedText, segment.transcription);
     }
 
-    return c.json(result, 201);
+    return c.json({ ...result, suggestedTerms }, 201);
   });
 
   return router;
 }
 
 /**
- * correctedText から固有名詞・専門用語を抽出し vocabulary に登録する。
+ * correctedText から固有名詞・専門用語を抽出して候補として返す。
  * 差分ベース: 元のテキストになかった単語を候補とする。
+ * 既に vocabulary に登録済みの単語は除外する。
  */
-function extractAndRegisterTerms(
-  db: AdasDatabase,
-  correctedText: string,
-  originalText: string,
-): void {
+function extractTerms(db: AdasDatabase, correctedText: string, originalText: string): string[] {
   // 単語分割(簡易的なアプローチ: カタカナ/英字の連続を抽出)
   const extractWords = (text: string): Set<string> => {
     const words = new Set<string>();
@@ -146,37 +143,21 @@ function extractAndRegisterTerms(
     }
   }
 
-  if (newTerms.length === 0) return;
+  if (newTerms.length === 0) return [];
 
-  let added = 0;
+  // 既に vocabulary に登録済みの単語を除外
+  const candidates: string[] = [];
   for (const term of newTerms) {
-    // 既存チェック
     const existing = db
       .select()
       .from(schema.vocabulary)
       .where(eq(schema.vocabulary.term, term))
       .get();
 
-    if (existing) continue;
-
-    try {
-      db.insert(schema.vocabulary)
-        .values({
-          term,
-          reading: null,
-          category: null,
-          source: "feedback",
-        })
-        .run();
-      added++;
-    } catch {
-      // 重複エラーは無視
+    if (!existing) {
+      candidates.push(term);
     }
   }
 
-  if (added > 0) {
-    consola.info(
-      `[vocabulary] Auto-registered ${added} term(s) from feedback: ${newTerms.slice(0, 5).join(", ")}`,
-    );
-  }
+  return candidates;
 }

@@ -1,4 +1,9 @@
-import type { InterpretIssueType, PromptTarget, SegmentFeedback } from "@repo/types";
+import type {
+  InterpretIssueType,
+  PromptTarget,
+  SegmentFeedback,
+  SegmentFeedbackResponse,
+} from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
 import { fetchAdasApi, postAdasApi } from "./use-adas-api";
 
@@ -26,14 +31,17 @@ export function useSegmentFeedbacks(date: string) {
       reason?: string,
       issues?: InterpretIssueType[],
       correctedText?: string,
-    ) => {
-      const result = await postAdasApi<SegmentFeedback>(`/api/segments/${segmentId}/feedback`, {
-        rating,
-        target,
-        reason: reason || undefined,
-        issues: issues || undefined,
-        correctedText: correctedText || undefined,
-      });
+    ): Promise<SegmentFeedbackResponse> => {
+      const result = await postAdasApi<SegmentFeedbackResponse>(
+        `/api/segments/${segmentId}/feedback`,
+        {
+          rating,
+          target,
+          reason: reason || undefined,
+          issues: issues || undefined,
+          correctedText: correctedText || undefined,
+        },
+      );
       setFeedbacks((prev) => [...prev, result]);
       return result;
     },
