@@ -496,10 +496,17 @@ export type TaskSourceType =
   | "github-comment"
   | "memo"
   | "manual"
-  | "prompt-improvement";
+  | "prompt-improvement"
+  | "profile-suggestion";
 
 /** タスクステータス */
-export type TaskStatus = "pending" | "accepted" | "rejected" | "completed";
+export type TaskStatus =
+  | "pending"
+  | "accepted"
+  | "rejected"
+  | "in_progress"
+  | "paused"
+  | "completed";
 
 /** タスク優先度 */
 export type TaskPriority = "high" | "medium" | "low";
@@ -510,6 +517,7 @@ export interface Task {
   date: string;
   slackMessageId: number | null;
   promptImprovementId: number | null;
+  profileSuggestionId: number | null;
   projectId: number | null;
   sourceType: TaskSourceType;
   title: string;
@@ -521,8 +529,11 @@ export interface Task {
   extractedAt: string;
   acceptedAt: string | null;
   rejectedAt: string | null;
+  startedAt: string | null;
+  pausedAt: string | null;
   completedAt: string | null;
   rejectReason: string | null;
+  pauseReason: string | null;
   originalTitle: string | null; // 修正前のタイトル (修正して承認した場合のみ)
   originalDescription: string | null; // 修正前の説明 (修正して承認した場合のみ)
   createdAt: string;
@@ -555,7 +566,54 @@ export interface TaskStats {
   pending: number;
   accepted: number;
   rejected: number;
+  in_progress: number;
+  paused: number;
   completed: number;
+}
+
+// ========== タスク完了検知 型定義 ==========
+
+/** 完了検知ソース種別 */
+export type CompletionSource = "github" | "claude-code" | "slack" | "transcribe";
+
+/** タスク完了候補 */
+export interface TaskCompletionSuggestion {
+  taskId: number;
+  task: Task;
+  source: CompletionSource;
+  reason: string;
+  confidence: number;
+  evidence?: string;
+}
+
+/** 完了候補取得レスポンス */
+export interface SuggestCompletionsResponse {
+  suggestions: TaskCompletionSuggestion[];
+  evaluated: {
+    total: number;
+    github: number;
+    claudeCode: number;
+    slack: number;
+    transcribe: number;
+  };
+}
+
+/** Worker: 完了判定リクエスト */
+export interface CheckCompletionRequest {
+  task: {
+    title: string;
+    description: string | null;
+  };
+  context: string;
+  source: "claude-code" | "slack" | "transcribe";
+}
+
+/** Worker: 完了判定レスポンス */
+export interface CheckCompletionResponse {
+  completed: boolean;
+  confidence: number;
+  reason: string;
+  evidence?: string;
 }
 
 // ========== User Profile 型定義 ==========
@@ -656,4 +714,10 @@ export interface AutoDetectProjectsResponse {
   detected: number;
   created: number;
   projects: Project[];
+}
+
+/** プロジェクト別統計 */
+export interface ProjectStats {
+  tasksCount: number;
+  learningsCount: number;
 }

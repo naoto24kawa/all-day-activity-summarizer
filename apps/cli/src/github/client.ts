@@ -363,3 +363,119 @@ export async function getReviewRequestedPRs(): Promise<GitHubPRData[]> {
     throw err;
   }
 }
+
+/**
+ * Item state response
+ */
+export interface GitHubItemState {
+  state: "open" | "closed" | "merged";
+  closedAt: string | null;
+  mergedAt: string | null;
+}
+
+/**
+ * Get specific Issue/PR state by owner/repo/number
+ */
+export async function getItemState(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<GitHubItemState | null> {
+  // まず PR として取得を試みる
+  const prQuery = `
+    query($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          state
+          closedAt
+          mergedAt
+        }
+      }
+    }
+  `;
+
+  try {
+    const prResult = await rateLimitedExecGh<{
+      data: {
+        repository: {
+          pullRequest: {
+            state: string;
+            closedAt: string | null;
+            mergedAt: string | null;
+          } | null;
+        };
+      };
+    }>([
+      "api",
+      "graphql",
+      "-f",
+      `query=${prQuery}`,
+      "-F",
+      `owner=${owner}`,
+      "-F",
+      `repo=${repo}`,
+      "-F",
+      `number=${number}`,
+    ]);
+
+    const pr = prResult.data.repository.pullRequest;
+    if (pr) {
+      return {
+        state: pr.mergedAt ? "merged" : (pr.state.toLowerCase() as "open" | "closed"),
+        closedAt: pr.closedAt,
+        mergedAt: pr.mergedAt,
+      };
+    }
+  } catch {
+    // PR ではない場合、Issue として取得を試みる
+  }
+
+  // Issue として取得
+  const issueQuery = `
+    query($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        issue(number: $number) {
+          state
+          closedAt
+        }
+      }
+    }
+  `;
+
+  try {
+    const issueResult = await rateLimitedExecGh<{
+      data: {
+        repository: {
+          issue: {
+            state: string;
+            closedAt: string | null;
+          } | null;
+        };
+      };
+    }>([
+      "api",
+      "graphql",
+      "-f",
+      `query=${issueQuery}`,
+      "-F",
+      `owner=${owner}`,
+      "-F",
+      `repo=${repo}`,
+      "-F",
+      `number=${number}`,
+    ]);
+
+    const issue = issueResult.data.repository.issue;
+    if (issue) {
+      return {
+        state: issue.state.toLowerCase() as "open" | "closed",
+        closedAt: issue.closedAt,
+        mergedAt: null,
+      };
+    }
+  } catch (err) {
+    consola.warn(`Failed to fetch item state for ${owner}/${repo}#${number}:`, err);
+  }
+
+  return null;
+}

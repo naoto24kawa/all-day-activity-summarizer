@@ -7,7 +7,7 @@
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import type { CreateProjectRequest, UpdateProjectRequest } from "@repo/types";
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 
 export function createProjectsRouter(db: AdasDatabase) {
@@ -312,6 +312,43 @@ export function createProjectsRouter(db: AdasDatabase) {
       active,
       withPath,
       withGitHub,
+    });
+  });
+
+  /**
+   * GET /api/projects/:id/stats
+   *
+   * プロジェクト別統計 (タスク数、学び数)
+   */
+  router.get("/:id/stats", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const project = db.select().from(schema.projects).where(eq(schema.projects.id, id)).get();
+
+    if (!project) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    // タスク数をカウント
+    const tasksResult = db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.tasks)
+      .where(eq(schema.tasks.projectId, id))
+      .get();
+
+    // 学び数をカウント
+    const learningsResult = db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.learnings)
+      .where(eq(schema.learnings.projectId, id))
+      .get();
+
+    return c.json({
+      tasksCount: tasksResult?.count ?? 0,
+      learningsCount: learningsResult?.count ?? 0,
     });
   });
 

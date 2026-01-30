@@ -724,5 +724,116 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_tasks_memo ON tasks(memo_id);
   `);
 
+  // Migration: add started_at column and update CHECK constraint to allow 'in_progress' status
+  addColumnIfNotExists(sqlite, "tasks", "started_at", "TEXT");
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'",
+      )
+      .get();
+    if (row && !row.sql.includes("'in_progress'")) {
+      sqlite.exec(`
+        ALTER TABLE tasks RENAME TO tasks_old;
+        CREATE TABLE tasks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          slack_message_id INTEGER,
+          github_comment_id INTEGER,
+          memo_id INTEGER,
+          prompt_improvement_id INTEGER,
+          project_id INTEGER,
+          source_type TEXT NOT NULL DEFAULT 'slack' CHECK(source_type IN ('slack', 'github', 'github-comment', 'memo', 'manual', 'prompt-improvement')),
+          title TEXT NOT NULL,
+          description TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected', 'in_progress', 'completed')),
+          priority TEXT CHECK(priority IN ('high', 'medium', 'low')),
+          confidence REAL,
+          due_date TEXT,
+          extracted_at TEXT NOT NULL,
+          accepted_at TEXT,
+          rejected_at TEXT,
+          started_at TEXT,
+          completed_at TEXT,
+          reject_reason TEXT,
+          original_title TEXT,
+          original_description TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO tasks (id, date, slack_message_id, github_comment_id, memo_id, prompt_improvement_id, project_id, source_type, title, description, status, priority, confidence, due_date, extracted_at, accepted_at, rejected_at, started_at, completed_at, reject_reason, original_title, original_description, created_at, updated_at)
+          SELECT id, date, slack_message_id, github_comment_id, memo_id, prompt_improvement_id, project_id, source_type, title, description, status, priority, confidence, due_date, extracted_at, accepted_at, rejected_at, NULL, completed_at, reject_reason, original_title, original_description, created_at, updated_at FROM tasks_old;
+        DROP TABLE tasks_old;
+        CREATE INDEX IF NOT EXISTS idx_tasks_date ON tasks(date);
+        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_slack_message ON tasks(slack_message_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_prompt_improvement ON tasks(prompt_improvement_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_github_comment ON tasks(github_comment_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_memo ON tasks(memo_id);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: add paused_at, pause_reason columns and update CHECK constraint to allow 'paused' status
+  addColumnIfNotExists(sqlite, "tasks", "paused_at", "TEXT");
+  addColumnIfNotExists(sqlite, "tasks", "pause_reason", "TEXT");
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'",
+      )
+      .get();
+    if (row && !row.sql.includes("'paused'")) {
+      sqlite.exec(`
+        ALTER TABLE tasks RENAME TO tasks_old;
+        CREATE TABLE tasks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          slack_message_id INTEGER,
+          github_comment_id INTEGER,
+          memo_id INTEGER,
+          prompt_improvement_id INTEGER,
+          profile_suggestion_id INTEGER,
+          project_id INTEGER,
+          source_type TEXT NOT NULL DEFAULT 'slack' CHECK(source_type IN ('slack', 'github', 'github-comment', 'memo', 'manual', 'prompt-improvement', 'profile-suggestion')),
+          title TEXT NOT NULL,
+          description TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected', 'in_progress', 'paused', 'completed')),
+          priority TEXT CHECK(priority IN ('high', 'medium', 'low')),
+          confidence REAL,
+          due_date TEXT,
+          extracted_at TEXT NOT NULL,
+          accepted_at TEXT,
+          rejected_at TEXT,
+          started_at TEXT,
+          paused_at TEXT,
+          completed_at TEXT,
+          reject_reason TEXT,
+          pause_reason TEXT,
+          original_title TEXT,
+          original_description TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO tasks (id, date, slack_message_id, github_comment_id, memo_id, prompt_improvement_id, profile_suggestion_id, project_id, source_type, title, description, status, priority, confidence, due_date, extracted_at, accepted_at, rejected_at, started_at, paused_at, completed_at, reject_reason, pause_reason, original_title, original_description, created_at, updated_at)
+          SELECT id, date, slack_message_id, github_comment_id, memo_id, prompt_improvement_id, NULL, project_id, source_type, title, description, status, priority, confidence, due_date, extracted_at, accepted_at, rejected_at, started_at, NULL, completed_at, reject_reason, NULL, original_title, original_description, created_at, updated_at FROM tasks_old;
+        DROP TABLE tasks_old;
+        CREATE INDEX IF NOT EXISTS idx_tasks_date ON tasks(date);
+        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_slack_message ON tasks(slack_message_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_prompt_improvement ON tasks(prompt_improvement_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_profile_suggestion ON tasks(profile_suggestion_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_github_comment ON tasks(github_comment_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_memo ON tasks(memo_id);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
   return db;
 }

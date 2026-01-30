@@ -13,6 +13,7 @@ import { LearningsFeed } from "./learnings-feed";
 import { MemoPanel } from "./memo-panel";
 import { MonitoringPanel } from "./monitoring-panel";
 import { ProfilePanel } from "./profile-panel";
+import { ProjectsPanel } from "./projects-panel";
 import { PromptImprovementsPanel } from "./prompt-improvements-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
@@ -76,6 +77,7 @@ export function Dashboard() {
           <TabsTrigger value="slack">Slack</TabsTrigger>
           <TabsTrigger value="github">GitHub</TabsTrigger>
           <TabsTrigger value="claude">Claude</TabsTrigger>
+          <TabsTrigger value="whisper">Whisper</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
@@ -98,22 +100,29 @@ export function Dashboard() {
           </div>
         </TabsContent>
         <TabsContent value="tasks" className="min-h-0 flex-1">
-          <TasksPanel date={date} className="h-full" />
+          <div className="grid h-full gap-4 lg:grid-cols-[1fr_320px]">
+            <TasksPanel date={date} className="h-full" />
+            <ProjectsPanel />
+          </div>
         </TabsContent>
         <TabsContent value="slack" className="min-h-0 flex-1">
-          <SlackFeed date={date} className="h-full" />
+          <div className="grid h-full gap-4 lg:grid-cols-[1fr_320px]">
+            <SlackFeed date={date} className="h-full" />
+            <SlackUsersPanel />
+          </div>
         </TabsContent>
         <TabsContent value="github" className="min-h-0 flex-1">
           <GitHubFeed date={date} className="h-full" />
+        </TabsContent>
+        <TabsContent value="whisper" className="min-h-0 flex-1">
+          <VocabularyPanel />
         </TabsContent>
         <TabsContent value="settings" className="min-h-0 flex-1 overflow-auto">
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="space-y-4">
               <ProfilePanel />
-              <VocabularyPanel />
             </div>
             <div className="space-y-4">
-              <SlackUsersPanel />
               <PromptImprovementsPanel />
               <MonitoringPanel />
             </div>

@@ -29,6 +29,20 @@ interface AnalyzeProfileResponse {
   }>;
 }
 
+const SUGGESTION_TYPE_LABELS: Record<ProfileSuggestionType, string> = {
+  add_technology: "技術追加",
+  add_specialty: "専門分野追加",
+  add_goal: "学習目標追加",
+  update_experience: "経験年数更新",
+};
+
+const FIELD_LABELS: Record<string, string> = {
+  specialties: "専門分野",
+  knownTechnologies: "技術",
+  learningGoals: "学習目標",
+  experienceYears: "経験年数",
+};
+
 export function createProfileRouter(db: AdasDatabase, config?: AdasConfig) {
   const router = new Hono();
 
@@ -104,7 +118,7 @@ export function createProfileRouter(db: AdasDatabase, config?: AdasConfig) {
           specialties: updateData.specialties ?? null,
           knownTechnologies: updateData.knownTechnologies ?? null,
           learningGoals: updateData.learningGoals ?? null,
-          updatedAt: updateData.updatedAt!,
+          updatedAt: updateData.updatedAt ?? now,
         })
         .run();
     } else {
@@ -288,8 +302,7 @@ export function createProfileRouter(db: AdasDatabase, config?: AdasConfig) {
     const daysBack = body.daysBack ?? 7;
 
     // 対象期間の日付を計算
-    const today = new Date();
-    const startDate = new Date(today);
+    const startDate = new Date();
     startDate.setDate(startDate.getDate() - daysBack);
     const startDateStr = startDate.toISOString().split("T")[0]!;
 
@@ -328,6 +341,8 @@ export function createProfileRouter(db: AdasDatabase, config?: AdasConfig) {
 
     // 新しい提案を保存
     const savedSuggestions: ProfileSuggestion[] = [];
+    const today = new Date().toISOString().split("T")[0]!;
+    const now = new Date().toISOString();
 
     for (const suggestion of suggestions) {
       const key = `${suggestion.field}:${suggestion.value}`;
@@ -363,6 +378,24 @@ export function createProfileRouter(db: AdasDatabase, config?: AdasConfig) {
 
         if (inserted) {
           savedSuggestions.push(inserted as ProfileSuggestion);
+
+          // タスクとしても登録
+          const fieldLabel = FIELD_LABELS[suggestion.field] || suggestion.field;
+          const typeLabel =
+            SUGGESTION_TYPE_LABELS[suggestion.suggestionType] || suggestion.suggestionType;
+
+          db.insert(schema.tasks)
+            .values({
+              date: today,
+              profileSuggestionId: inserted.id,
+              sourceType: "profile-suggestion",
+              title: `[プロフィール] ${typeLabel}: ${suggestion.value}`,
+              description: `${fieldLabel}に「${suggestion.value}」を追加\n\n理由: ${suggestion.reason || "なし"}`,
+              status: "pending",
+              confidence: suggestion.confidence,
+              extractedAt: now,
+            })
+            .run();
         }
       } catch (err) {
         consola.warn("[profile] Failed to save suggestion:", err);

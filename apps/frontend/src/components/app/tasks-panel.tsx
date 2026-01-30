@@ -4,7 +4,14 @@
  * Slack メッセージから抽出したタスクの表示・管理
  */
 
-import type { Project, Task, TaskSourceType, TaskStatus } from "@repo/types";
+import type {
+  Project,
+  SuggestCompletionsResponse,
+  Task,
+  TaskCompletionSuggestion,
+  TaskSourceType,
+  TaskStatus,
+} from "@repo/types";
 import {
   Bell,
   BellOff,
@@ -19,9 +26,12 @@ import {
   Github,
   MessageSquare,
   MessageSquareMore,
+  Mic,
   Pencil,
   RefreshCw,
+  Search,
   Sparkles,
+  Terminal,
   Trash2,
   Wand2,
   X,
@@ -75,6 +85,13 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
 
   const [sourceFilter, setSourceFilter] = useState<TaskSourceType | "all">("all");
   const [projectFilter, setProjectFilter] = useState<number | "all" | "none">("all");
+  const [checkingCompletion, setCheckingCompletion] = useState(false);
+  const [completionSuggestions, setCompletionSuggestions] = useState<TaskCompletionSuggestion[]>(
+    [],
+  );
+  const [completionStats, setCompletionStats] = useState<
+    SuggestCompletionsResponse["evaluated"] | null
+  >(null);
 
   const getSourceLabel = (sourceType: string) => {
     switch (sourceType) {
@@ -196,6 +213,36 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
       setExtracting(false);
     }
   };
+
+  const handleCheckCompletions = async () => {
+    setCheckingCompletion(true);
+    setCompletionSuggestions([]);
+    setCompletionStats(null);
+    try {
+      const response = await fetch(`${ADAS_API_URL}/api/tasks/suggest-completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to check completions");
+      }
+      const data = (await response.json()) as SuggestCompletionsResponse;
+      setCompletionSuggestions(data.suggestions);
+      setCompletionStats(data.evaluated);
+    } catch (err) {
+      console.error("Failed to check completions:", err);
+    } finally {
+      setCheckingCompletion(false);
+    }
+  };
+
+  const handleCompleteFromSuggestion = async (taskId: number) => {
+    await updateTask(taskId, { status: "completed" });
+    setCompletionSuggestions((prev) => prev.filter((s) => s.taskId !== taskId));
+  };
+
+  const suggestionTaskIds = new Set(completionSuggestions.map((s) => s.taskId));
 
   if (loading) {
     return (
@@ -492,13 +539,58 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 showActions
               />
             </TabsContent>
-            <TabsContent value="accepted" className="min-h-0 flex-1">
+            <TabsContent value="accepted" className="min-h-0 flex-1 space-y-2">
+              <div className="flex items-center justify-between">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCheckCompletions}
+                  disabled={checkingCompletion || acceptedTasks.length === 0}
+                  className="gap-1"
+                >
+                  <Search className="h-3 w-3" />
+                  {checkingCompletion ? "チェック中..." : "完了チェック"}
+                </Button>
+                {completionStats && (
+                  <div className="flex gap-2 text-xs text-muted-foreground">
+                    <span>評価: {completionStats.total}件</span>
+                    {completionStats.github > 0 && <span>GitHub: {completionStats.github}</span>}
+                    {completionStats.claudeCode > 0 && (
+                      <span>Claude: {completionStats.claudeCode}</span>
+                    )}
+                    {completionStats.slack > 0 && <span>Slack: {completionStats.slack}</span>}
+                    {completionStats.transcribe > 0 && (
+                      <span>Transcribe: {completionStats.transcribe}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {completionSuggestions.length > 0 && (
+                <div className="rounded-md border border-green-200 bg-green-50 p-2 dark:border-green-800 dark:bg-green-950">
+                  <div className="mb-2 flex items-center gap-1 text-sm font-medium text-green-700 dark:text-green-300">
+                    <CheckCircle2 className="h-4 w-4" />
+                    完了候補 ({completionSuggestions.length}件)
+                  </div>
+                  <div className="space-y-2">
+                    {completionSuggestions.map((suggestion) => (
+                      <CompletionSuggestionItem
+                        key={suggestion.taskId}
+                        suggestion={suggestion}
+                        onComplete={() => handleCompleteFromSuggestion(suggestion.taskId)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <TaskList
                 tasks={acceptedTasks}
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 showCompleteAction
+                suggestionTaskIds={suggestionTaskIds}
               />
             </TabsContent>
             <TabsContent value="completed" className="min-h-0 flex-1">
@@ -524,6 +616,69 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   );
 }
 
+function CompletionSuggestionItem({
+  suggestion,
+  onComplete,
+}: {
+  suggestion: TaskCompletionSuggestion;
+  onComplete: () => void;
+}) {
+  const getSourceIcon = (source: string) => {
+    switch (source) {
+      case "github":
+        return <Github className="h-3 w-3" />;
+      case "claude-code":
+        return <Terminal className="h-3 w-3" />;
+      case "slack":
+        return <MessageSquare className="h-3 w-3" />;
+      case "transcribe":
+        return <Mic className="h-3 w-3" />;
+      default:
+        return null;
+    }
+  };
+
+  const getSourceLabel = (source: string) => {
+    switch (source) {
+      case "github":
+        return "GitHub";
+      case "claude-code":
+        return "Claude Code";
+      case "slack":
+        return "Slack";
+      case "transcribe":
+        return "音声";
+      default:
+        return source;
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between rounded bg-white p-2 dark:bg-gray-900">
+      <div className="flex-1">
+        <div className="flex items-center gap-2 text-sm font-medium">{suggestion.task.title}</div>
+        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1">
+            {getSourceIcon(suggestion.source)}
+            {getSourceLabel(suggestion.source)}
+          </span>
+          <span>・</span>
+          <span>{suggestion.reason}</span>
+          <span>・</span>
+          <span>確信度: {Math.round(suggestion.confidence * 100)}%</span>
+        </div>
+        {suggestion.evidence && (
+          <div className="mt-1 text-xs text-muted-foreground italic">{suggestion.evidence}</div>
+        )}
+      </div>
+      <Button size="sm" variant="outline" onClick={onComplete} className="ml-2 gap-1">
+        <Check className="h-3 w-3" />
+        完了にする
+      </Button>
+    </div>
+  );
+}
+
 function TaskList({
   tasks,
   projects,
@@ -531,6 +686,7 @@ function TaskList({
   onDeleteTask,
   showActions = false,
   showCompleteAction = false,
+  suggestionTaskIds,
 }: {
   tasks: Task[];
   projects: Project[];
@@ -541,6 +697,7 @@ function TaskList({
   onDeleteTask: (id: number) => Promise<void>;
   showActions?: boolean;
   showCompleteAction?: boolean;
+  suggestionTaskIds?: Set<number>;
 }) {
   if (tasks.length === 0) {
     return <p className="py-4 text-center text-sm text-muted-foreground">タスクはありません</p>;
@@ -558,6 +715,7 @@ function TaskList({
             onDeleteTask={onDeleteTask}
             showActions={showActions}
             showCompleteAction={showCompleteAction}
+            isSuggested={suggestionTaskIds?.has(task.id)}
           />
         ))}
       </div>
@@ -572,6 +730,7 @@ function TaskItem({
   onDeleteTask,
   showActions,
   showCompleteAction,
+  isSuggested,
 }: {
   task: Task;
   projects: Project[];
@@ -582,6 +741,7 @@ function TaskItem({
   onDeleteTask: (id: number) => Promise<void>;
   showActions?: boolean;
   showCompleteAction?: boolean;
+  isSuggested?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -684,7 +844,9 @@ function TaskItem({
                 ? "opacity-50"
                 : task.status === "pending"
                   ? "border-primary/30 bg-primary/5"
-                  : ""
+                  : isSuggested
+                    ? "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-950"
+                    : ""
           }`}
         >
           <CollapsibleTrigger className="flex w-full items-start justify-between text-left">

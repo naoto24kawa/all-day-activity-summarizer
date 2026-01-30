@@ -435,16 +435,25 @@ export const tasks = sqliteTable("tasks", {
   githubCommentId: integer("github_comment_id"), // FK to github_comments
   memoId: integer("memo_id"), // FK to memos
   promptImprovementId: integer("prompt_improvement_id"), // FK to prompt_improvements (for prompt-improvement type)
+  profileSuggestionId: integer("profile_suggestion_id"), // FK to profile_suggestions (for profile-suggestion type)
   projectId: integer("project_id"), // FK to projects (nullable for Slack/Memo tasks)
   sourceType: text("source_type", {
-    enum: ["slack", "github", "github-comment", "memo", "manual", "prompt-improvement"],
+    enum: [
+      "slack",
+      "github",
+      "github-comment",
+      "memo",
+      "manual",
+      "prompt-improvement",
+      "profile-suggestion",
+    ],
   })
     .notNull()
     .default("slack"),
   title: text("title").notNull(), // AI が生成したタスク文
   description: text("description"), // 詳細説明
   status: text("status", {
-    enum: ["pending", "accepted", "rejected", "completed"],
+    enum: ["pending", "accepted", "rejected", "in_progress", "paused", "completed"],
   })
     .notNull()
     .default("pending"),
@@ -458,8 +467,11 @@ export const tasks = sqliteTable("tasks", {
     .$defaultFn(() => new Date().toISOString()),
   acceptedAt: text("accepted_at"),
   rejectedAt: text("rejected_at"),
+  startedAt: text("started_at"), // 実行開始日時
+  pausedAt: text("paused_at"), // 中断日時
   completedAt: text("completed_at"),
   rejectReason: text("reject_reason"), // 却下理由
+  pauseReason: text("pause_reason"), // 中断理由
   originalTitle: text("original_title"), // 修正前のタイトル (修正して承認した場合のみ)
   originalDescription: text("original_description"), // 修正前の説明 (修正して承認した場合のみ)
   createdAt: text("created_at")

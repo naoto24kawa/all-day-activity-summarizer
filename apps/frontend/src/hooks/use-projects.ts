@@ -4,9 +4,15 @@
  * プロジェクト管理用のカスタムフック
  */
 
-import type { AutoDetectProjectsResponse, Project } from "@repo/types";
+import type {
+  AutoDetectProjectsResponse,
+  CreateProjectRequest,
+  Project,
+  ProjectStats,
+  UpdateProjectRequest,
+} from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
-import { fetchAdasApi, postAdasApi } from "@/lib/adas-api";
+import { deleteAdasApi, fetchAdasApi, patchAdasApi, postAdasApi } from "@/lib/adas-api";
 
 export interface ProjectsState {
   projects: Project[];
@@ -14,7 +20,7 @@ export interface ProjectsState {
   error: string | null;
 }
 
-export function useProjects() {
+export function useProjects(activeOnly = true) {
   const [state, setState] = useState<ProjectsState>({
     projects: [],
     loading: true,
@@ -26,7 +32,8 @@ export function useProjects() {
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
     try {
-      const response = await fetchAdasApi<Project[]>("/api/projects?active=true");
+      const query = activeOnly ? "?active=true" : "";
+      const response = await fetchAdasApi<Project[]>(`/api/projects${query}`);
       setState({
         projects: response,
         loading: false,
@@ -38,6 +45,57 @@ export function useProjects() {
         loading: false,
         error: err instanceof Error ? err.message : "Failed to fetch projects",
       });
+    }
+  }, [activeOnly]);
+
+  const createProject = useCallback(
+    async (data: CreateProjectRequest): Promise<Project | null> => {
+      try {
+        const response = await postAdasApi<Project>("/api/projects", data);
+        await fetchProjects();
+        return response;
+      } catch (err) {
+        console.error("Failed to create project:", err);
+        return null;
+      }
+    },
+    [fetchProjects],
+  );
+
+  const updateProject = useCallback(
+    async (id: number, data: UpdateProjectRequest): Promise<Project | null> => {
+      try {
+        const response = await patchAdasApi<Project>(`/api/projects/${id}`, data);
+        await fetchProjects();
+        return response;
+      } catch (err) {
+        console.error("Failed to update project:", err);
+        return null;
+      }
+    },
+    [fetchProjects],
+  );
+
+  const deleteProject = useCallback(
+    async (id: number): Promise<boolean> => {
+      try {
+        await deleteAdasApi<{ deleted: boolean }>(`/api/projects/${id}`);
+        await fetchProjects();
+        return true;
+      } catch (err) {
+        console.error("Failed to delete project:", err);
+        return false;
+      }
+    },
+    [fetchProjects],
+  );
+
+  const fetchProjectStats = useCallback(async (id: number): Promise<ProjectStats | null> => {
+    try {
+      return await fetchAdasApi<ProjectStats>(`/api/projects/${id}/stats`);
+    } catch (err) {
+      console.error("Failed to fetch project stats:", err);
+      return null;
     }
   }, []);
 
@@ -69,6 +127,10 @@ export function useProjects() {
     error: state.error,
     autoDetecting,
     refetch: fetchProjects,
+    createProject,
+    updateProject,
+    deleteProject,
+    fetchProjectStats,
     autoDetect,
   };
 }

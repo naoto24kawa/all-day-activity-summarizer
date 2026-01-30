@@ -8,10 +8,19 @@ import { readFileSync } from "node:fs";
 import { getPromptFilePath, runClaude } from "@repo/core";
 import type { AdasDatabase, SlackMessage } from "@repo/db";
 import { schema } from "@repo/db";
-import type { TaskStatus } from "@repo/types";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import type {
+  CheckCompletionRequest,
+  CheckCompletionResponse,
+  SuggestCompletionsResponse,
+  Task,
+  TaskCompletionSuggestion,
+  TaskStatus,
+} from "@repo/types";
+import consola from "consola";
+import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { loadConfig } from "../../config";
+import { getItemState } from "../../github/client";
 import { getTodayDateString } from "../../utils/date";
 import { findOrCreateProjectByGitHub } from "../../utils/project-lookup.js";
 
@@ -100,6 +109,8 @@ export function createTasksRouter(db: AdasDatabase) {
       pending: 0,
       accepted: 0,
       rejected: 0,
+      in_progress: 0,
+      paused: 0,
       completed: 0,
     };
 
@@ -160,9 +171,17 @@ export function createTasksRouter(db: AdasDatabase) {
       text += `\n\n${task.description}`;
     }
     text += "\n\n---\n";
+    text += `作業開始前に以下を実行してください:\n`;
+    text += `\`\`\`bash\n`;
+    text += `curl -X POST ${baseUrl}/api/tasks/${task.id}/start\n`;
+    text += `\`\`\`\n\n`;
     text += `タスク完了時は以下を実行してください:\n`;
     text += `\`\`\`bash\n`;
     text += `curl -X POST ${baseUrl}/api/tasks/${task.id}/complete\n`;
+    text += `\`\`\`\n\n`;
+    text += `中断する場合は以下を実行してください (理由は任意):\n`;
+    text += `\`\`\`bash\n`;
+    text += `curl -X POST ${baseUrl}/api/tasks/${task.id}/pause -H "Content-Type: application/json" -d '{"reason": "中断理由"}'\n`;
     text += `\`\`\``;
 
     return c.text(text);
@@ -217,6 +236,7 @@ export function createTasksRouter(db: AdasDatabase) {
       priority?: "high" | "medium" | "low";
       dueDate?: string | null;
       rejectReason?: string;
+      pauseReason?: string;
       title?: string;
       description?: string;
     }>();
@@ -236,10 +256,30 @@ export function createTasksRouter(db: AdasDatabase) {
       updates.status = body.status;
       if (body.status === "accepted") {
         updates.acceptedAt = now;
+
+        // profile-suggestion の場合、プロフィールを更新
+        if (existing.sourceType === "profile-suggestion" && existing.profileSuggestionId) {
+          await applyProfileSuggestion(db, existing.profileSuggestionId, now);
+        }
       } else if (body.status === "rejected") {
         updates.rejectedAt = now;
         if (body.rejectReason) {
           updates.rejectReason = body.rejectReason;
+        }
+
+        // profile-suggestion の場合、提案も却下
+        if (existing.sourceType === "profile-suggestion" && existing.profileSuggestionId) {
+          db.update(schema.profileSuggestions)
+            .set({ status: "rejected", rejectedAt: now })
+            .where(eq(schema.profileSuggestions.id, existing.profileSuggestionId))
+            .run();
+        }
+      } else if (body.status === "in_progress") {
+        updates.startedAt = now;
+      } else if (body.status === "paused") {
+        updates.pausedAt = now;
+        if (body.pauseReason) {
+          updates.pauseReason = body.pauseReason;
         }
       } else if (body.status === "completed") {
         updates.completedAt = now;
@@ -716,6 +756,72 @@ export function createTasksRouter(db: AdasDatabase) {
   });
 
   /**
+   * POST /api/tasks/:id/start
+   *
+   * タスクを実行中にする
+   */
+  router.post("/:id/start", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const existing = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!existing) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    const now = new Date().toISOString();
+    const result = db
+      .update(schema.tasks)
+      .set({
+        status: "in_progress",
+        startedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(schema.tasks.id, id))
+      .returning()
+      .get();
+
+    return c.json(result);
+  });
+
+  /**
+   * POST /api/tasks/:id/pause
+   *
+   * タスクを中断する
+   * Body: { reason?: string }
+   */
+  router.post("/:id/pause", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const body = await c.req.json<{ reason?: string }>().catch(() => ({ reason: undefined }));
+
+    const existing = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!existing) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    const now = new Date().toISOString();
+    const result = db
+      .update(schema.tasks)
+      .set({
+        status: "paused",
+        pausedAt: now,
+        pauseReason: body.reason ?? null,
+        updatedAt: now,
+      })
+      .where(eq(schema.tasks.id, id))
+      .returning()
+      .get();
+
+    return c.json(result);
+  });
+
+  /**
    * POST /api/tasks/:id/accept
    *
    * タスクを承認
@@ -815,6 +921,13 @@ export function createTasksRouter(db: AdasDatabase) {
       if (body.reason) {
         updates.rejectReason = body.reason;
       }
+    } else if (body.status === "in_progress") {
+      updates.startedAt = now;
+    } else if (body.status === "paused") {
+      updates.pausedAt = now;
+      if (body.reason) {
+        updates.pauseReason = body.reason;
+      }
     } else if (body.status === "completed") {
       updates.completedAt = now;
     }
@@ -856,6 +969,114 @@ export function createTasksRouter(db: AdasDatabase) {
     db.delete(schema.tasks).where(eq(schema.tasks.id, id)).run();
 
     return c.json({ deleted: true });
+  });
+
+  /**
+   * POST /api/tasks/suggest-completions
+   *
+   * 完了候補を提案
+   * GitHub → Claude Code → Slack → Transcribe の順で評価し、早期リターン
+   * Body: { date?: string }
+   */
+  router.post("/suggest-completions", async (c) => {
+    const body = await c.req.json<{ date?: string }>().catch(() => ({ date: undefined }));
+
+    // accepted 状態のタスクを取得
+    const conditions = [eq(schema.tasks.status, "accepted")];
+    if (body.date) {
+      conditions.push(eq(schema.tasks.date, body.date));
+    }
+
+    const acceptedTasks = db
+      .select()
+      .from(schema.tasks)
+      .where(and(...conditions))
+      .orderBy(desc(schema.tasks.acceptedAt))
+      .all();
+
+    if (acceptedTasks.length === 0) {
+      return c.json({
+        suggestions: [],
+        evaluated: { total: 0, github: 0, claudeCode: 0, slack: 0, transcribe: 0 },
+      } satisfies SuggestCompletionsResponse);
+    }
+
+    const suggestions: TaskCompletionSuggestion[] = [];
+    const evaluated = { total: 0, github: 0, claudeCode: 0, slack: 0, transcribe: 0 };
+
+    for (const task of acceptedTasks) {
+      evaluated.total++;
+
+      // 1. GitHub 評価 (確実性: 最高)
+      if (task.sourceType === "github" || task.sourceType === "github-comment") {
+        evaluated.github++;
+        const result = await checkGitHubCompletion(db, task);
+        if (result) {
+          suggestions.push({
+            taskId: task.id,
+            task: task as Task,
+            source: "github",
+            reason: result.reason,
+            confidence: result.confidence,
+            evidence: result.evidence,
+          });
+          continue; // 早期リターン
+        }
+      }
+
+      // 2. Claude Code 評価 (AI判定)
+      if (task.projectId) {
+        evaluated.claudeCode++;
+        const result = await checkClaudeCodeCompletion(db, task);
+        if (result) {
+          suggestions.push({
+            taskId: task.id,
+            task: task as Task,
+            source: "claude-code",
+            reason: result.reason,
+            confidence: result.confidence,
+            evidence: result.evidence,
+          });
+          continue; // 早期リターン
+        }
+      }
+
+      // 3. Slack 評価 (AI判定)
+      if (task.slackMessageId) {
+        evaluated.slack++;
+        const result = await checkSlackCompletion(db, task);
+        if (result) {
+          suggestions.push({
+            taskId: task.id,
+            task: task as Task,
+            source: "slack",
+            reason: result.reason,
+            confidence: result.confidence,
+            evidence: result.evidence,
+          });
+          continue; // 早期リターン
+        }
+      }
+
+      // 4. Transcribe 評価 (AI判定)
+      evaluated.transcribe++;
+      const result = await checkTranscribeCompletion(db, task);
+      if (result) {
+        suggestions.push({
+          taskId: task.id,
+          task: task as Task,
+          source: "transcribe",
+          reason: result.reason,
+          confidence: result.confidence,
+          evidence: result.evidence,
+        });
+      }
+    }
+
+    return c.json({
+      suggestions,
+      evaluated,
+    } satisfies SuggestCompletionsResponse);
   });
 
   return router;
@@ -1044,5 +1265,443 @@ function parseExtractResult(response: string): ExtractResult {
   } catch {
     // パース失敗時は空配列を返す
     return { tasks: [] };
+  }
+}
+
+/**
+ * プロフィール提案を承認してプロフィールに反映
+ */
+async function applyProfileSuggestion(
+  db: AdasDatabase,
+  suggestionId: number,
+  now: string,
+): Promise<void> {
+  const suggestion = db
+    .select()
+    .from(schema.profileSuggestions)
+    .where(eq(schema.profileSuggestions.id, suggestionId))
+    .get();
+
+  if (!suggestion || suggestion.status !== "pending") {
+    return;
+  }
+
+  const profile = db.select().from(schema.userProfile).where(eq(schema.userProfile.id, 1)).get();
+
+  if (!profile) {
+    return;
+  }
+
+  if (suggestion.field === "experienceYears") {
+    db.update(schema.userProfile)
+      .set({
+        experienceYears: Number.parseInt(suggestion.value, 10),
+        updatedAt: now,
+      })
+      .where(eq(schema.userProfile.id, 1))
+      .run();
+  } else {
+    // JSON配列フィールド (specialties, knownTechnologies, learningGoals)
+    const fieldMap: Record<string, keyof typeof profile> = {
+      specialties: "specialties",
+      knownTechnologies: "knownTechnologies",
+      learningGoals: "learningGoals",
+    };
+
+    const fieldKey = fieldMap[suggestion.field];
+    if (fieldKey) {
+      const currentValue = profile[fieldKey] as string | null;
+      const currentArray: string[] = currentValue ? JSON.parse(currentValue) : [];
+
+      // 重複チェック
+      if (!currentArray.includes(suggestion.value)) {
+        currentArray.push(suggestion.value);
+
+        const updateObj: Record<string, string> = {
+          [suggestion.field]: JSON.stringify(currentArray),
+          updatedAt: now,
+        };
+
+        db.update(schema.userProfile).set(updateObj).where(eq(schema.userProfile.id, 1)).run();
+      }
+    }
+  }
+
+  // 提案ステータスを更新
+  db.update(schema.profileSuggestions)
+    .set({
+      status: "accepted",
+      acceptedAt: now,
+    })
+    .where(eq(schema.profileSuggestions.id, suggestionId))
+    .run();
+}
+
+// ========== タスク完了検知関数 ==========
+
+interface CompletionCheckResult {
+  reason: string;
+  confidence: number;
+  evidence?: string;
+}
+
+/**
+ * GitHub での完了をチェック
+ */
+async function checkGitHubCompletion(
+  db: AdasDatabase,
+  task: {
+    sourceType: string;
+    title: string;
+    description: string | null;
+    githubCommentId: number | null;
+  },
+): Promise<CompletionCheckResult | null> {
+  try {
+    let owner: string | undefined;
+    let repo: string | undefined;
+    let number: number | undefined;
+
+    // タイトルから {repoName}#{number} をパース
+    // 例: "Review PR: my-repo#123" or "Fix Issue: my-repo#45"
+    const titleMatch = task.title.match(/:\s*([^#]+)#(\d+)/);
+    if (titleMatch?.[1] && titleMatch[2]) {
+      repo = titleMatch[1].trim();
+      number = Number.parseInt(titleMatch[2], 10);
+    }
+
+    // description から owner/repo#number をパース
+    // 例: "owner/repo#123"
+    if (task.description) {
+      const descMatch = task.description.match(/([^/\s]+)\/([^#\s]+)#(\d+)/);
+      if (descMatch?.[1] && descMatch[2] && descMatch[3]) {
+        owner = descMatch[1];
+        repo = descMatch[2];
+        number = Number.parseInt(descMatch[3], 10);
+      }
+    }
+
+    // github-comment の場合、githubCommentId から情報を取得
+    if (task.sourceType === "github-comment" && task.githubCommentId) {
+      const comment = db
+        .select()
+        .from(schema.githubComments)
+        .where(eq(schema.githubComments.id, task.githubCommentId))
+        .get();
+
+      if (comment) {
+        owner = comment.repoOwner;
+        repo = comment.repoName;
+        number = comment.itemNumber;
+      }
+    }
+
+    if (!repo || !number) {
+      return null;
+    }
+
+    // owner が不明な場合、プロジェクト設定や GitHub username から推測を試みる
+    if (!owner) {
+      // description に owner/repo 形式がなかった場合、owner を特定できない
+      // 今後の拡張: プロジェクト設定から owner を取得するなど
+      consola.debug(`[completion-check] Cannot determine owner for ${repo}#${number}`);
+      return null;
+    }
+
+    // GitHub API で最新状態を取得
+    const state = await getItemState(owner, repo, number);
+
+    if (!state) {
+      return null;
+    }
+
+    // 完了判定
+    if (state.state === "merged") {
+      return {
+        reason: `PR ${repo}#${number} がマージされました`,
+        confidence: 1.0,
+        evidence: `Merged at: ${state.mergedAt}`,
+      };
+    }
+
+    if (state.state === "closed") {
+      return {
+        reason: `${repo}#${number} がクローズされました`,
+        confidence: 0.9,
+        evidence: `Closed at: ${state.closedAt}`,
+      };
+    }
+
+    return null;
+  } catch (err) {
+    consola.warn("[completion-check] GitHub check failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Worker の check-completion エンドポイントを呼び出す
+ */
+async function callWorkerCheckCompletion(
+  request: CheckCompletionRequest,
+): Promise<CheckCompletionResponse | null> {
+  try {
+    const config = loadConfig();
+    const workerUrl = config.worker?.url ?? "http://localhost:3100";
+
+    const response = await fetch(`${workerUrl}/rpc/check-completion`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      consola.warn(`[completion-check] Worker returned ${response.status}`);
+      return null;
+    }
+
+    return (await response.json()) as CheckCompletionResponse;
+  } catch (err) {
+    consola.warn("[completion-check] Worker call failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Claude Code セッションでの完了をチェック
+ */
+async function checkClaudeCodeCompletion(
+  db: AdasDatabase,
+  task: {
+    projectId: number | null;
+    title: string;
+    description: string | null;
+    acceptedAt: string | null;
+  },
+): Promise<CompletionCheckResult | null> {
+  if (!task.projectId) {
+    return null;
+  }
+
+  try {
+    // プロジェクトの path を取得
+    const project = db
+      .select({ path: schema.projects.path })
+      .from(schema.projects)
+      .where(eq(schema.projects.id, task.projectId))
+      .get();
+
+    if (!project?.path) {
+      return null;
+    }
+
+    // タスク承認日以降のセッションを取得
+    const sessions = db
+      .select()
+      .from(schema.claudeCodeSessions)
+      .where(
+        and(
+          eq(schema.claudeCodeSessions.projectPath, project.path),
+          task.acceptedAt ? gte(schema.claudeCodeSessions.startTime, task.acceptedAt) : undefined,
+        ),
+      )
+      .orderBy(desc(schema.claudeCodeSessions.startTime))
+      .limit(5)
+      .all();
+
+    if (sessions.length === 0) {
+      return null;
+    }
+
+    // セッションのメッセージを取得してコンテキストを構築
+    const contextParts: string[] = [];
+    for (const session of sessions) {
+      const messages = db
+        .select()
+        .from(schema.claudeCodeMessages)
+        .where(eq(schema.claudeCodeMessages.sessionId, session.sessionId))
+        .orderBy(desc(schema.claudeCodeMessages.timestamp))
+        .limit(10)
+        .all();
+
+      if (messages.length > 0) {
+        contextParts.push(`--- セッション (${session.startTime}) ---`);
+        for (const msg of messages.reverse()) {
+          const role = msg.role === "user" ? "User" : "Assistant";
+          contextParts.push(`[${role}] ${msg.content.slice(0, 500)}`);
+        }
+      }
+    }
+
+    if (contextParts.length === 0) {
+      return null;
+    }
+
+    const context = contextParts.join("\n");
+
+    // Worker で AI 判定
+    const result = await callWorkerCheckCompletion({
+      task: { title: task.title, description: task.description },
+      context,
+      source: "claude-code",
+    });
+
+    if (result?.completed) {
+      return {
+        reason: result.reason,
+        confidence: result.confidence,
+        evidence: result.evidence,
+      };
+    }
+
+    return null;
+  } catch (err) {
+    consola.warn("[completion-check] Claude Code check failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Slack メッセージでの完了をチェック
+ */
+async function checkSlackCompletion(
+  db: AdasDatabase,
+  task: { slackMessageId: number | null; title: string; description: string | null },
+): Promise<CompletionCheckResult | null> {
+  if (!task.slackMessageId) {
+    return null;
+  }
+
+  try {
+    // 元のメッセージを取得
+    const originalMessage = db
+      .select()
+      .from(schema.slackMessages)
+      .where(eq(schema.slackMessages.id, task.slackMessageId))
+      .get();
+
+    if (!originalMessage) {
+      return null;
+    }
+
+    // 同じスレッドの後続メッセージを取得
+    const followUpMessages = db
+      .select()
+      .from(schema.slackMessages)
+      .where(
+        and(
+          eq(schema.slackMessages.channelId, originalMessage.channelId),
+          originalMessage.threadTs
+            ? eq(schema.slackMessages.threadTs, originalMessage.threadTs)
+            : eq(schema.slackMessages.threadTs, originalMessage.messageTs),
+          gte(schema.slackMessages.messageTs, originalMessage.messageTs),
+        ),
+      )
+      .orderBy(schema.slackMessages.messageTs)
+      .limit(20)
+      .all();
+
+    // 元メッセージを除く後続メッセージのみ
+    const laterMessages = followUpMessages.filter((m) => m.messageTs !== originalMessage.messageTs);
+
+    if (laterMessages.length === 0) {
+      return null;
+    }
+
+    // コンテキストを構築
+    const contextParts: string[] = [];
+    contextParts.push(`--- 元のメッセージ ---`);
+    contextParts.push(`[${originalMessage.userName ?? "unknown"}] ${originalMessage.text}`);
+    contextParts.push(`--- 後続メッセージ ---`);
+    for (const msg of laterMessages) {
+      contextParts.push(`[${msg.userName ?? "unknown"}] ${msg.text}`);
+    }
+
+    const context = contextParts.join("\n");
+
+    // Worker で AI 判定
+    const result = await callWorkerCheckCompletion({
+      task: { title: task.title, description: task.description },
+      context,
+      source: "slack",
+    });
+
+    if (result?.completed) {
+      return {
+        reason: result.reason,
+        confidence: result.confidence,
+        evidence: result.evidence,
+      };
+    }
+
+    return null;
+  } catch (err) {
+    consola.warn("[completion-check] Slack check failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Transcribe (音声書き起こし) での完了をチェック
+ */
+async function checkTranscribeCompletion(
+  db: AdasDatabase,
+  task: { date: string; title: string; description: string | null; acceptedAt: string | null },
+): Promise<CompletionCheckResult | null> {
+  try {
+    // タスクの日付以降の音声書き起こしを取得
+    const segments = db
+      .select()
+      .from(schema.transcriptionSegments)
+      .where(
+        and(
+          gte(schema.transcriptionSegments.date, task.date),
+          task.acceptedAt
+            ? gte(schema.transcriptionSegments.startTime, task.acceptedAt)
+            : undefined,
+        ),
+      )
+      .orderBy(desc(schema.transcriptionSegments.startTime))
+      .limit(30)
+      .all();
+
+    if (segments.length === 0) {
+      return null;
+    }
+
+    // interpretedText があるセグメントを優先
+    const contextParts: string[] = [];
+    for (const seg of segments.reverse()) {
+      const text = seg.interpretedText ?? seg.transcription;
+      if (text) {
+        contextParts.push(`[${seg.startTime}] ${text}`);
+      }
+    }
+
+    if (contextParts.length === 0) {
+      return null;
+    }
+
+    const context = contextParts.join("\n");
+
+    // Worker で AI 判定
+    const result = await callWorkerCheckCompletion({
+      task: { title: task.title, description: task.description },
+      context,
+      source: "transcribe",
+    });
+
+    if (result?.completed) {
+      return {
+        reason: result.reason,
+        confidence: result.confidence,
+        evidence: result.evidence,
+      };
+    }
+
+    return null;
+  } catch (err) {
+    consola.warn("[completion-check] Transcribe check failed:", err);
+    return null;
   }
 }
