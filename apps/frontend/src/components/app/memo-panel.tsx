@@ -47,6 +47,12 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
   const handleSend = async () => {
     const content = input.trim();
     if (!content || sending) return;
+
+    // 音声入力中の場合は停止
+    if (listening && recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+
     setSending(true);
     try {
       await postMemo(content);

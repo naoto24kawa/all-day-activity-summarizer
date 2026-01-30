@@ -1,5 +1,14 @@
 import type { InterpretIssueType, TranscriptionSegment } from "@repo/types";
-import { BookPlus, Check, Loader2, RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
+import {
+  BookPlus,
+  Check,
+  Loader2,
+  Mic,
+  RefreshCw,
+  Speaker,
+  ThumbsDown,
+  ThumbsUp,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FeedbackDialog } from "@/components/app/feedback-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -250,7 +259,7 @@ function TranscriptionItem({
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [popoverOpen]);
+  }, [popoverOpen, handlePopoverClose]);
 
   return (
     <div className="rounded-md border p-3">
@@ -260,6 +269,22 @@ function TranscriptionItem({
         </span>
         <Badge variant="outline" className="text-xs">
           {segment.language}
+        </Badge>
+        <Badge
+          variant="secondary"
+          className={`flex items-center gap-1 text-xs ${segment.audioSource === "mic" ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" : "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300"}`}
+        >
+          {segment.audioSource === "mic" ? (
+            <>
+              <Mic className="h-3 w-3" />
+              Mic
+            </>
+          ) : (
+            <>
+              <Speaker className="h-3 w-3" />
+              Audio
+            </>
+          )}
         </Badge>
       </div>
       <div className="flex items-start gap-2">

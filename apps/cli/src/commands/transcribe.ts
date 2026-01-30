@@ -114,6 +114,7 @@ async function transcribeFile(
   const endTime = new Date(startTime.getTime() + config.audio.chunkDurationMinutes * 60 * 1000);
   // 音声ソースタイプを判定 (マイク or スピーカー)
   const isMicSource = fileName.endsWith("_mic");
+  const audioSource = isMicSource ? "mic" : "speaker";
 
   // マイク音声は "Me" に固定
   const speaker = isMicSource ? "Me" : null;
@@ -129,7 +130,7 @@ async function transcribeFile(
           date: datePart,
           startTime: segStart.toISOString(),
           endTime: segEnd.toISOString(),
-          audioSource: "default",
+          audioSource,
           audioFilePath: filePath,
           transcription: seg.text,
           language: result.language,
@@ -144,7 +145,7 @@ async function transcribeFile(
         date: datePart,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
-        audioSource: "default",
+        audioSource,
         audioFilePath: filePath,
         transcription: result.text,
         language: result.language,
