@@ -93,7 +93,7 @@ export function createBrowserRecordingRouter(db: AdasDatabase, config: AdasConfi
       // 開始時刻からファイル名を生成
       const startTime = new Date(metadata.startTime);
       const timeStr = startTime.toTimeString().split(" ")[0]?.replace(/:/g, "-") ?? "unknown";
-      const sourceType = metadata.audioSource === "browser-mic" ? "mic" : "speaker";
+      const sourceType = metadata.audioSource === "mic" ? "mic" : "speaker";
 
       // 一時 WebM ファイルを保存
       const webmPath = join(dateDir, `chunk_${timeStr}_${sourceType}.webm`);

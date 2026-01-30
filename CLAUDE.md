@@ -123,6 +123,29 @@ error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 - ADAS API 接続: `apps/frontend/src/hooks/use-adas-api.ts` のヘルパーを使用
 - shadcn/ui コンポーネント追加は `apps/frontend` ディレクトリで実行
 
+#### UI/UX 実装方針
+
+**モーダルのキーボードショートカット**:
+- OKボタン(送信/確定)は `Command+Enter` (Mac) / `Ctrl+Enter` (Windows) で実行可能にする
+- `useEffect` で `window` の `keydown` イベントをリッスン
+- 実装例: `apps/frontend/src/components/app/feedback-dialog.tsx`
+
+```tsx
+useEffect(() => {
+  if (!open) return;
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
+  window.addEventListener("keydown", handleKeyDown);
+  return () => window.removeEventListener("keydown", handleKeyDown);
+});
+```
+
 ### Vite 開発サーバーがハングする場合
 
 `bun run dev` でハングする場合、Vite キャッシュをクリア:

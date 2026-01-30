@@ -1,5 +1,5 @@
 import type { EvaluatorJudgment } from "@repo/types";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -80,6 +80,21 @@ export function EvaluatorFeedbackDialog({
   };
 
   const showCorrectJudgment = feedbackType !== "correct";
+
+  // Command+Enter (Mac) / Ctrl+Enter (Windows) で送信
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        handleSubmit();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleCancel()}>

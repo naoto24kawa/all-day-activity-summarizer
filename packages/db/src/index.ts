@@ -714,5 +714,15 @@ export function createDatabase(dbPath: string) {
   addColumnIfNotExists(sqlite, "tasks", "original_title", "TEXT");
   addColumnIfNotExists(sqlite, "tasks", "original_description", "TEXT");
 
+  // Migration: add github_comment_id and memo_id to tasks (for duplicate prevention)
+  addColumnIfNotExists(sqlite, "tasks", "github_comment_id", "INTEGER");
+  addColumnIfNotExists(sqlite, "tasks", "memo_id", "INTEGER");
+
+  // Create indexes for new columns
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS idx_tasks_github_comment ON tasks(github_comment_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_memo ON tasks(memo_id);
+  `);
+
   return db;
 }

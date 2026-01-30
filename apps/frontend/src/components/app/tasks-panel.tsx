@@ -12,12 +12,14 @@ import {
   CheckCircle2,
   ChevronDown,
   Circle,
+  ClipboardCopy,
   FileText,
   Filter,
   FolderGit2,
   Github,
   MessageSquare,
   MessageSquareMore,
+  Pencil,
   RefreshCw,
   Sparkles,
   Trash2,
@@ -25,7 +27,8 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import Markdown from "react-markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +48,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useNotifications } from "@/hooks/use-notifications";
 import { getProjectName, useProjects } from "@/hooks/use-projects";
 import { useTaskStats, useTasks } from "@/hooks/use-tasks";
+import { ADAS_API_URL } from "@/lib/adas-api";
 
 interface TasksPanelProps {
   date: string;
@@ -583,8 +587,15 @@ function TaskItem({
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editMode, setEditMode] = useState<"edit" | "edit-approve">("edit");
   const [editTitle, setEditTitle] = useState(task.title);
   const [editDescription, setEditDescription] = useState(task.description ?? "");
+  // インライン編集モード
+  const [inlineEditing, setInlineEditing] = useState(false);
+  const [inlineDescription, setInlineDescription] = useState(task.description ?? "");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // コピー状態
+  const [copied, setCopied] = useState(false);
 
   const projectName = getProjectName(projects, task.projectId);
 
@@ -607,19 +618,59 @@ function TaskItem({
     setRejectReason("");
   };
 
-  const handleEditApprove = async () => {
-    await onUpdateTask(task.id, {
-      status: "accepted",
+  const handleEditSave = async () => {
+    const updates: { status?: TaskStatus; title?: string; description?: string } = {
       title: editTitle,
       description: editDescription || undefined,
-    });
+    };
+    // 「修正して承認」モードの場合のみステータスを更新
+    if (editMode === "edit-approve") {
+      updates.status = "accepted";
+    }
+    await onUpdateTask(task.id, updates);
     setEditDialogOpen(false);
   };
 
-  const openEditDialog = () => {
+  const openEditDialog = (mode: "edit" | "edit-approve") => {
+    setEditMode(mode);
     setEditTitle(task.title);
     setEditDescription(task.description ?? "");
     setEditDialogOpen(true);
+  };
+
+  // インライン編集
+  const startInlineEdit = () => {
+    setInlineDescription(task.description ?? "");
+    setInlineEditing(true);
+    // フォーカスを当てる (次のレンダリング後)
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  };
+
+  const saveInlineEdit = async () => {
+    await onUpdateTask(task.id, { description: inlineDescription || undefined });
+    setInlineEditing(false);
+  };
+
+  const cancelInlineEdit = () => {
+    setInlineDescription(task.description ?? "");
+    setInlineEditing(false);
+  };
+
+  // クリップボードにコピー (AIに渡す用)
+  const copyToClipboard = async () => {
+    let text = `## ${task.title}`;
+    if (task.description) {
+      text += `\n\n${task.description}`;
+    }
+    text += "\n\n---\n";
+    text += `タスク完了時は以下を実行してください:\n`;
+    text += `\`\`\`bash\n`;
+    text += `curl -X POST ${ADAS_API_URL}/api/tasks/${task.id}/complete\n`;
+    text += `\`\`\``;
+
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -697,8 +748,58 @@ function TaskItem({
           </CollapsibleTrigger>
 
           <CollapsibleContent className="mt-3 space-y-3">
-            {task.description && (
-              <p className="text-sm text-muted-foreground">{task.description}</p>
+            {/* 詳細: インライン編集 or マークダウン表示 */}
+            {inlineEditing ? (
+              <div className="space-y-2">
+                <Textarea
+                  ref={textareaRef}
+                  value={inlineDescription}
+                  onChange={(e) => setInlineDescription(e.target.value)}
+                  placeholder="詳細を入力... (Markdown 対応)"
+                  rows={5}
+                  className="text-sm"
+                  onKeyDown={(e) => {
+                    // Cmd/Ctrl + Enter で保存
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      saveInlineEdit();
+                    }
+                    // Escape でキャンセル
+                    if (e.key === "Escape") {
+                      cancelInlineEdit();
+                    }
+                  }}
+                />
+                <div className="flex items-center gap-2">
+                  <Button size="sm" onClick={saveInlineEdit}>
+                    <Check className="mr-1 h-3 w-3" />
+                    保存
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={cancelInlineEdit}>
+                    キャンセル
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Cmd+Enter で保存 / Esc でキャンセル
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={startInlineEdit}
+                className="w-full cursor-pointer rounded-md border border-transparent p-2 -m-2 text-left hover:border-muted-foreground/20 hover:bg-muted/50 transition-colors"
+                title="クリックして編集"
+              >
+                {task.description ? (
+                  <div className="prose prose-sm max-w-none text-muted-foreground dark:prose-invert">
+                    <Markdown>{task.description}</Markdown>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground/50 italic">
+                    クリックして詳細を追加...
+                  </p>
+                )}
+              </button>
             )}
             {task.rejectReason && (
               <p className="text-sm text-muted-foreground">
@@ -717,7 +818,11 @@ function TaskItem({
                     <Check className="mr-1 h-3 w-3" />
                     承認
                   </Button>
-                  <Button variant="secondary" size="sm" onClick={openEditDialog}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => openEditDialog("edit-approve")}
+                  >
                     <Wand2 className="mr-1 h-3 w-3" />
                     修正して承認
                   </Button>
@@ -737,6 +842,25 @@ function TaskItem({
                   完了
                 </Button>
               )}
+              {!showActions && (
+                <Button variant="outline" size="sm" onClick={() => openEditDialog("edit")}>
+                  <Pencil className="mr-1 h-3 w-3" />
+                  編集
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={copyToClipboard}>
+                {copied ? (
+                  <>
+                    <Check className="mr-1 h-3 w-3" />
+                    コピー済み
+                  </>
+                ) : (
+                  <>
+                    <ClipboardCopy className="mr-1 h-3 w-3" />
+                    AIに渡す
+                  </>
+                )}
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"
@@ -785,13 +909,17 @@ function TaskItem({
         </DialogContent>
       </Dialog>
 
-      {/* 修正して承認ダイアログ */}
+      {/* 編集ダイアログ */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>タスクを修正して承認</DialogTitle>
+            <DialogTitle>
+              {editMode === "edit-approve" ? "タスクを修正して承認" : "タスクを編集"}
+            </DialogTitle>
             <DialogDescription>
-              タスクの内容を修正してから承認できます。修正内容はAIの学習に活用されます。
+              {editMode === "edit-approve"
+                ? "タスクの内容を修正してから承認できます。修正内容はAIの学習に活用されます。"
+                : "タスクの内容を編集できます。"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -806,13 +934,13 @@ function TaskItem({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-description">説明 (任意)</Label>
+              <Label htmlFor="edit-description">詳細</Label>
               <Textarea
                 id="edit-description"
                 placeholder="タスクの詳細説明..."
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
-                rows={3}
+                rows={5}
               />
             </div>
           </div>
@@ -820,9 +948,18 @@ function TaskItem({
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
               キャンセル
             </Button>
-            <Button onClick={handleEditApprove} disabled={!editTitle.trim()}>
-              <Check className="mr-1 h-3 w-3" />
-              修正して承認
+            <Button onClick={handleEditSave} disabled={!editTitle.trim()}>
+              {editMode === "edit-approve" ? (
+                <>
+                  <Check className="mr-1 h-3 w-3" />
+                  修正して承認
+                </>
+              ) : (
+                <>
+                  <Check className="mr-1 h-3 w-3" />
+                  保存
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

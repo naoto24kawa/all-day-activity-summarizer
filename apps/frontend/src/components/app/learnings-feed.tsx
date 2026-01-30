@@ -11,10 +11,10 @@ import {
   Code,
   FolderGit2,
   Github,
-  Loader2,
   MessageSquare,
   Mic,
   RefreshCw,
+  Sparkles,
   Tag,
   Trash2,
 } from "lucide-react";
@@ -66,57 +66,23 @@ function applyFilters(
   return result;
 }
 
-interface ExtractButtonsProps {
+interface ExtractButtonProps {
   extractLoading: boolean;
-  onExtract: (type: "transcription" | "github" | "slack") => void;
+  onExtractAll: () => void;
 }
 
-function ExtractButtons({ extractLoading, onExtract }: ExtractButtonsProps) {
+function ExtractButton({ extractLoading, onExtractAll }: ExtractButtonProps) {
   return (
-    <div className="shrink-0 border-b px-6 pb-3">
-      <p className="mb-2 text-xs text-muted-foreground">Extract learnings from:</p>
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onExtract("transcription")}
-          disabled={extractLoading}
-        >
-          {extractLoading ? (
-            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-          ) : (
-            <Mic className="mr-1 h-3 w-3" />
-          )}
-          Transcriptions
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onExtract("github")}
-          disabled={extractLoading}
-        >
-          {extractLoading ? (
-            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-          ) : (
-            <Github className="mr-1 h-3 w-3" />
-          )}
-          GitHub Comments
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onExtract("slack")}
-          disabled={extractLoading}
-        >
-          {extractLoading ? (
-            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-          ) : (
-            <MessageSquare className="mr-1 h-3 w-3" />
-          )}
-          Slack Messages
-        </Button>
-      </div>
-    </div>
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={onExtractAll}
+      disabled={extractLoading}
+      title="全ソースから学びを抽出"
+    >
+      <Sparkles className={`mr-1 h-3 w-3 ${extractLoading ? "animate-pulse" : ""}`} />
+      {extractLoading ? "..." : "Extract"}
+    </Button>
   );
 }
 
@@ -230,17 +196,14 @@ export function LearningsFeed({ date, className }: LearningsFeedProps) {
     (p) => projectCount.has(p.id) && (projectCount.get(p.id) ?? 0) > 0,
   );
 
-  const handleExtract = async (type: "transcription" | "github" | "slack") => {
-    const extractors = {
-      transcription: extractFromTranscriptions,
-      github: extractFromGitHubComments,
-      slack: extractFromSlackMessages,
-    };
-    const result = await extractors[type](date);
-    if (result) {
-      refetch();
-      refetchStats();
-    }
+  const handleExtractAll = async () => {
+    await Promise.all([
+      extractFromTranscriptions(date),
+      extractFromGitHubComments(date),
+      extractFromSlackMessages(date),
+    ]);
+    refetch();
+    refetchStats();
   };
 
   if (loading) {
@@ -295,13 +258,14 @@ export function LearningsFeed({ date, className }: LearningsFeedProps) {
               </Badge>
             )}
           </CardTitle>
-          <Button variant="ghost" size="icon" onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <ExtractButton extractLoading={extractLoading} onExtractAll={handleExtractAll} />
+            <Button variant="ghost" size="icon" onClick={() => refetch()}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </CardHeader>
-
-      <ExtractButtons extractLoading={extractLoading} onExtract={handleExtract} />
 
       <FilterBar
         stats={stats}

@@ -114,7 +114,7 @@ async function transcribeFile(
   const endTime = new Date(startTime.getTime() + config.audio.chunkDurationMinutes * 60 * 1000);
   // 音声ソースタイプを判定 (マイク or スピーカー)
   const isMicSource = fileName.endsWith("_mic");
-  const audioSource = isMicSource ? "mic" : "speaker";
+  const audioSource = isMicSource ? "mic" : "system";
 
   // マイク音声は "Me" に固定
   const speaker = isMicSource ? "Me" : null;

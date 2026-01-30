@@ -432,6 +432,8 @@ export const tasks = sqliteTable("tasks", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   date: text("date").notNull(), // YYYY-MM-DD
   slackMessageId: integer("slack_message_id"), // FK to slack_messages (nullable for manual tasks)
+  githubCommentId: integer("github_comment_id"), // FK to github_comments
+  memoId: integer("memo_id"), // FK to memos
   promptImprovementId: integer("prompt_improvement_id"), // FK to prompt_improvements (for prompt-improvement type)
   projectId: integer("project_id"), // FK to projects (nullable for Slack/Memo tasks)
   sourceType: text("source_type", {

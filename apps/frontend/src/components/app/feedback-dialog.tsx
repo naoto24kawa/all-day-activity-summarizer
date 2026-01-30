@@ -1,6 +1,6 @@
 import type { InterpretIssueType, SegmentFeedbackResponse } from "@repo/types";
 import { BookPlus, Check, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -95,6 +95,25 @@ export function FeedbackDialog({ open, rating, onSubmit, onCancel }: FeedbackDia
       setRegisteringTerms(false);
     }
   };
+
+  // Command+Enter (Mac) / Ctrl+Enter (Windows) で送信
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (phase === "input" && !submitting) {
+          handleSubmit();
+        } else if (phase === "suggestions" && !registeringTerms) {
+          handleRegisterTerms();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
 
   const handleSkipTerms = () => {
     handleClose();

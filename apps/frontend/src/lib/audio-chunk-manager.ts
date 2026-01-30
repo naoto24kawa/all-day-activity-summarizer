@@ -2,7 +2,7 @@ import type { BrowserRecordingChunkMetadata, BrowserRecordingChunkResponse } fro
 import { postFormDataAdasApi } from "./adas-api";
 import { getDateString } from "./date";
 
-export type AudioSourceType = "browser-mic" | "browser-system";
+export type AudioSourceType = "mic" | "system";
 
 export interface ChunkManagerOptions {
   /** チャンク分割間隔(ミリ秒) */

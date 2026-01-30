@@ -54,7 +54,7 @@ export async function processChunkComplete(
   const endTime = new Date(startTime.getTime() + config.audio.chunkDurationMinutes * 60 * 1000);
 
   // マイク音声は "Me" に固定
-  const speaker = audioSource === "browser-mic" ? "Me" : null;
+  const speaker = audioSource === "mic" ? "Me" : null;
 
   // セグメント単位で保存
   if (result.segments.length > 0) {

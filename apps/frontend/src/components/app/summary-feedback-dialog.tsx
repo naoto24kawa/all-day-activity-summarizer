@@ -1,5 +1,5 @@
 import type { FeedbackRating, SummaryIssueType } from "@repo/types";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -66,6 +66,21 @@ export function SummaryFeedbackDialog({
       prev.includes(issue) ? prev.filter((i) => i !== issue) : [...prev, issue],
     );
   };
+
+  // Command+Enter (Mac) / Ctrl+Enter (Windows) で送信
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        handleSubmit();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
 
   const getRatingLabel = () => {
     switch (rating) {

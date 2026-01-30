@@ -260,7 +260,7 @@ export interface BrowserRecordingChunkMetadata {
   /** 録音終了時刻 (ISO8601) */
   endTime: string;
   /** 音声ソース種別 */
-  audioSource: "browser-mic" | "browser-system";
+  audioSource: "mic" | "system";
   /** 日付 (YYYY-MM-DD) */
   date: string;
 }

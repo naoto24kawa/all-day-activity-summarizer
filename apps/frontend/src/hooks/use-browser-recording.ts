@@ -125,7 +125,7 @@ export function useBrowserRecording(): UseBrowserRecordingReturn {
 
       // ChunkManager セットアップ
       micChunkManagerRef.current = new AudioChunkManager({
-        audioSource: "browser-mic",
+        audioSource: "mic",
         onChunkSent: (metadata: BrowserRecordingChunkMetadata) => {
           setState((prev) => ({
             ...prev,
@@ -213,7 +213,7 @@ export function useBrowserRecording(): UseBrowserRecordingReturn {
 
       // ChunkManager セットアップ
       systemChunkManagerRef.current = new AudioChunkManager({
-        audioSource: "browser-system",
+        audioSource: "system",
         onChunkSent: (metadata: BrowserRecordingChunkMetadata) => {
           setState((prev) => ({
             ...prev,

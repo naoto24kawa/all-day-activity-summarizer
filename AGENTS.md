@@ -45,6 +45,16 @@ AI アシスタント向け共通ドキュメント。常に日本語で回答�
 - `noNonNullAssertion`: 非 null アサーション使用
 - `useExhaustiveDependencies`: 依存配列不足
 
+## UI/UX 実装方針
+
+### キーボードショートカット
+
+| 操作 | ショートカット | 備考 |
+|-----|---------------|------|
+| モーダルのOKボタン | `Cmd/Ctrl+Enter` | 送信/確定/登録など |
+
+詳細な実装パターンは [docs/development.md](docs/development.md) を参照。
+
 ## 重要な制約事項
 
 - **TypeScript strict モード必須**: Hono RPC に必要

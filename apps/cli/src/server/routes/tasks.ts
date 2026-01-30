@@ -132,6 +132,75 @@ export function createTasksRouter(db: AdasDatabase) {
   });
 
   /**
+   * GET /api/tasks/:id/ai-text
+   *
+   * AIに渡すためのテキストを返す
+   * - タイトルと詳細をMarkdown形式で
+   * - 完了用のAPIコールバックURLを含む
+   */
+  router.get("/:id/ai-text", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    // ベースURL取得 (リクエストから)
+    const url = new URL(c.req.url);
+    const baseUrl = `${url.protocol}//${url.host}`;
+
+    // AIに渡すテキストを構築
+    let text = `## ${task.title}`;
+    if (task.description) {
+      text += `\n\n${task.description}`;
+    }
+    text += "\n\n---\n";
+    text += `タスク完了時は以下を実行してください:\n`;
+    text += `\`\`\`bash\n`;
+    text += `curl -X POST ${baseUrl}/api/tasks/${task.id}/complete\n`;
+    text += `\`\`\``;
+
+    return c.text(text);
+  });
+
+  /**
+   * POST /api/tasks/:id/complete
+   *
+   * タスクを完了にする (シンプルなエンドポイント)
+   */
+  router.post("/:id/complete", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const existing = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+
+    if (!existing) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    const now = new Date().toISOString();
+    const result = db
+      .update(schema.tasks)
+      .set({
+        status: "completed",
+        completedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(schema.tasks.id, id))
+      .returning()
+      .get();
+
+    return c.json({ message: "Task completed", task: result });
+  });
+
+  /**
    * PATCH /api/tasks/:id
    *
    * タスクのステータス更新
@@ -481,25 +550,34 @@ export function createTasksRouter(db: AdasDatabase) {
       return c.json({ extracted: 0, tasks: [] });
     }
 
+    // 既に抽出済みのコメントIDを除外
+    const existingTasks = db
+      .select({ githubCommentId: schema.tasks.githubCommentId })
+      .from(schema.tasks)
+      .where(
+        inArray(
+          schema.tasks.githubCommentId,
+          comments.map((c) => c.id),
+        ),
+      )
+      .all();
+
+    const existingCommentIds = new Set(existingTasks.map((t) => t.githubCommentId));
+    const targetComments = comments.filter((c) => !existingCommentIds.has(c.id));
+
+    if (targetComments.length === 0) {
+      return c.json({ extracted: 0, tasks: [], message: "All comments already processed" });
+    }
+
     // Few-shot examples を構築
     const fewShotExamples = buildFewShotExamples(db);
 
     // プロンプト読み込み
     const systemPrompt = readFileSync(getPromptFilePath("task-extract"), "utf-8");
 
-    // 既存タスクのタイトルを取得 (重複チェック用)
-    const existingTaskTitles = new Set(
-      db
-        .select({ title: schema.tasks.title })
-        .from(schema.tasks)
-        .where(eq(schema.tasks.date, date))
-        .all()
-        .map((t) => t.title),
-    );
-
     const createdTasks = [];
 
-    for (const comment of comments) {
+    for (const comment of targetComments) {
       // プロジェクト紐付け (repoOwner/repoName から)
       const projectId = findOrCreateProjectByGitHub(db, comment.repoOwner, comment.repoName);
 
@@ -516,16 +594,12 @@ export function createTasksRouter(db: AdasDatabase) {
 
         if (parsed.tasks.length > 0) {
           for (const extractedTask of parsed.tasks) {
-            // 重複チェック
-            if (existingTaskTitles.has(extractedTask.title)) {
-              continue;
-            }
-
             const task = db
               .insert(schema.tasks)
               .values({
                 date,
                 slackMessageId: null,
+                githubCommentId: comment.id,
                 projectId,
                 sourceType: "github-comment",
                 title: extractedTask.title,
@@ -540,7 +614,6 @@ export function createTasksRouter(db: AdasDatabase) {
               .get();
 
             createdTasks.push(task);
-            existingTaskTitles.add(extractedTask.title);
           }
         }
       } catch (error) {
@@ -571,25 +644,34 @@ export function createTasksRouter(db: AdasDatabase) {
       return c.json({ extracted: 0, tasks: [] });
     }
 
+    // 既に抽出済みのメモIDを除外
+    const existingTasks = db
+      .select({ memoId: schema.tasks.memoId })
+      .from(schema.tasks)
+      .where(
+        inArray(
+          schema.tasks.memoId,
+          memos.map((m) => m.id),
+        ),
+      )
+      .all();
+
+    const existingMemoIds = new Set(existingTasks.map((t) => t.memoId));
+    const targetMemos = memos.filter((m) => !existingMemoIds.has(m.id));
+
+    if (targetMemos.length === 0) {
+      return c.json({ extracted: 0, tasks: [], message: "All memos already processed" });
+    }
+
     // Few-shot examples を構築
     const fewShotExamples = buildFewShotExamples(db);
 
     // プロンプト読み込み
     const systemPrompt = readFileSync(getPromptFilePath("task-extract"), "utf-8");
 
-    // 既存タスクのタイトルを取得 (重複チェック用)
-    const existingTaskTitles = new Set(
-      db
-        .select({ title: schema.tasks.title })
-        .from(schema.tasks)
-        .where(eq(schema.tasks.date, date))
-        .all()
-        .map((t) => t.title),
-    );
-
     const createdTasks = [];
 
-    for (const memo of memos) {
+    for (const memo of targetMemos) {
       const userPrompt = buildMemoPrompt(memo, fewShotExamples);
 
       try {
@@ -603,16 +685,12 @@ export function createTasksRouter(db: AdasDatabase) {
 
         if (parsed.tasks.length > 0) {
           for (const extractedTask of parsed.tasks) {
-            // 重複チェック
-            if (existingTaskTitles.has(extractedTask.title)) {
-              continue;
-            }
-
             const task = db
               .insert(schema.tasks)
               .values({
                 date,
                 slackMessageId: null,
+                memoId: memo.id,
                 sourceType: "memo",
                 title: extractedTask.title,
                 description: extractedTask.description ?? null,
@@ -624,7 +702,6 @@ export function createTasksRouter(db: AdasDatabase) {
               .get();
 
             createdTasks.push(task);
-            existingTaskTitles.add(extractedTask.title);
           }
         }
       } catch (error) {
@@ -635,6 +712,129 @@ export function createTasksRouter(db: AdasDatabase) {
     return c.json({
       extracted: createdTasks.length,
       tasks: createdTasks,
+    });
+  });
+
+  /**
+   * POST /api/tasks/:id/accept
+   *
+   * タスクを承認
+   */
+  router.post("/:id/accept", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const existing = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!existing) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    const now = new Date().toISOString();
+    const result = db
+      .update(schema.tasks)
+      .set({
+        status: "accepted",
+        acceptedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(schema.tasks.id, id))
+      .returning()
+      .get();
+
+    return c.json(result);
+  });
+
+  /**
+   * POST /api/tasks/:id/reject
+   *
+   * タスクを却下
+   * Body: { reason?: string }
+   */
+  router.post("/:id/reject", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const body = await c.req.json<{ reason?: string }>().catch(() => ({ reason: undefined }));
+
+    const existing = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!existing) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    const now = new Date().toISOString();
+    const result = db
+      .update(schema.tasks)
+      .set({
+        status: "rejected",
+        rejectedAt: now,
+        rejectReason: body.reason ?? null,
+        updatedAt: now,
+      })
+      .where(eq(schema.tasks.id, id))
+      .returning()
+      .get();
+
+    return c.json(result);
+  });
+
+  /**
+   * PATCH /api/tasks/batch
+   *
+   * 一括ステータス更新
+   * Body: { ids: number[], status: TaskStatus, reason?: string }
+   */
+  router.patch("/batch", async (c) => {
+    const body = await c.req.json<{
+      ids: number[];
+      status: TaskStatus;
+      reason?: string;
+    }>();
+
+    if (!body.ids || body.ids.length === 0) {
+      return c.json({ error: "ids is required" }, 400);
+    }
+
+    if (!body.status) {
+      return c.json({ error: "status is required" }, 400);
+    }
+
+    const now = new Date().toISOString();
+    const updates: Record<string, unknown> = {
+      status: body.status,
+      updatedAt: now,
+    };
+
+    if (body.status === "accepted") {
+      updates.acceptedAt = now;
+    } else if (body.status === "rejected") {
+      updates.rejectedAt = now;
+      if (body.reason) {
+        updates.rejectReason = body.reason;
+      }
+    } else if (body.status === "completed") {
+      updates.completedAt = now;
+    }
+
+    const results = [];
+    for (const id of body.ids) {
+      const result = db
+        .update(schema.tasks)
+        .set(updates)
+        .where(eq(schema.tasks.id, id))
+        .returning()
+        .get();
+      if (result) {
+        results.push(result);
+      }
+    }
+
+    return c.json({
+      updated: results.length,
+      tasks: results,
     });
   });
 

@@ -1,5 +1,64 @@
 # 開発ワークフロー
 
+## UI/UX 実装方針
+
+### キーボードショートカット
+
+**モーダル/ダイアログのOKボタン**
+
+すべてのモーダル/ダイアログでは、OKボタン(送信/確定/登録など)を `Command+Enter` (Mac) / `Ctrl+Enter` (Windows) で実行できるようにする。
+
+**実装パターン**:
+
+```tsx
+import { useEffect, useState } from "react";
+
+function MyDialog({ open, onSubmit, onCancel }) {
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      await onSubmit();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Command+Enter (Mac) / Ctrl+Enter (Windows) で送信
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (!submitting) {
+          handleSubmit();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
+
+  // ... render
+}
+```
+
+**対応済みコンポーネント**:
+
+| コンポーネント | ショートカット | 実行アクション |
+|---------------|---------------|---------------|
+| `feedback-dialog.tsx` | `Cmd/Ctrl+Enter` | フィードバック送信 / 用語登録 |
+| `summary-feedback-dialog.tsx` | `Cmd/Ctrl+Enter` | フィードバック送信 |
+| `evaluator-feedback-dialog.tsx` | `Cmd/Ctrl+Enter` | フィードバック送信 |
+
+**注意事項**:
+- `useEffect` の依存配列は省略(レンダリングごとに再登録)
+- `open` が false の場合は早期リターンでリスナーを登録しない
+- 送信中(`submitting`)の場合は重複実行を防止
+
 ## 開発コマンド
 
 ```bash

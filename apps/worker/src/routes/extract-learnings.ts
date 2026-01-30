@@ -3,7 +3,7 @@ import type { LearningCategory, LearningSourceType } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
 
-const EXTRACT_MODEL = "haiku";
+const EXTRACT_MODEL = "sonnet";
 
 interface UserProfileContext {
   experienceYears?: number;
