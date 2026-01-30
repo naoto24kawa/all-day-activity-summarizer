@@ -2,6 +2,7 @@ import { getPromptFilePath, runClaude } from "@repo/core";
 import type { RpcEvaluateRequest, RpcEvaluateResponse } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
+import { withProcessingLog } from "../utils/log-processing.js";
 
 const EVALUATOR_MODEL = "haiku";
 
@@ -16,7 +17,19 @@ export function createEvaluateRouter() {
         return c.json({ error: "text and segments are required" }, 400);
       }
 
-      const result = await evaluateWithClaude(body.text, body.segments);
+      const result = await withProcessingLog(
+        "evaluate",
+        EVALUATOR_MODEL,
+        () => evaluateWithClaude(body.text, body.segments),
+        (res) => ({
+          inputSize: body.segments.length,
+          metadata: {
+            judgment: res.judgment,
+            hallucinationCount:
+              res.segmentEvaluations?.filter((s) => s.judgment === "hallucination").length ?? 0,
+          },
+        }),
+      );
       return c.json(result);
     } catch (err) {
       consola.error("[worker/evaluate] Error:", err);

@@ -4,13 +4,14 @@
  * Slack メッセージから抽出したタスクの表示・管理
  */
 
-import type {
-  Project,
-  SuggestCompletionsResponse,
-  Task,
-  TaskCompletionSuggestion,
-  TaskSourceType,
-  TaskStatus,
+import {
+  isApprovalOnlyTask,
+  type Project,
+  type SuggestCompletionsResponse,
+  type Task,
+  type TaskCompletionSuggestion,
+  type TaskSourceType,
+  type TaskStatus,
 } from "@repo/types";
 import {
   AlertTriangle,
@@ -1034,22 +1035,11 @@ function TaskItem({
                   </Badge>
                 )}
               </div>
-              {(task.dueDate || projectName) && (
+              {task.dueDate && (
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  {task.dueDate && (
-                    <Badge variant="outline" className="text-xs">
-                      Due: {task.dueDate}
-                    </Badge>
-                  )}
-                  {projectName && (
-                    <Badge
-                      variant="outline"
-                      className="text-xs bg-blue-50 border-blue-200 dark:bg-blue-950"
-                    >
-                      <FolderGit2 className="mr-1 h-3 w-3" />
-                      {projectName}
-                    </Badge>
-                  )}
+                  <Badge variant="outline" className="text-xs">
+                    Due: {task.dueDate}
+                  </Badge>
                 </div>
               )}
             </div>
@@ -1115,6 +1105,42 @@ function TaskItem({
               </DropdownMenuContent>
             </DropdownMenu>
 
+            {/* プロジェクト変更 */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={`gap-1 ${projectName ? "text-blue-500 border-blue-200" : ""}`}
+                >
+                  <FolderGit2 className="h-3 w-3" />
+                  {projectName || "プロジェクト"}
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                {projects.map((project) => (
+                  <DropdownMenuItem
+                    key={project.id}
+                    onClick={() => onUpdateTask(task.id, { projectId: project.id })}
+                    className={task.projectId === project.id ? "bg-accent" : ""}
+                  >
+                    <FolderGit2 className="mr-2 h-4 w-4" />
+                    {project.name}
+                  </DropdownMenuItem>
+                ))}
+                {task.projectId && (
+                  <DropdownMenuItem
+                    onClick={() => onUpdateTask(task.id, { projectId: null })}
+                    className="text-muted-foreground"
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    プロジェクト解除
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             {/* 承認・修正して承認・却下ボタン (承認待ちのみ) */}
             {task.status === "pending" && (
               <>
@@ -1141,66 +1167,68 @@ function TaskItem({
               </>
             )}
 
-            {/* 進行状態プルダウン (承認済み以降のみ) */}
-            {task.status !== "pending" && task.status !== "rejected" && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={`gap-1 ${
-                      task.status === "accepted"
-                        ? ""
-                        : task.status === "in_progress"
-                          ? "border-green-200 text-green-600"
-                          : task.status === "paused"
-                            ? "border-yellow-200 text-yellow-600"
-                            : "border-gray-200 text-gray-600"
-                    }`}
-                  >
-                    {task.status === "accepted" && <Circle className="h-3 w-3" />}
-                    {task.status === "in_progress" && <Play className="h-3 w-3" />}
-                    {task.status === "paused" && <Pause className="h-3 w-3" />}
-                    {task.status === "completed" && <CheckCircle2 className="h-3 w-3" />}
-                    {task.status === "accepted" && "未着手"}
-                    {task.status === "in_progress" && "進行中"}
-                    {task.status === "paused" && "中断"}
-                    {task.status === "completed" && "完了"}
-                    <ChevronDown className="h-3 w-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  <DropdownMenuItem
-                    onClick={() => onUpdateTask(task.id, { status: "accepted" })}
-                    className={task.status === "accepted" ? "bg-accent" : ""}
-                  >
-                    <Circle className="mr-2 h-4 w-4" />
-                    未着手
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => onUpdateTask(task.id, { status: "in_progress" })}
-                    className={task.status === "in_progress" ? "bg-accent" : ""}
-                  >
-                    <Play className="mr-2 h-4 w-4 text-green-500" />
-                    進行中
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => onUpdateTask(task.id, { status: "paused" })}
-                    className={task.status === "paused" ? "bg-accent" : ""}
-                  >
-                    <Pause className="mr-2 h-4 w-4 text-yellow-500" />
-                    中断
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => onUpdateTask(task.id, { status: "completed" })}
-                    className={task.status === "completed" ? "bg-accent" : ""}
-                  >
-                    <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
-                    完了
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+            {/* 進行状態プルダウン (承認済み以降のみ、承認のみタスクは除く) */}
+            {task.status !== "pending" &&
+              task.status !== "rejected" &&
+              !isApprovalOnlyTask(task.sourceType) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`gap-1 ${
+                        task.status === "accepted"
+                          ? ""
+                          : task.status === "in_progress"
+                            ? "border-green-200 text-green-600"
+                            : task.status === "paused"
+                              ? "border-yellow-200 text-yellow-600"
+                              : "border-gray-200 text-gray-600"
+                      }`}
+                    >
+                      {task.status === "accepted" && <Circle className="h-3 w-3" />}
+                      {task.status === "in_progress" && <Play className="h-3 w-3" />}
+                      {task.status === "paused" && <Pause className="h-3 w-3" />}
+                      {task.status === "completed" && <CheckCircle2 className="h-3 w-3" />}
+                      {task.status === "accepted" && "未着手"}
+                      {task.status === "in_progress" && "進行中"}
+                      {task.status === "paused" && "中断"}
+                      {task.status === "completed" && "完了"}
+                      <ChevronDown className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem
+                      onClick={() => onUpdateTask(task.id, { status: "accepted" })}
+                      className={task.status === "accepted" ? "bg-accent" : ""}
+                    >
+                      <Circle className="mr-2 h-4 w-4" />
+                      未着手
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => onUpdateTask(task.id, { status: "in_progress" })}
+                      className={task.status === "in_progress" ? "bg-accent" : ""}
+                    >
+                      <Play className="mr-2 h-4 w-4 text-green-500" />
+                      進行中
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => onUpdateTask(task.id, { status: "paused" })}
+                      className={task.status === "paused" ? "bg-accent" : ""}
+                    >
+                      <Pause className="mr-2 h-4 w-4 text-yellow-500" />
+                      中断
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => onUpdateTask(task.id, { status: "completed" })}
+                      className={task.status === "completed" ? "bg-accent" : ""}
+                    >
+                      <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
+                      完了
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
 
             {/* 補助アクション */}
             <Button variant="outline" size="sm" onClick={copyToClipboard}>

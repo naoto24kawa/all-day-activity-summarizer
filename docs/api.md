@@ -68,12 +68,16 @@
 | メソッド | パス | 説明 |
 |---------|------|------|
 | GET | `/api/tasks?date=YYYY-MM-DD&status=pending` | タスク一覧 |
+| GET | `/api/tasks/for-ai` | AI向けタスク一覧 (Markdown、ブロック情報付き) |
 | GET | `/api/tasks/stats` | タスク統計 |
+| GET | `/api/tasks/:id/dependencies` | タスク依存関係取得 |
+| POST | `/api/tasks/:id/dependencies` | 依存関係を手動追加 |
+| DELETE | `/api/tasks/dependencies/:depId` | 依存関係を削除 |
 | PATCH | `/api/tasks/:id` | タスク更新 (承認/却下/完了) |
 | POST | `/api/tasks/:id/start` | タスクを実行中にする |
 | POST | `/api/tasks/:id/pause` | タスクを中断する |
 | POST | `/api/tasks/:id/complete` | タスクを完了にする |
-| POST | `/api/tasks/:id/accept` | タスクを承認する |
+| POST | `/api/tasks/:id/accept` | タスクを承認する (※1) |
 | POST | `/api/tasks/:id/reject` | タスクを却下する |
 | POST | `/api/tasks/extract` | Slack メッセージからタスク抽出 |
 | POST | `/api/tasks/extract-github` | GitHub Items からタスク抽出 (※) |
@@ -83,6 +87,70 @@
 | DELETE | `/api/tasks/:id` | タスク削除 |
 
 ※ `github.username` の設定が必要 (自分宛てのタスクのみ抽出)
+
+※1 承認のみタスク (prompt-improvement, profile-suggestion, vocabulary) は承認時に自動で completed になる
+
+#### タスク依存関係 API
+
+**GET /api/tasks/:id/dependencies**
+
+タスクの依存関係を取得。
+
+```json
+// レスポンス
+{
+  "blockedBy": [
+    {
+      "id": 1,
+      "taskId": 5,
+      "dependsOnTaskId": 3,
+      "dependencyType": "blocks",
+      "confidence": 0.9,
+      "reason": "API実装が必要",
+      "sourceType": "auto",
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "dependsOnTask": { "id": 3, "title": "API 設計", "status": "accepted" }
+    }
+  ],
+  "blocks": [
+    {
+      "id": 2,
+      "taskId": 7,
+      "dependsOnTaskId": 5,
+      "dependencyType": "blocks",
+      "confidence": 0.8,
+      "reason": "実装完了後にテスト",
+      "sourceType": "auto",
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "blockedTask": { "id": 7, "title": "テスト作成", "status": "pending" }
+    }
+  ]
+}
+```
+
+**POST /api/tasks/:id/dependencies**
+
+依存関係を手動で追加。
+
+```json
+// リクエスト
+{
+  "dependsOnTaskId": 3,
+  "dependencyType": "blocks",
+  "reason": "API実装が必要なため"
+}
+
+// レスポンス (201 Created)
+{
+  "id": 1,
+  "taskId": 5,
+  "dependsOnTaskId": 3,
+  "dependencyType": "blocks",
+  "reason": "API実装が必要なため",
+  "sourceType": "manual",
+  "createdAt": "2024-01-15T10:00:00.000Z"
+}
+```
 
 ### プロジェクト
 
@@ -95,6 +163,27 @@
 | DELETE | `/api/projects/:id` | プロジェクト削除 |
 | GET | `/api/projects/:id/stats` | プロジェクト別統計 (タスク・学び数) |
 | POST | `/api/projects/auto-detect` | Claude Code パスからプロジェクト自動検出 |
+
+### 単語帳 (Vocabulary)
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/vocabulary` | 登録済み用語一覧 |
+| POST | `/api/vocabulary` | 用語を手動追加 |
+| PUT | `/api/vocabulary/:id` | 用語を更新 |
+| DELETE | `/api/vocabulary/:id` | 用語を削除 |
+| GET | `/api/vocabulary/suggestions?status=pending` | 用語提案一覧 |
+| POST | `/api/vocabulary/extract/slack` | Slack メッセージから用語抽出 |
+| POST | `/api/vocabulary/extract/github` | GitHub から用語抽出 |
+| POST | `/api/vocabulary/extract/claude-code` | Claude Code から用語抽出 |
+| POST | `/api/vocabulary/extract/memo` | メモから用語抽出 |
+| POST | `/api/vocabulary/extract/all` | 全ソースから一括抽出 |
+
+単語帳は以下の機能で活用:
+- Whisper 初期プロンプト (認識精度向上)
+- サマリ生成 (表記揺れ防止)
+- タスク抽出 (表記揺れ防止)
+- 学び抽出 (表記揺れ防止)
 
 ### フィードバック
 

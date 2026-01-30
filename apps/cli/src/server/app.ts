@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AudioCapture } from "../audio/capture.js";
 import type { AdasConfig } from "../config.js";
+import { createAiProcessingLogsRouter } from "./routes/ai-processing-logs.js";
 import { createBrowserRecordingRouter } from "./routes/browser-recording.js";
 import { createClaudeCodeSessionsRouter } from "./routes/claude-code-sessions.js";
 import { createConfigRouter } from "./routes/config.js";
@@ -44,6 +45,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/summaries", createSummariesRouter(db));
   app.route("/api/memos", createMemosRouter(db));
   app.route("/api/evaluator-logs", createEvaluatorLogsRouter(db));
+  app.route("/api/ai-processing-logs", createAiProcessingLogsRouter(db));
   app.route("/api/feedbacks", createFeedbacksRouter(db));
   app.route("/api/feedbacks/v2", createFeedbacksV2Router(db));
   app.route("/api/segments", createSegmentFeedbackRouter(db));

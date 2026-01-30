@@ -2,6 +2,7 @@ import { getPromptFilePath, runClaude } from "@repo/core";
 import type { ExtractedTerm, RpcInterpretResponse } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
+import { withProcessingLog } from "../utils/log-processing.js";
 
 const INTERPRET_MODEL = "sonnet";
 
@@ -30,12 +31,23 @@ export function createInterpretRouter() {
         return c.json({ error: "text is required" }, 400);
       }
 
-      const result = await interpretWithClaude(
-        body.text,
-        body.speaker,
-        body.context,
-        body.feedbackExamples,
-        body.existingTerms,
+      const inputSize = body.text.length;
+      const result = await withProcessingLog(
+        "interpret",
+        INTERPRET_MODEL,
+        () =>
+          interpretWithClaude(
+            body.text,
+            body.speaker,
+            body.context,
+            body.feedbackExamples,
+            body.existingTerms,
+          ),
+        (res) => ({
+          inputSize,
+          outputSize: res.interpretedText.length,
+          metadata: { termsExtracted: res.extractedTerms?.length ?? 0 },
+        }),
       );
       return c.json(result);
     } catch (err) {

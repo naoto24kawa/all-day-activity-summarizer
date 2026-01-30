@@ -16,6 +16,7 @@ import {
   recordExtractionLog,
 } from "../utils/extraction-log.js";
 import { findProjectByPath } from "../utils/project-lookup.js";
+import { getVocabularyTerms } from "../utils/vocabulary.js";
 
 /** Map LearningSourceType to ExtractionSourceType */
 function toExtractionSourceType(sourceType: LearningSourceType): ExtractionSourceType {
@@ -143,6 +144,9 @@ export async function extractAndSaveLearningsFromContent(
 
   const { url, timeout } = config.worker;
 
+  // vocabulary を取得
+  const vocabulary = getVocabularyTerms(db);
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -156,6 +160,7 @@ export async function extractAndSaveLearningsFromContent(
         projectName: context?.projectName,
         contextInfo: context?.contextInfo,
         userProfile: context?.userProfile,
+        vocabulary,
       }),
       signal: controller.signal,
     });

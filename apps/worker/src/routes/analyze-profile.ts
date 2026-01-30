@@ -8,6 +8,7 @@ import { runClaude } from "@repo/core";
 import type { ProfileSuggestionType } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
+import { withProcessingLog } from "../utils/log-processing.js";
 
 const ANALYZE_MODEL = "haiku";
 
@@ -62,7 +63,20 @@ export function createAnalyzeProfileRouter() {
         return c.json({ error: "currentProfile and activityData are required" }, 400);
       }
 
-      const result = await analyzeProfileWithClaude(body.currentProfile, body.activityData);
+      const totalItems =
+        body.activityData.claudeCodeSessions.length +
+        body.activityData.learnings.length +
+        body.activityData.githubItems.length;
+
+      const result = await withProcessingLog(
+        "analyze-profile",
+        ANALYZE_MODEL,
+        () => analyzeProfileWithClaude(body.currentProfile, body.activityData),
+        (res) => ({
+          inputSize: totalItems,
+          outputSize: res.suggestions.length,
+        }),
+      );
       return c.json(result);
     } catch (err) {
       consola.error("[worker/analyze-profile] Error:", err);

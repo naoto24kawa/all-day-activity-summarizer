@@ -33,6 +33,7 @@ export interface Memo {
   date: string;
   content: string;
   tags: string | null; // JSON array: ["TODO", "重要"]
+  projectId: number | null; // FK to projects
   createdAt: string;
 }
 
@@ -538,6 +539,18 @@ export type TaskSourceType =
   | "profile-suggestion"
   | "vocabulary";
 
+/** 承認のみで完了するタスクのソース種別 */
+export const APPROVAL_ONLY_SOURCE_TYPES: TaskSourceType[] = [
+  "prompt-improvement",
+  "profile-suggestion",
+  "vocabulary",
+];
+
+/** 承認のみで完了するタスクかどうかを判定 */
+export function isApprovalOnlyTask(sourceType: TaskSourceType): boolean {
+  return APPROVAL_ONLY_SOURCE_TYPES.includes(sourceType);
+}
+
 /** タスクステータス */
 export type TaskStatus =
   | "pending"
@@ -576,6 +589,9 @@ export interface Task {
   pauseReason: string | null;
   originalTitle: string | null; // 修正前のタイトル (修正して承認した場合のみ)
   originalDescription: string | null; // 修正前の説明 (修正して承認した場合のみ)
+  similarToTitle: string | null; // 類似する過去タスクのタイトル
+  similarToStatus: "completed" | "rejected" | null; // 類似タスクのステータス
+  similarToReason: string | null; // 類似と判断した理由
   createdAt: string;
   updatedAt: string;
 }
@@ -609,6 +625,63 @@ export interface TaskStats {
   in_progress: number;
   paused: number;
   completed: number;
+}
+
+// ========== Task Dependency 型定義 ==========
+
+/** 依存関係タイプ */
+export type TaskDependencyType = "blocks" | "related";
+
+/** 依存関係ソースタイプ */
+export type TaskDependencySourceType = "auto" | "manual";
+
+/** タスク依存関係 (DB レコード) */
+export interface TaskDependency {
+  id: number;
+  taskId: number; // ブロックされる側 (後続タスク)
+  dependsOnTaskId: number; // ブロッカー (先行タスク)
+  dependencyType: TaskDependencyType;
+  confidence: number | null;
+  reason: string | null;
+  sourceType: TaskDependencySourceType;
+  createdAt: string;
+}
+
+/** 抽出されたタスク依存関係 (プロンプト出力用) */
+export interface ExtractedTaskDependency {
+  type: TaskDependencyType;
+  taskTitle: string; // 依存先タスクのタイトル (同バッチ内タスクまたは既存タスクのタイトル)
+  reason: string;
+  confidence: number;
+}
+
+/** タスク依存関係作成リクエスト */
+export interface CreateTaskDependencyRequest {
+  dependsOnTaskId: number;
+  dependencyType?: TaskDependencyType;
+  reason?: string;
+}
+
+/** タスク依存関係レスポンス (タスク情報付き) */
+export interface TaskDependencyWithTask extends TaskDependency {
+  dependsOnTask?: {
+    id: number;
+    title: string;
+    status: TaskStatus;
+  };
+  blockedTask?: {
+    id: number;
+    title: string;
+    status: TaskStatus;
+  };
+}
+
+/** タスク依存関係一覧レスポンス */
+export interface TaskDependenciesResponse {
+  /** このタスクをブロックしているタスク (先行タスク) */
+  blockedBy: TaskDependencyWithTask[];
+  /** このタスクがブロックしているタスク (後続タスク) */
+  blocks: TaskDependencyWithTask[];
 }
 
 // ========== タスク完了検知 型定義 ==========
@@ -760,4 +833,48 @@ export interface AutoDetectProjectsResponse {
 export interface ProjectStats {
   tasksCount: number;
   learningsCount: number;
+}
+
+// ========== AI Processing Log 型定義 ==========
+
+/** AI処理ログの処理タイプ */
+export type AiProcessType =
+  | "transcribe"
+  | "evaluate"
+  | "interpret"
+  | "extract-learnings"
+  | "summarize"
+  | "check-completion"
+  | "extract-terms"
+  | "analyze-profile";
+
+/** AI処理ログのステータス */
+export type AiProcessStatus = "success" | "error";
+
+/** AI処理ログ */
+export interface AiProcessingLog {
+  id: number;
+  date: string;
+  processType: AiProcessType;
+  status: AiProcessStatus;
+  model: string | null;
+  inputSize: number | null;
+  outputSize: number | null;
+  durationMs: number;
+  errorMessage: string | null;
+  metadata: string | null; // JSON
+  createdAt: string;
+}
+
+/** AI処理ログ記録リクエスト */
+export interface CreateAiProcessingLogRequest {
+  date: string;
+  processType: AiProcessType;
+  status: AiProcessStatus;
+  model?: string;
+  inputSize?: number;
+  outputSize?: number;
+  durationMs: number;
+  errorMessage?: string;
+  metadata?: Record<string, unknown>;
 }

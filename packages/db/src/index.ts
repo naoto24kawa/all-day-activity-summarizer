@@ -35,6 +35,7 @@ export type {
   NewSummary,
   NewSummaryQueueJob,
   NewTask,
+  NewTaskDependency,
   NewTranscriptionSegment,
   NewUserProfile,
   NewVocabularySuggestion,
@@ -47,6 +48,7 @@ export type {
   Summary,
   SummaryQueueJob,
   Task,
+  TaskDependency,
   TranscriptionSegment,
   UserProfile,
   VocabularySuggestion,
@@ -666,6 +668,12 @@ export function createDatabase(dbPath: string) {
   // Migration: add tags column to memos
   addColumnIfNotExists(sqlite, "memos", "tags", "TEXT");
 
+  // Migration: add project_id column to memos
+  addColumnIfNotExists(sqlite, "memos", "project_id", "INTEGER");
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS idx_memos_project ON memos(project_id);
+  `);
+
   // Migration: create user_profile table
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS user_profile (
@@ -1024,6 +1032,50 @@ export function createDatabase(dbPath: string) {
   } catch {
     // Migration already applied or fresh DB
   }
+
+  // Migration: add similar_to_* columns to tasks (for duplicate task detection)
+  addColumnIfNotExists(sqlite, "tasks", "similar_to_title", "TEXT");
+  addColumnIfNotExists(sqlite, "tasks", "similar_to_status", "TEXT");
+  addColumnIfNotExists(sqlite, "tasks", "similar_to_reason", "TEXT");
+
+  // Migration: create task_dependencies table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS task_dependencies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      depends_on_task_id INTEGER NOT NULL,
+      dependency_type TEXT NOT NULL DEFAULT 'blocks' CHECK(dependency_type IN ('blocks', 'related')),
+      confidence REAL,
+      reason TEXT,
+      source_type TEXT NOT NULL DEFAULT 'auto' CHECK(source_type IN ('auto', 'manual')),
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_task_dependencies_task ON task_dependencies(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on ON task_dependencies(depends_on_task_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_task_dependencies_unique ON task_dependencies(task_id, depends_on_task_id);
+  `);
+
+  // Migration: create ai_processing_logs table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS ai_processing_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      process_type TEXT NOT NULL CHECK(process_type IN ('transcribe', 'evaluate', 'interpret', 'extract-learnings', 'summarize', 'check-completion', 'extract-terms', 'analyze-profile')),
+      status TEXT NOT NULL CHECK(status IN ('success', 'error')),
+      model TEXT,
+      input_size INTEGER,
+      output_size INTEGER,
+      duration_ms INTEGER NOT NULL,
+      error_message TEXT,
+      metadata TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_processing_logs_date ON ai_processing_logs(date);
+    CREATE INDEX IF NOT EXISTS idx_ai_processing_logs_type ON ai_processing_logs(process_type);
+    CREATE INDEX IF NOT EXISTS idx_ai_processing_logs_status ON ai_processing_logs(status);
+  `);
 
   return db;
 }

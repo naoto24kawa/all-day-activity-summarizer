@@ -9,6 +9,7 @@ import { runClaude } from "@repo/core";
 import type { CheckCompletionRequest, CheckCompletionResponse } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
+import { withProcessingLog } from "../utils/log-processing.js";
 
 const COMPLETION_CHECK_MODEL = "sonnet";
 
@@ -23,7 +24,19 @@ export function createCheckCompletionRouter() {
         return c.json({ error: "task.title, context, and source are required" }, 400);
       }
 
-      const result = await checkCompletionWithClaude(body);
+      const result = await withProcessingLog(
+        "check-completion",
+        COMPLETION_CHECK_MODEL,
+        () => checkCompletionWithClaude(body),
+        (res) => ({
+          inputSize: body.context.length,
+          metadata: {
+            source: body.source,
+            completed: res.completed,
+            confidence: res.confidence,
+          },
+        }),
+      );
       return c.json(result);
     } catch (err) {
       consola.error("[worker/check-completion] Error:", err);

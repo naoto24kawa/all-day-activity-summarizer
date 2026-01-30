@@ -36,6 +36,7 @@ export const memos = sqliteTable("memos", {
   date: text("date").notNull(), // YYYY-MM-DD
   content: text("content").notNull(),
   tags: text("tags"), // JSON array: ["TODO", "重要"]
+  projectId: integer("project_id"), // FK to projects (nullable)
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -504,6 +505,9 @@ export const tasks = sqliteTable("tasks", {
   pauseReason: text("pause_reason"), // 中断理由
   originalTitle: text("original_title"), // 修正前のタイトル (修正して承認した場合のみ)
   originalDescription: text("original_description"), // 修正前の説明 (修正して承認した場合のみ)
+  similarToTitle: text("similar_to_title"), // 類似する過去タスクのタイトル
+  similarToStatus: text("similar_to_status", { enum: ["completed", "rejected"] }), // 類似タスクのステータス
+  similarToReason: text("similar_to_reason"), // 類似と判断した理由
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -643,3 +647,65 @@ export const projects = sqliteTable("projects", {
 
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// AI Processing Logs (AI処理ログ)
+// ---------------------------------------------------------------------------
+
+export const aiProcessingLogs = sqliteTable("ai_processing_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  date: text("date").notNull(), // YYYY-MM-DD
+  processType: text("process_type", {
+    enum: [
+      "transcribe",
+      "evaluate",
+      "interpret",
+      "extract-learnings",
+      "summarize",
+      "check-completion",
+      "extract-terms",
+      "analyze-profile",
+    ],
+  }).notNull(),
+  status: text("status", { enum: ["success", "error"] }).notNull(),
+  model: text("model"), // "whisperx" | "haiku" | "sonnet"
+  inputSize: integer("input_size"), // 入力文字数/セグメント数
+  outputSize: integer("output_size"), // 出力文字数/件数
+  durationMs: integer("duration_ms").notNull(),
+  errorMessage: text("error_message"),
+  metadata: text("metadata"), // JSON
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type AiProcessingLog = typeof aiProcessingLogs.$inferSelect;
+export type NewAiProcessingLog = typeof aiProcessingLogs.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Task Dependencies (タスク間依存関係)
+// ---------------------------------------------------------------------------
+
+export const taskDependencies = sqliteTable("task_dependencies", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  taskId: integer("task_id").notNull(), // ブロックされる側 (後続タスク)
+  dependsOnTaskId: integer("depends_on_task_id").notNull(), // ブロッカー (先行タスク)
+  dependencyType: text("dependency_type", {
+    enum: ["blocks", "related"],
+  })
+    .notNull()
+    .default("blocks"),
+  confidence: real("confidence"), // AI の確信度 (0-1)
+  reason: text("reason"), // 依存理由
+  sourceType: text("source_type", {
+    enum: ["auto", "manual"],
+  })
+    .notNull()
+    .default("auto"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type TaskDependency = typeof taskDependencies.$inferSelect;
+export type NewTaskDependency = typeof taskDependencies.$inferInsert;

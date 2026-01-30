@@ -6,6 +6,7 @@ import { useTabBadges } from "@/hooks/use-tab-badges";
 import { formatTimeJST, getTodayDateString } from "@/lib/date";
 import { TAB_GROUPS, type TabGroupId, type TabId } from "@/lib/tab-groups";
 import { ActivityFeed } from "./activity-feed";
+import { AiProcessingLogPanel } from "./ai-processing-log-panel";
 import { BrowserRecordingPanel } from "./browser-recording-panel";
 import { ClaudeCodeFeed } from "./claude-code-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
@@ -177,6 +178,7 @@ export function Dashboard() {
               </TabsContent>
               <TabsContent value="logs" className="min-h-0 flex-1 overflow-auto">
                 <div className="space-y-4">
+                  <AiProcessingLogPanel date={date} />
                   <ServerLogsPanel date={date} />
                   <EvaluatorLogPanel date={date} />
                 </div>

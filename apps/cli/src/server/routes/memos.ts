@@ -21,7 +21,12 @@ export function createMemosRouter(db: AdasDatabase) {
   });
 
   router.post("/", async (c) => {
-    const body = await c.req.json<{ content: string; date?: string; tags?: string[] }>();
+    const body = await c.req.json<{
+      content: string;
+      date?: string;
+      tags?: string[];
+      projectId?: number | null;
+    }>();
 
     if (!body.content || typeof body.content !== "string" || body.content.trim() === "") {
       return c.json({ error: "content is required" }, 400);
@@ -36,6 +41,7 @@ export function createMemosRouter(db: AdasDatabase) {
         date,
         content: body.content.trim(),
         tags,
+        projectId: body.projectId ?? null,
       })
       .returning()
       .get();
@@ -49,7 +55,11 @@ export function createMemosRouter(db: AdasDatabase) {
       return c.json({ error: "Invalid id" }, 400);
     }
 
-    const body = await c.req.json<{ content: string; tags?: string[] | null }>();
+    const body = await c.req.json<{
+      content: string;
+      tags?: string[] | null;
+      projectId?: number | null;
+    }>();
 
     if (!body.content || typeof body.content !== "string" || body.content.trim() === "") {
       return c.json({ error: "content is required" }, 400);
@@ -60,13 +70,18 @@ export function createMemosRouter(db: AdasDatabase) {
       return c.json({ error: "Memo not found" }, 404);
     }
 
-    const updateData: { content: string; tags?: string | null } = {
+    const updateData: { content: string; tags?: string | null; projectId?: number | null } = {
       content: body.content.trim(),
     };
 
     // tags が明示的に渡された場合のみ更新 (undefined なら既存値を維持)
     if (body.tags !== undefined) {
       updateData.tags = body.tags && body.tags.length > 0 ? JSON.stringify(body.tags) : null;
+    }
+
+    // projectId が明示的に渡された場合のみ更新
+    if (body.projectId !== undefined) {
+      updateData.projectId = body.projectId;
     }
 
     const result = db

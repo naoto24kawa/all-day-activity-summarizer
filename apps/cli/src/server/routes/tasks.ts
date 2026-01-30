@@ -8,13 +8,14 @@ import { readFileSync } from "node:fs";
 import { getPromptFilePath, runClaude } from "@repo/core";
 import type { AdasDatabase, SlackMessage } from "@repo/db";
 import { schema } from "@repo/db";
-import type {
-  CheckCompletionRequest,
-  CheckCompletionResponse,
-  SuggestCompletionsResponse,
-  Task,
-  TaskCompletionSuggestion,
-  TaskStatus,
+import {
+  type CheckCompletionRequest,
+  type CheckCompletionResponse,
+  isApprovalOnlyTask,
+  type SuggestCompletionsResponse,
+  type Task,
+  type TaskCompletionSuggestion,
+  type TaskStatus,
 } from "@repo/types";
 import consola from "consola";
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
@@ -24,6 +25,14 @@ import { getItemState } from "../../github/client";
 import { getTodayDateString } from "../../utils/date";
 import { hasExtractionLog, recordExtractionLog } from "../../utils/extraction-log.js";
 import { findOrCreateProjectByGitHub } from "../../utils/project-lookup.js";
+import { buildVocabularySection } from "../../utils/vocabulary.js";
+
+interface ExtractedTaskDependency {
+  type: "blocks" | "related";
+  taskTitle: string;
+  reason: string;
+  confidence: number;
+}
 
 interface ExtractedTask {
   title: string;
@@ -31,6 +40,12 @@ interface ExtractedTask {
   priority?: "high" | "medium" | "low";
   confidence?: number;
   dueDate?: string;
+  similarTo?: {
+    title: string;
+    status: "completed" | "rejected";
+    reason: string;
+  };
+  dependencies?: ExtractedTaskDependency[];
 }
 
 /**
@@ -134,8 +149,9 @@ export function createTasksRouter(db: AdasDatabase) {
    *
    * AIエージェント向けのタスク一覧 (Markdown形式)
    * - accepted 状態のタスクのみ
-   * - 優先度順にソート
+   * - 優先度順にソート (ブロックされているタスクは後回し)
    * - 各タスクにアクションURL付き
+   * - ブロック情報を表示
    *
    * Query params:
    * - date: YYYY-MM-DD (optional)
@@ -170,6 +186,57 @@ export function createTasksRouter(db: AdasDatabase) {
       .limit(limit)
       .all();
 
+    // 各タスクのブロック情報を取得
+    const taskBlockInfo = new Map<
+      number,
+      { isBlocked: boolean; blockedBy: { id: number; title: string; status: string }[] }
+    >();
+
+    for (const task of tasks) {
+      const blockedByDeps = db
+        .select()
+        .from(schema.taskDependencies)
+        .where(
+          and(
+            eq(schema.taskDependencies.taskId, task.id),
+            eq(schema.taskDependencies.dependencyType, "blocks"),
+          ),
+        )
+        .all();
+
+      const blockers: { id: number; title: string; status: string }[] = [];
+      for (const dep of blockedByDeps) {
+        const blockerTask = db
+          .select({ id: schema.tasks.id, title: schema.tasks.title, status: schema.tasks.status })
+          .from(schema.tasks)
+          .where(eq(schema.tasks.id, dep.dependsOnTaskId))
+          .get();
+
+        if (blockerTask && blockerTask.status !== "completed") {
+          blockers.push(blockerTask);
+        }
+      }
+
+      taskBlockInfo.set(task.id, {
+        isBlocked: blockers.length > 0,
+        blockedBy: blockers,
+      });
+    }
+
+    // タスクをブロック状態でソート (ブロックされていないタスクを先に)
+    const sortedTasks = [...tasks].sort((a, b) => {
+      const aBlocked = taskBlockInfo.get(a.id)?.isBlocked ?? false;
+      const bBlocked = taskBlockInfo.get(b.id)?.isBlocked ?? false;
+      if (aBlocked !== bBlocked) {
+        return aBlocked ? 1 : -1;
+      }
+      // 同じブロック状態なら優先度で比較
+      const priorityOrder = { high: 0, medium: 1, low: 2 };
+      const aPriority = priorityOrder[a.priority as keyof typeof priorityOrder] ?? 1;
+      const bPriority = priorityOrder[b.priority as keyof typeof priorityOrder] ?? 1;
+      return aPriority - bPriority;
+    });
+
     // ベースURL取得
     const url = new URL(c.req.url);
     const baseUrl = `${url.protocol}//${url.host}`;
@@ -179,16 +246,32 @@ export function createTasksRouter(db: AdasDatabase) {
     lines.push("# 未処理タスク一覧");
     lines.push("");
 
-    if (tasks.length === 0) {
+    if (sortedTasks.length === 0) {
       lines.push("現在処理すべきタスクはありません。");
       return c.text(lines.join("\n"));
     }
 
-    lines.push(`${tasks.length} 件のタスクがあります。`);
+    const blockedCount = Array.from(taskBlockInfo.values()).filter((info) => info.isBlocked).length;
+    const availableCount = sortedTasks.length - blockedCount;
+
+    lines.push(`${sortedTasks.length} 件のタスクがあります。`);
+    if (blockedCount > 0) {
+      lines.push(`(${availableCount} 件が着手可能、${blockedCount} 件がブロック中)`);
+    }
     lines.push("");
 
-    for (const task of tasks) {
-      lines.push(`## Task #${task.id}: ${task.title}`);
+    for (const task of sortedTasks) {
+      const blockInfo = taskBlockInfo.get(task.id);
+      const blockedStatus = blockInfo?.isBlocked ? " [BLOCKED]" : "";
+
+      lines.push(`## Task #${task.id}: ${task.title}${blockedStatus}`);
+
+      if (blockInfo?.isBlocked && blockInfo.blockedBy.length > 0) {
+        lines.push(
+          `ブロッカー: ${blockInfo.blockedBy.map((b) => `#${b.id} ${b.title}`).join(", ")}`,
+        );
+      }
+
       if (task.priority) {
         lines.push(`優先度: ${task.priority}`);
       }
@@ -260,6 +343,166 @@ export function createTasksRouter(db: AdasDatabase) {
     }
 
     return c.json(task);
+  });
+
+  /**
+   * GET /api/tasks/:id/dependencies
+   *
+   * タスクの依存関係を取得
+   * - blockedBy: このタスクをブロックしているタスク (先行タスク)
+   * - blocks: このタスクがブロックしているタスク (後続タスク)
+   */
+  router.get("/:id/dependencies", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    // このタスクをブロックしているタスク (taskId = id の依存関係)
+    const blockedByDeps = db
+      .select()
+      .from(schema.taskDependencies)
+      .where(eq(schema.taskDependencies.taskId, id))
+      .all();
+
+    const blockedBy = blockedByDeps.map((dep) => {
+      const dependsOnTask = db
+        .select({ id: schema.tasks.id, title: schema.tasks.title, status: schema.tasks.status })
+        .from(schema.tasks)
+        .where(eq(schema.tasks.id, dep.dependsOnTaskId))
+        .get();
+
+      return {
+        ...dep,
+        dependsOnTask: dependsOnTask ?? undefined,
+      };
+    });
+
+    // このタスクがブロックしているタスク (dependsOnTaskId = id の依存関係)
+    const blocksDeps = db
+      .select()
+      .from(schema.taskDependencies)
+      .where(eq(schema.taskDependencies.dependsOnTaskId, id))
+      .all();
+
+    const blocks = blocksDeps.map((dep) => {
+      const blockedTask = db
+        .select({ id: schema.tasks.id, title: schema.tasks.title, status: schema.tasks.status })
+        .from(schema.tasks)
+        .where(eq(schema.tasks.id, dep.taskId))
+        .get();
+
+      return {
+        ...dep,
+        blockedTask: blockedTask ?? undefined,
+      };
+    });
+
+    return c.json({ blockedBy, blocks });
+  });
+
+  /**
+   * POST /api/tasks/:id/dependencies
+   *
+   * 手動で依存関係を追加
+   * Body: { dependsOnTaskId: number, dependencyType?: "blocks" | "related", reason?: string }
+   */
+  router.post("/:id/dependencies", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const body = await c.req.json<{
+      dependsOnTaskId: number;
+      dependencyType?: "blocks" | "related";
+      reason?: string;
+    }>();
+
+    if (!body.dependsOnTaskId) {
+      return c.json({ error: "dependsOnTaskId is required" }, 400);
+    }
+
+    // タスクの存在確認
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    const dependsOnTask = db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.id, body.dependsOnTaskId))
+      .get();
+    if (!dependsOnTask) {
+      return c.json({ error: "Depends on task not found" }, 404);
+    }
+
+    // 自己参照チェック
+    if (id === body.dependsOnTaskId) {
+      return c.json({ error: "Task cannot depend on itself" }, 400);
+    }
+
+    // 既存の依存関係チェック
+    const existing = db
+      .select()
+      .from(schema.taskDependencies)
+      .where(
+        and(
+          eq(schema.taskDependencies.taskId, id),
+          eq(schema.taskDependencies.dependsOnTaskId, body.dependsOnTaskId),
+        ),
+      )
+      .get();
+
+    if (existing) {
+      return c.json({ error: "Dependency already exists" }, 409);
+    }
+
+    const dependency = db
+      .insert(schema.taskDependencies)
+      .values({
+        taskId: id,
+        dependsOnTaskId: body.dependsOnTaskId,
+        dependencyType: body.dependencyType ?? "blocks",
+        reason: body.reason ?? null,
+        sourceType: "manual",
+      })
+      .returning()
+      .get();
+
+    return c.json(dependency, 201);
+  });
+
+  /**
+   * DELETE /api/tasks/dependencies/:depId
+   *
+   * 依存関係を削除
+   */
+  router.delete("/dependencies/:depId", (c) => {
+    const depId = Number(c.req.param("depId"));
+    if (Number.isNaN(depId)) {
+      return c.json({ error: "Invalid depId" }, 400);
+    }
+
+    const existing = db
+      .select()
+      .from(schema.taskDependencies)
+      .where(eq(schema.taskDependencies.id, depId))
+      .get();
+
+    if (!existing) {
+      return c.json({ error: "Dependency not found" }, 404);
+    }
+
+    db.delete(schema.taskDependencies).where(eq(schema.taskDependencies.id, depId)).run();
+
+    return c.json({ deleted: true });
   });
 
   /**
@@ -494,13 +737,26 @@ export function createTasksRouter(db: AdasDatabase) {
     // Few-shot examples を構築 (過去の承認/却下履歴から)
     const fewShotExamples = buildFewShotExamples(db);
 
+    // vocabulary セクションを取得
+    const vocabularySection = buildVocabularySection(db);
+
+    // 過去の処理済みタスク (類似チェック用)
+    const processedTasksSection = buildProcessedTasksSection(db);
+
     // プロンプト読み込み
     const systemPrompt = readFileSync(getPromptFilePath("task-extract"), "utf-8");
 
-    const createdTasks = [];
+    const createdTasks: (typeof schema.tasks.$inferSelect)[] = [];
+    const tasksWithDeps: TaskWithDependencies[] = [];
 
+    // 1パス目: タスク保存
     for (const message of targetMessages) {
-      const userPrompt = buildUserPrompt(message, fewShotExamples);
+      const userPrompt = buildUserPrompt(
+        message,
+        fewShotExamples,
+        vocabularySection,
+        processedTasksSection,
+      );
 
       try {
         const response = await runClaude(userPrompt, {
@@ -525,12 +781,23 @@ export function createTasksRouter(db: AdasDatabase) {
                 priority: extractedTask.priority ?? null,
                 confidence: extractedTask.confidence ?? null,
                 dueDate: extractedTask.dueDate ?? null,
+                similarToTitle: extractedTask.similarTo?.title ?? null,
+                similarToStatus: extractedTask.similarTo?.status ?? null,
+                similarToReason: extractedTask.similarTo?.reason ?? null,
               })
               .returning()
               .get();
 
             createdTasks.push(task);
             extractedCount++;
+
+            // 依存関係があれば記録
+            if (extractedTask.dependencies && extractedTask.dependencies.length > 0) {
+              tasksWithDeps.push({
+                task,
+                extractedDependencies: extractedTask.dependencies,
+              });
+            }
           }
         }
         // Record extraction log (even if 0 tasks extracted)
@@ -538,6 +805,11 @@ export function createTasksRouter(db: AdasDatabase) {
       } catch (error) {
         console.error(`Failed to extract tasks from message ${message.id}:`, error);
       }
+    }
+
+    // 2パス目: 依存関係保存
+    if (tasksWithDeps.length > 0) {
+      saveDependencies(db, tasksWithDeps);
     }
 
     return c.json({
@@ -724,16 +996,29 @@ export function createTasksRouter(db: AdasDatabase) {
     // Few-shot examples を構築
     const fewShotExamples = buildFewShotExamples(db);
 
+    // vocabulary セクションを取得
+    const vocabularySection = buildVocabularySection(db);
+
+    // 過去の処理済みタスク (類似チェック用)
+    const processedTasksSection = buildProcessedTasksSection(db);
+
     // プロンプト読み込み
     const systemPrompt = readFileSync(getPromptFilePath("task-extract"), "utf-8");
 
-    const createdTasks = [];
+    const createdTasks: (typeof schema.tasks.$inferSelect)[] = [];
+    const tasksWithDeps: TaskWithDependencies[] = [];
 
+    // 1パス目: タスク保存
     for (const comment of targetComments) {
       // プロジェクト紐付け (repoOwner/repoName から)
       const projectId = findOrCreateProjectByGitHub(db, comment.repoOwner, comment.repoName);
 
-      const userPrompt = buildGitHubCommentPrompt(comment, fewShotExamples);
+      const userPrompt = buildGitHubCommentPrompt(
+        comment,
+        fewShotExamples,
+        vocabularySection,
+        processedTasksSection,
+      );
 
       try {
         const response = await runClaude(userPrompt, {
@@ -762,12 +1047,23 @@ export function createTasksRouter(db: AdasDatabase) {
                 priority: extractedTask.priority ?? null,
                 confidence: extractedTask.confidence ?? null,
                 dueDate: extractedTask.dueDate ?? null,
+                similarToTitle: extractedTask.similarTo?.title ?? null,
+                similarToStatus: extractedTask.similarTo?.status ?? null,
+                similarToReason: extractedTask.similarTo?.reason ?? null,
               })
               .returning()
               .get();
 
             createdTasks.push(task);
             extractedCount++;
+
+            // 依存関係があれば記録
+            if (extractedTask.dependencies && extractedTask.dependencies.length > 0) {
+              tasksWithDeps.push({
+                task,
+                extractedDependencies: extractedTask.dependencies,
+              });
+            }
           }
         }
         // Record extraction log (even if 0 tasks extracted)
@@ -775,6 +1071,11 @@ export function createTasksRouter(db: AdasDatabase) {
       } catch (error) {
         console.error(`Failed to extract tasks from comment ${comment.id}:`, error);
       }
+    }
+
+    // 2パス目: 依存関係保存
+    if (tasksWithDeps.length > 0) {
+      saveDependencies(db, tasksWithDeps);
     }
 
     return c.json({
@@ -810,13 +1111,26 @@ export function createTasksRouter(db: AdasDatabase) {
     // Few-shot examples を構築
     const fewShotExamples = buildFewShotExamples(db);
 
+    // vocabulary セクションを取得
+    const vocabularySection = buildVocabularySection(db);
+
+    // 過去の処理済みタスク (類似チェック用)
+    const processedTasksSection = buildProcessedTasksSection(db);
+
     // プロンプト読み込み
     const systemPrompt = readFileSync(getPromptFilePath("task-extract"), "utf-8");
 
-    const createdTasks = [];
+    const createdTasks: (typeof schema.tasks.$inferSelect)[] = [];
+    const tasksWithDeps: TaskWithDependencies[] = [];
 
+    // 1パス目: タスク保存
     for (const memo of targetMemos) {
-      const userPrompt = buildMemoPrompt(memo, fewShotExamples);
+      const userPrompt = buildMemoPrompt(
+        memo,
+        fewShotExamples,
+        vocabularySection,
+        processedTasksSection,
+      );
 
       try {
         const response = await runClaude(userPrompt, {
@@ -842,12 +1156,23 @@ export function createTasksRouter(db: AdasDatabase) {
                 priority: extractedTask.priority ?? null,
                 confidence: extractedTask.confidence ?? null,
                 dueDate: extractedTask.dueDate ?? null,
+                similarToTitle: extractedTask.similarTo?.title ?? null,
+                similarToStatus: extractedTask.similarTo?.status ?? null,
+                similarToReason: extractedTask.similarTo?.reason ?? null,
               })
               .returning()
               .get();
 
             createdTasks.push(task);
             extractedCount++;
+
+            // 依存関係があれば記録
+            if (extractedTask.dependencies && extractedTask.dependencies.length > 0) {
+              tasksWithDeps.push({
+                task,
+                extractedDependencies: extractedTask.dependencies,
+              });
+            }
           }
         }
         // Record extraction log (even if 0 tasks extracted)
@@ -855,6 +1180,11 @@ export function createTasksRouter(db: AdasDatabase) {
       } catch (error) {
         console.error(`Failed to extract tasks from memo ${memo.id}:`, error);
       }
+    }
+
+    // 2パス目: 依存関係保存
+    if (tasksWithDeps.length > 0) {
+      saveDependencies(db, tasksWithDeps);
     }
 
     return c.json({
@@ -933,6 +1263,7 @@ export function createTasksRouter(db: AdasDatabase) {
    * POST /api/tasks/:id/accept
    *
    * タスクを承認
+   * 承認のみタスク (prompt-improvement, profile-suggestion, vocabulary) は自動的に完了になる
    */
   router.post("/:id/accept", (c) => {
     const id = Number(c.req.param("id"));
@@ -946,6 +1277,25 @@ export function createTasksRouter(db: AdasDatabase) {
     }
 
     const now = new Date().toISOString();
+
+    // 承認のみタスクは自動的に完了にする
+    if (isApprovalOnlyTask(existing.sourceType)) {
+      const result = db
+        .update(schema.tasks)
+        .set({
+          status: "completed",
+          acceptedAt: now,
+          completedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(schema.tasks.id, id))
+        .returning()
+        .get();
+
+      return c.json(result);
+    }
+
+    // 通常タスクは承認済みにする
     const result = db
       .update(schema.tasks)
       .set({
@@ -1292,11 +1642,81 @@ function buildFewShotExamples(db: AdasDatabase): string {
 }
 
 /**
+ * 過去の処理済みタスク(完了・却下)を取得してプロンプト用テキストを生成
+ */
+function buildProcessedTasksSection(db: AdasDatabase): string {
+  // 過去30日間の完了タスクを取得
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split("T")[0] ?? "";
+
+  const completedTasks = db
+    .select({
+      title: schema.tasks.title,
+      description: schema.tasks.description,
+      completedAt: schema.tasks.completedAt,
+    })
+    .from(schema.tasks)
+    .where(and(eq(schema.tasks.status, "completed"), gte(schema.tasks.date, thirtyDaysAgoStr)))
+    .orderBy(desc(schema.tasks.completedAt))
+    .limit(20)
+    .all();
+
+  // 過去30日間の却下タスクを取得
+  const rejectedTasks = db
+    .select({
+      title: schema.tasks.title,
+      description: schema.tasks.description,
+      rejectReason: schema.tasks.rejectReason,
+      rejectedAt: schema.tasks.rejectedAt,
+    })
+    .from(schema.tasks)
+    .where(and(eq(schema.tasks.status, "rejected"), gte(schema.tasks.date, thirtyDaysAgoStr)))
+    .orderBy(desc(schema.tasks.rejectedAt))
+    .limit(20)
+    .all();
+
+  if (completedTasks.length === 0 && rejectedTasks.length === 0) {
+    return "";
+  }
+
+  let section = "\n\n## 過去の処理済みタスク (類似チェック用)\n";
+  section +=
+    "新しいタスクがこれらに類似している場合は、`similarTo` フィールドで報告してください。\n";
+
+  if (completedTasks.length > 0) {
+    section += "\n### 完了済みタスク:\n";
+    for (const task of completedTasks) {
+      section += `- ${task.title}`;
+      if (task.description) {
+        section += ` (${task.description.slice(0, 50)}...)`;
+      }
+      section += "\n";
+    }
+  }
+
+  if (rejectedTasks.length > 0) {
+    section += "\n### 却下されたタスク:\n";
+    for (const task of rejectedTasks) {
+      section += `- ${task.title}`;
+      if (task.rejectReason) {
+        section += ` (却下理由: ${task.rejectReason})`;
+      }
+      section += "\n";
+    }
+  }
+
+  return section;
+}
+
+/**
  * ユーザープロンプトを構築
  */
 function buildUserPrompt(
   message: { text: string; userName: string | null; channelName: string | null },
   fewShotExamples: string,
+  vocabularySection: string,
+  processedTasksSection: string,
 ): string {
   const context = [];
   if (message.userName) {
@@ -1307,7 +1727,7 @@ function buildUserPrompt(
   }
 
   return `以下のSlackメッセージからタスクを抽出してください。
-${fewShotExamples}
+${fewShotExamples}${vocabularySection}${processedTasksSection}
 
 ## メッセージ
 ${context.length > 0 ? `${context.join(" / ")}\n` : ""}
@@ -1326,6 +1746,8 @@ function buildGitHubCommentPrompt(
     itemNumber: number;
   },
   fewShotExamples: string,
+  vocabularySection: string,
+  processedTasksSection: string,
 ): string {
   const context = [];
   if (comment.authorLogin) {
@@ -1336,7 +1758,7 @@ function buildGitHubCommentPrompt(
 
   return `以下のGitHubコメントからタスクを抽出してください。
 レビュー指摘や質問、依頼事項があればタスク化してください。
-${fewShotExamples}
+${fewShotExamples}${vocabularySection}${processedTasksSection}
 
 ## コメント
 ${context.join(" / ")}
@@ -1350,10 +1772,12 @@ ${comment.body}`;
 function buildMemoPrompt(
   memo: { content: string; createdAt: string },
   fewShotExamples: string,
+  vocabularySection: string,
+  processedTasksSection: string,
 ): string {
   return `以下のメモからタスクを抽出してください。
 TODO、やること、対応が必要な内容があればタスク化してください。
-${fewShotExamples}
+${fewShotExamples}${vocabularySection}${processedTasksSection}
 
 ## メモ (${memo.createdAt})
 ${memo.content}`;
@@ -1863,5 +2287,105 @@ async function checkTranscribeCompletion(
   } catch (err) {
     consola.warn("[completion-check] Transcribe check failed:", err);
     return null;
+  }
+}
+
+// ========== 依存関係保存関数 ==========
+
+interface TaskWithDependencies {
+  task: typeof schema.tasks.$inferSelect;
+  extractedDependencies: ExtractedTaskDependency[];
+}
+
+/**
+ * 依存関係を解決して保存
+ * @param db データベース
+ * @param tasksWithDeps タスクと抽出された依存関係のリスト
+ */
+function saveDependencies(db: AdasDatabase, tasksWithDeps: TaskWithDependencies[]): void {
+  // 同バッチ内のタスクタイトル -> ID のマップを作成
+  const batchTaskMap = new Map<string, number>();
+  for (const { task } of tasksWithDeps) {
+    batchTaskMap.set(task.title.toLowerCase(), task.id);
+  }
+
+  // 既存の未完了タスクを取得 (accepted, in_progress, paused)
+  const existingTasks = db
+    .select({ id: schema.tasks.id, title: schema.tasks.title })
+    .from(schema.tasks)
+    .where(inArray(schema.tasks.status, ["accepted", "in_progress", "paused"]))
+    .all();
+
+  const existingTaskMap = new Map<string, number>();
+  for (const task of existingTasks) {
+    existingTaskMap.set(task.title.toLowerCase(), task.id);
+  }
+
+  for (const { task, extractedDependencies } of tasksWithDeps) {
+    if (!extractedDependencies || extractedDependencies.length === 0) {
+      continue;
+    }
+
+    for (const dep of extractedDependencies) {
+      const depTitleLower = dep.taskTitle.toLowerCase();
+
+      // まず同バッチ内のタスクを検索
+      let dependsOnTaskId = batchTaskMap.get(depTitleLower);
+
+      // 同バッチ内になければ既存タスクを検索
+      if (!dependsOnTaskId) {
+        dependsOnTaskId = existingTaskMap.get(depTitleLower);
+      }
+
+      // 部分一致でも検索 (タイトルが完全一致しない場合)
+      if (!dependsOnTaskId) {
+        // 同バッチ内で部分一致
+        for (const [title, id] of batchTaskMap.entries()) {
+          if (title.includes(depTitleLower) || depTitleLower.includes(title)) {
+            dependsOnTaskId = id;
+            break;
+          }
+        }
+      }
+
+      if (!dependsOnTaskId) {
+        // 既存タスクで部分一致
+        for (const [title, id] of existingTaskMap.entries()) {
+          if (title.includes(depTitleLower) || depTitleLower.includes(title)) {
+            dependsOnTaskId = id;
+            break;
+          }
+        }
+      }
+
+      if (!dependsOnTaskId) {
+        consola.debug(`[tasks] Dependency not found: ${dep.taskTitle} for task ${task.title}`);
+        continue;
+      }
+
+      // 自己参照は除外
+      if (dependsOnTaskId === task.id) {
+        continue;
+      }
+
+      // 依存関係を保存 (重複は無視)
+      try {
+        db.insert(schema.taskDependencies)
+          .values({
+            taskId: task.id,
+            dependsOnTaskId,
+            dependencyType: dep.type,
+            confidence: dep.confidence,
+            reason: dep.reason,
+            sourceType: "auto",
+          })
+          .run();
+        consola.debug(
+          `[tasks] Saved dependency: ${task.title} depends on task #${dependsOnTaskId}`,
+        );
+      } catch {
+        // UNIQUE constraint violation は無視
+      }
+    }
   }
 }

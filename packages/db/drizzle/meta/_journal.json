@@ -8,6 +8,27 @@
       "when": 1769745281732,
       "tag": "0000_curvy_tomorrow_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1769757064596,
+      "tag": "0001_orange_hulk",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1769757499533,
+      "tag": "0002_blushing_sway",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1769757717476,
+      "tag": "0003_rapid_the_leader",
+      "breakpoints": true
     }
   ]
 }

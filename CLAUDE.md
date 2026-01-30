@@ -61,6 +61,8 @@ error: Cannot find module '@repo/db' from 'packages/core/src/some-file.ts'
 |------|-----------------|
 | タスク管理 | [docs/features.md](docs/features.md#タスク管理) |
 | タスク完了検知 | [docs/features.md](docs/features.md#タスク完了検知) |
+| 単語帳 (Vocabulary) | [docs/features.md](docs/features.md#単語帳-vocabulary) |
+| サマリ生成 | [docs/features.md](docs/features.md#サマリ生成) |
 | 抽出ログ | [docs/features.md](docs/features.md#抽出ログの統一管理) |
 | プロフィール | [docs/features.md](docs/features.md#ユーザープロフィール) |
 | プロジェクト | [docs/features.md](docs/features.md#プロジェクト管理) |

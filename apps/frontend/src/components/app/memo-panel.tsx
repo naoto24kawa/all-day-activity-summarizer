@@ -1,12 +1,31 @@
-import type { Memo, MemoTag } from "@repo/types";
+import type { Memo, MemoTag, Project } from "@repo/types";
 import { MEMO_TAGS } from "@repo/types";
-import { Check, Mic, MicOff, Pencil, RefreshCw, Send, StickyNote, Trash2, X } from "lucide-react";
+import {
+  Check,
+  FolderGit2,
+  Mic,
+  MicOff,
+  Pencil,
+  RefreshCw,
+  Send,
+  StickyNote,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMemos } from "@/hooks/use-memos";
+import { getProjectName, useProjects } from "@/hooks/use-projects";
 import { formatTimeJST } from "@/lib/date";
 
 /** タグごとの色定義 */
@@ -79,9 +98,11 @@ interface MemoPanelProps {
 
 export function MemoPanel({ date, className }: MemoPanelProps) {
   const { memos, loading, error, postMemo, updateMemo, deleteMemo, refetch } = useMemos(date);
+  const { projects } = useProjects();
   const [refreshing, setRefreshing] = useState(false);
   const [input, setInput] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -121,9 +142,14 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
 
     setSending(true);
     try {
-      await postMemo(content, selectedTags.length > 0 ? selectedTags : undefined);
+      await postMemo(
+        content,
+        selectedTags.length > 0 ? selectedTags : undefined,
+        selectedProjectId,
+      );
       setInput("");
       setSelectedTags([]);
+      setSelectedProjectId(null);
     } finally {
       setSending(false);
     }
@@ -257,18 +283,46 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
           ) : (
             <div className="space-y-3">
               {memos.map((memo) => (
-                <MemoItem key={memo.id} memo={memo} onUpdate={updateMemo} onDelete={deleteMemo} />
+                <MemoItem
+                  key={memo.id}
+                  memo={memo}
+                  projects={projects}
+                  onUpdate={updateMemo}
+                  onDelete={deleteMemo}
+                />
               ))}
             </div>
           )}
         </div>
 
         <div className="mt-4 shrink-0 space-y-2">
-          <TagSelector
-            selectedTags={selectedTags}
-            onTagsChange={setSelectedTags}
-            disabled={sending}
-          />
+          <div className="flex items-center gap-2">
+            <TagSelector
+              selectedTags={selectedTags}
+              onTagsChange={setSelectedTags}
+              disabled={sending}
+            />
+            {projects.length > 0 && (
+              <Select
+                value={selectedProjectId?.toString() ?? "none"}
+                onValueChange={(v) => setSelectedProjectId(v === "none" ? null : Number(v))}
+                disabled={sending}
+              >
+                <SelectTrigger className="h-7 w-[140px] text-xs">
+                  <FolderGit2 className="mr-1 h-3 w-3" />
+                  <SelectValue placeholder="プロジェクト" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">なし</SelectItem>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id.toString()}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
           <div className="flex gap-2">
             <textarea
               ref={textareaRef}
@@ -303,18 +357,26 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
 
 interface MemoItemProps {
   memo: Memo;
-  onUpdate: (id: number, content: string, tags?: string[] | null) => Promise<void>;
+  projects: Project[];
+  onUpdate: (
+    id: number,
+    content: string,
+    tags?: string[] | null,
+    projectId?: number | null,
+  ) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
 }
 
-function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
+function MemoItem({ memo, projects, onUpdate, onDelete }: MemoItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(memo.content);
   const [editTags, setEditTags] = useState<string[]>(parseTags(memo.tags));
+  const [editProjectId, setEditProjectId] = useState<number | null>(memo.projectId);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const memoTags = parseTags(memo.tags);
+  const projectName = getProjectName(projects, memo.projectId);
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -328,7 +390,7 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
     if (!content || saving) return;
     setSaving(true);
     try {
-      await onUpdate(memo.id, content, editTags.length > 0 ? editTags : null);
+      await onUpdate(memo.id, content, editTags.length > 0 ? editTags : null, editProjectId);
       setIsEditing(false);
     } finally {
       setSaving(false);
@@ -338,6 +400,7 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
   const handleCancel = () => {
     setEditContent(memo.content);
     setEditTags(parseTags(memo.tags));
+    setEditProjectId(memo.projectId);
     setIsEditing(false);
   };
 
@@ -371,8 +434,28 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
             {formatTimeJST(memo.createdAt)}
           </span>
         </div>
-        <div className="mb-2">
+        <div className="mb-2 flex items-center gap-2">
           <TagSelector selectedTags={editTags} onTagsChange={setEditTags} disabled={saving} />
+          {projects.length > 0 && (
+            <Select
+              value={editProjectId?.toString() ?? "none"}
+              onValueChange={(v) => setEditProjectId(v === "none" ? null : Number(v))}
+              disabled={saving}
+            >
+              <SelectTrigger className="h-7 w-[140px] text-xs">
+                <FolderGit2 className="mr-1 h-3 w-3" />
+                <SelectValue placeholder="プロジェクト" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">なし</SelectItem>
+                {projects.map((project) => (
+                  <SelectItem key={project.id} value={project.id.toString()}>
+                    {project.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <textarea
           ref={textareaRef}
@@ -413,6 +496,12 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
                 </span>
               ))}
             </div>
+          )}
+          {projectName && (
+            <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+              <FolderGit2 className="h-3 w-3" />
+              {projectName}
+            </span>
           )}
         </div>
         <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">

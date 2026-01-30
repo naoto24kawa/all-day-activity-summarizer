@@ -123,10 +123,8 @@ async function rateLimitedExecGh<T>(args: string[]): Promise<T> {
  */
 export async function checkAuth(): Promise<{ authenticated: boolean; username?: string }> {
   try {
-    const result = await execGh<{ login: string }>(["api", "user", "--jq", ".login"]);
-    // gh api user --jq .login returns just the username string
-    const username = typeof result === "string" ? (result as string).trim() : result.login;
-    return { authenticated: true, username };
+    const result = await execGh<{ login: string }>(["api", "user"]);
+    return { authenticated: true, username: result.login };
   } catch {
     // Try alternative method
     try {
@@ -160,8 +158,8 @@ export async function checkAuth(): Promise<{ authenticated: boolean; username?: 
  */
 export async function getCurrentUser(): Promise<string | null> {
   try {
-    const result = await execGh<string>(["api", "user", "--jq", ".login"]);
-    return typeof result === "string" ? result.trim() : null;
+    const result = await execGh<{ login: string }>(["api", "user"]);
+    return result.login;
   } catch (err) {
     consola.warn("Failed to get current user:", err);
     return null;

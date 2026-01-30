@@ -2,6 +2,7 @@ import { runClaude } from "@repo/core";
 import type { RpcSummarizeRequest, RpcSummarizeResponse } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
+import { withProcessingLog } from "../utils/log-processing.js";
 
 export function createSummarizeRouter() {
   const router = new Hono();
@@ -18,9 +19,16 @@ export function createSummarizeRouter() {
 
       consola.info(`[worker/summarize] Running claude (model: ${model})...`);
 
-      const result = await runClaude(body.prompt, {
+      const inputSize = body.prompt.length;
+      const result = await withProcessingLog(
+        "summarize",
         model,
-      });
+        () => runClaude(body.prompt, { model }),
+        (res) => ({
+          inputSize,
+          outputSize: res?.length ?? 0,
+        }),
+      );
 
       return c.json({ content: result } satisfies RpcSummarizeResponse);
     } catch (err) {

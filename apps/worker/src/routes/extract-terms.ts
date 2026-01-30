@@ -2,6 +2,7 @@ import { runClaude } from "@repo/core";
 import type { ExtractedTerm } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
+import { withProcessingLog } from "../utils/log-processing.js";
 
 const EXTRACT_TERMS_MODEL = "haiku";
 
@@ -31,7 +32,16 @@ export function createExtractTermsRouter() {
         return c.json({ error: "sourceType is required" }, 400);
       }
 
-      const result = await extractTermsWithClaude(body.text, body.sourceType, body.existingTerms);
+      const result = await withProcessingLog(
+        "extract-terms",
+        EXTRACT_TERMS_MODEL,
+        () => extractTermsWithClaude(body.text, body.sourceType, body.existingTerms),
+        (res) => ({
+          inputSize: body.text.length,
+          outputSize: res.extractedTerms.length,
+          metadata: { sourceType: body.sourceType },
+        }),
+      );
       return c.json(result);
     } catch (err) {
       consola.error("[worker/extract-terms] Error:", err);

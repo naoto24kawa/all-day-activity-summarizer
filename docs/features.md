@@ -42,12 +42,83 @@ pending → accepted → in_progress → completed
 | `completed` | 完了 | `POST /api/tasks/:id/complete` |
 | `rejected` | 却下済み | `POST /api/tasks/:id/reject` |
 
+### 承認のみタスク
+
+以下の sourceType は「承認のみタスク」として扱われ、accept 時に自動的に completed になる:
+
+| sourceType | 説明 |
+|------------|------|
+| `prompt-improvement` | プロンプト改善提案 |
+| `profile-suggestion` | プロフィール提案 |
+| `vocabulary` | 用語提案 |
+
+これらのタスクは進行状態 (in_progress, paused) を持たず、フロントエンドでも進行状態ドロップダウンは表示されない。
+
+**判定ロジック**: `packages/types/src/adas.ts` の `isApprovalOnlyTask()` 関数
+
 ### フィードバックループ
 
 - 承認/却下履歴から few-shot examples を自動構築
 - 却下理由も学習に活用
 - プロンプト改善案はタスクとして登録 (`sourceType: "prompt-improvement"`)
 - プロフィール提案もタスクとして登録 (`sourceType: "profile-suggestion"`)
+
+### 類似タスク検知
+
+抽出時に過去の完了・却下タスクとの類似性を AI が判断。類似タスクがある場合は警告を表示。
+
+| フィールド | 説明 |
+|-----------|------|
+| `similarToTitle` | 類似する過去タスクのタイトル |
+| `similarToStatus` | 類似タスクのステータス (`completed` / `rejected`) |
+| `similarToReason` | 類似と判断した理由 |
+
+**判断基準:**
+- 同一タスクの再依頼 (タイトルや内容がほぼ同じ)
+- 関連タスク (同じ機能・モジュールに関する別の依頼)
+
+### タスク間依存関係
+
+タスク自動抽出時に「AをやらないとBができない」というブロッキング関係を自動検出し、DBに保存。
+
+#### 依存関係タイプ
+
+| タイプ | 説明 |
+|--------|------|
+| `blocks` | 先行タスクが完了しないと着手できない |
+| `related` | 関連はあるが独立して作業可能 |
+
+#### 検出基準
+
+- **明示的な依存**: 「〜が終わってから」「〜の後に」などの表現
+- **技術的な依存**: API 実装 → フロントエンド実装など
+- **論理的な順序**: 設計 → 実装 → テストなど
+
+#### DB テーブル
+
+`task_dependencies` テーブルで管理。
+
+| カラム | 型 | 説明 |
+|--------|-----|------|
+| `task_id` | INTEGER | ブロックされる側 (後続タスク) |
+| `depends_on_task_id` | INTEGER | ブロッカー (先行タスク) |
+| `dependency_type` | TEXT | `blocks` / `related` |
+| `confidence` | REAL | AI の確信度 (0-1) |
+| `reason` | TEXT | 依存理由 |
+| `source_type` | TEXT | `auto` / `manual` |
+
+#### API エンドポイント
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `GET` | `/api/tasks/:id/dependencies` | 依存関係取得 (blockedBy, blocks) |
+| `POST` | `/api/tasks/:id/dependencies` | 手動で依存関係追加 |
+| `DELETE` | `/api/tasks/dependencies/:depId` | 依存関係削除 |
+
+#### for-ai エンドポイントでのブロック表示
+
+`GET /api/tasks/for-ai` では、ブロックされているタスクに `[BLOCKED]` ラベルが付き、ブロッカータスクが表示される。
+ブロックされていないタスクが優先的に上位に表示される。
 
 ### 抽出ログ (重複処理防止)
 
@@ -156,8 +227,15 @@ Tasks タブの「承認済み」タブに「完了チェック」ボタン。
 
 | 種別 | パス |
 |------|------|
-| パターン定義 | `apps/cli/src/commands/transcribe.ts` の `HALLUCINATION_PATTERNS` |
+| パターン定義 (Single Source of Truth) | `apps/cli/src/whisper/hallucination-filter.ts` |
+| AI 解釈プロンプト | `packages/core/prompts/interpret.md` |
+| 評価プロンプト | `packages/core/prompts/evaluate.md` |
 | 自動評価 | Claude SDK (haiku) による第2段階フィルタ |
+
+### パターン参照
+
+AI 解釈 (interpret.md) と評価 (evaluate.md) の両プロンプトから `hallucination-filter.ts` を参照。
+パターンの追加・変更は `hallucination-filter.ts` で一元管理。
 
 ### 設定
 
@@ -218,25 +296,141 @@ Settings タブの「Integrations」パネルでトグル操作。
 
 ---
 
-## サマリ生成
+## 単語帳 (Vocabulary)
 
 ### 概要
 
-音声/メモ、Slack、Claude Code、タスク、学びを統合してサマリを生成。
+専門用語や固有名詞を登録し、音声認識・サマリ生成・タスク抽出・学び抽出の精度向上に活用。
 
 ### ファイル構成
 
 | 種別 | パス |
 |------|------|
-| サマリ構築 | `apps/cli/src/summarizer/generator.ts` の `buildActivityText()` |
+| DB テーブル | `vocabulary`, `vocabulary_suggestions` |
+| API | `apps/cli/src/server/routes/vocabulary.ts` |
+| CLI | `apps/cli/src/commands/vocab.ts` |
+| フロントエンド | `apps/frontend/src/components/app/vocabulary-panel.tsx` |
+| ユーティリティ | `apps/cli/src/utils/vocabulary.ts` |
+
+### 単語帳の活用箇所
+
+| 機能 | 使用方法 | ファイル |
+|------|---------|---------|
+| Whisper 初期プロンプト | 用語リストを `initial_prompt` として渡し認識精度向上 | `apps/cli/src/commands/transcribe.ts` |
+| 解釈 (Interpret) | 既存用語を除外リストとして渡し重複抽出を防止 | `apps/cli/src/interpreter/run.ts` |
+| 用語抽出 (Extract Terms) | 既存用語を除外リストとして渡し重複抽出を防止 | `apps/cli/src/server/routes/vocabulary.ts` |
+| サマリ生成 | プロンプトに用語セクションを追加し表記揺れを防止 | `apps/cli/src/summarizer/prompts.ts` |
+| タスク抽出 | プロンプトに用語セクションを追加し表記揺れを防止 | `apps/cli/src/server/routes/tasks.ts` |
+| 学び抽出 | Worker へ用語リストを渡しプロンプトに追加 | `apps/cli/src/claude-code/extractor.ts`, `apps/worker/src/routes/extract-learnings.ts` |
+
+### 用語セクションの形式
+
+各機能のプロンプトに以下の形式で追加:
+```
+## 用語辞書
+以下の用語は正確に使用してください (表記揺れを避ける):
+用語1、用語2、用語3...
+```
+
+### 用語登録フロー
+
+```
+手動登録 ─────────────────────────────────────────────────→ vocabulary
+音声認識 → Interpret → extractedTerms → vocabulary_suggestions → 承認 → vocabulary
+各種抽出 → /api/vocabulary/extract/* → vocabulary_suggestions → 承認 → vocabulary
+```
+
+### ソース種別
+
+| ソース | 説明 |
+|--------|------|
+| `manual` | 手動登録 |
+| `transcribe` | 音声認識からの抽出 |
+| `feedback` | フィードバックからの抽出 |
+| `interpret` | 解釈処理からの抽出 |
+
+---
+
+## サマリ生成
+
+### 概要
+
+音声/メモ、Slack、GitHub、Claude Code、タスク、学びを統合してサマリを生成。
+内容は「個人作業」と「チーム活動」のセクションに自動分類される。
+単語帳に登録された用語を参照し、表記揺れを防止。
+
+### ファイル構成
+
+| 種別 | パス |
+|------|------|
+| サマリ構築 | `apps/cli/src/summarizer/generator.ts` の `buildActivityTextWithSections()` |
+| 時間単位プロンプト | `packages/core/prompts/summarize-hourly.md` |
+| 日次プロンプト | `packages/core/prompts/summarize-daily.md` |
 
 ### 含まれるデータ
 
-- 音声書き起こし/メモ
-- Slack メッセージ
-- Claude Code セッション
-- タスク (承認済み)
-- 学び
+サマリには以下のデータが含まれ、自動的に分類される:
+
+#### 個人作業
+
+| データ種別 | 説明 |
+|-----------|------|
+| 音声 (独り言) | mic 音声で他者の発話がない場合 |
+| メモ | ユーザーが手動で入力したメモ |
+| Claude Code セッション | AI アシスタントとの開発セッション |
+| タスク | 承認済み/完了したタスク |
+| 学び | セッションから抽出された学び |
+
+#### チーム活動
+
+| データ種別 | 説明 |
+|-----------|------|
+| ミーティング音声 | system 音声、または他者の発話がある場合 |
+| Slack メッセージ | メンション、DM、チャネルメッセージ |
+| GitHub Items | Issue、Pull Request の更新 |
+| GitHub Comments | コードレビュー、コメント |
+
+### 音声の分類ロジック
+
+音声セグメントは以下のルールで分類:
+
+1. `audioSource = "system"` → チーム活動 (会議音声)
+2. `audioSource = "mic"` かつ他者 (speaker != "Me") の発話あり → チーム活動 (ミーティング)
+3. `audioSource = "mic"` かつ自分のみ → 個人作業 (独り言)
+
+### 出力形式
+
+#### 時間単位 (pomodoro/hourly)
+
+```markdown
+## 個人作業
+この時間帯に行った個人での作業内容
+
+## チーム活動
+チームとのコミュニケーションやコラボレーション
+
+## 重要なポイント
+- 決定事項、アクションアイテムなど
+```
+
+#### 日次 (daily)
+
+```markdown
+## 1日の概要
+この日の活動全体の要約
+
+## 個人作業のハイライト
+主要な個人での開発作業、学び、完了したタスク
+
+## チーム活動のハイライト
+主要なコミュニケーション、コラボレーション
+
+## 主な成果・決定事項
+- 重要な決定、完了したタスク、成果物
+
+## 明日への引き継ぎ
+- 未完了のタスク (該当がある場合のみ)
+```
 
 ---
 

@@ -5,6 +5,7 @@ import { getScriptPath } from "@repo/core";
 import type { RpcTranscribeConfig, RpcTranscribeResponse } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
+import { withProcessingLog } from "../utils/log-processing.js";
 
 const WHISPERX_VENV_DIR = join(homedir(), ".adas", "whisperx-venv");
 const TMP_DIR = join(homedir(), ".adas", "worker-tmp");
@@ -37,7 +38,18 @@ export function createTranscribeRouter() {
       await Bun.write(tmpPath, arrayBuf);
 
       try {
-        const result = await runWhisperX(tmpPath, config);
+        const result = await withProcessingLog(
+          "transcribe",
+          "whisperx",
+          () => runWhisperX(tmpPath, config),
+          (res) => ({
+            outputSize: res.segments.length,
+            metadata: {
+              language: res.language,
+              textLength: res.text.length,
+            },
+          }),
+        );
         return c.json(result);
       } finally {
         // 一時ファイル削除

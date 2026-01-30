@@ -6,6 +6,9 @@
 
 // ADAS型定義
 export type {
+  AiProcessingLog,
+  AiProcessStatus,
+  AiProcessType,
   AutoDetectProjectsResponse,
   BrowserRecordingChunkMetadata,
   BrowserRecordingChunkResponse,
@@ -15,6 +18,7 @@ export type {
   ClaudeCodeMessage,
   ClaudeCodeSession,
   CompletionSource,
+  CreateAiProcessingLogRequest,
   CreateProjectRequest,
   EvaluatorJudgment,
   EvaluatorLog,
@@ -77,7 +81,7 @@ export type {
   UserProfile,
 } from "./adas";
 
-export { MEMO_TAGS } from "./adas";
+export { isApprovalOnlyTask, MEMO_TAGS } from "./adas";
 // API型定義
 export type { ApiError, ApiResponse, Post } from "./api";
 // 環境変数の型定義
