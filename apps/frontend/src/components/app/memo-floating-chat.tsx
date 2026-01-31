@@ -1,11 +1,11 @@
-import type { Memo, MemoTag } from "@repo/types";
+import type { MemoTag } from "@repo/types";
 import { MEMO_TAGS } from "@repo/types";
 import {
   Check,
   ChevronDown,
   GripVertical,
+  Loader2,
   Mic,
-  MicOff,
   PanelRight,
   PanelRightClose,
   Pencil,
@@ -18,7 +18,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useMemos } from "@/hooks/use-memos";
+import { type MemoWithPending, useMemos } from "@/hooks/use-memos";
 import { formatTimeJST } from "@/lib/date";
 
 /** タグごとの色定義 */
@@ -95,12 +95,19 @@ interface MemoFloatingChatProps {
   /** サイドバーモードで開始するか */
   initialSidebar?: boolean;
   onSidebarChange?: (isSidebar: boolean) => void;
+  /** パネルの開閉状態を通知 */
+  onOpenChange?: (isOpen: boolean) => void;
+  /** パネルの高さを通知 */
+  onHeightChange?: (height: number) => void;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: PTT logic adds complexity, will refactor later
 export function MemoFloatingChat({
   date,
   initialSidebar = false,
   onSidebarChange,
+  onOpenChange,
+  onHeightChange,
 }: MemoFloatingChatProps) {
   const { memos, loading, error, postMemo, updateMemo, deleteMemo, refetch } = useMemos(date);
   const [isOpen, setIsOpen] = useState(true);
@@ -109,7 +116,7 @@ export function MemoFloatingChat({
   const [refreshing, setRefreshing] = useState(false);
   const [input, setInput] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [sending, setSending] = useState(false);
+  const [sending, _setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -148,6 +155,16 @@ export function MemoFloatingChat({
       });
     }
   }, [isOpen]);
+
+  // 親に開閉状態を通知
+  useEffect(() => {
+    onOpenChange?.(isOpen);
+  }, [isOpen, onOpenChange]);
+
+  // 親に高さを通知
+  useEffect(() => {
+    onHeightChange?.(size.height);
+  }, [size.height, onHeightChange]);
 
   // リサイズ処理
   const handleResizeStart = useCallback(
@@ -188,9 +205,9 @@ export function MemoFloatingChat({
     };
   }, [isResizing]);
 
-  const handleSend = async () => {
-    const content = input.trim();
-    if (!content || sending) return;
+  const handleSend = (contentOverride?: string) => {
+    const content = (contentOverride ?? input).trim();
+    if (!content) return;
 
     // 音声入力中の場合は停止し、結果ハンドラを無効化
     if (listening && recognitionRef.current) {
@@ -198,31 +215,44 @@ export function MemoFloatingChat({
       recognitionRef.current.stop();
     }
 
-    setSending(true);
-    try {
-      await postMemo(content, selectedTags.length > 0 ? selectedTags : undefined);
-      setInput("");
-      setSelectedTags([]);
-    } finally {
-      setSending(false);
-    }
+    // 入力をすぐにクリアして次の入力を受け付け可能に
+    const tagsToSend = selectedTags.length > 0 ? [...selectedTags] : undefined;
+    setInput("");
+    setSelectedTags([]);
+
+    // 送信はバックグラウンドで実行 (await しない)
+    postMemo(content, tagsToSend).catch((err) => {
+      console.error("メモ送信エラー:", err);
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // IME変換中は送信しない
     if (e.nativeEvent.isComposing) return;
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Cmd+Enter (Mac) / Ctrl+Enter (Windows) で送信
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
       handleSend();
     }
   };
 
+  // 長押し判定用
+  const LONG_PRESS_THRESHOLD = 300; // ms
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isPttModeRef = useRef(false);
+  const pttInputRef = useRef("");
+
+  // 従来のトグル動作 (クリック用)
   const toggleListening = () => {
     if (listening) {
       recognitionRef.current?.stop();
       return;
     }
+    startRecognition(false);
+  };
 
+  // 音声認識を開始
+  const startRecognition = (isPtt: boolean) => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       alert("このブラウザは音声認識に対応していません。");
@@ -234,9 +264,9 @@ export function MemoFloatingChat({
     recognition.continuous = true;
     recognition.interimResults = true;
 
-    // 音声認識開始時のテキストを保持
     const baseText = input;
     let committed = "";
+    pttInputRef.current = baseText;
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       let interim = "";
@@ -250,7 +280,10 @@ export function MemoFloatingChat({
         }
       }
       if (newFinal) committed += newFinal;
-      setInput(baseText + committed + interim);
+      const newInput = baseText + committed + interim;
+      setInput(newInput);
+      // PTT用: 暫定テキストも含めて保存 (離した時に送信するため)
+      pttInputRef.current = newInput;
     };
 
     recognition.onend = () => {
@@ -266,6 +299,57 @@ export function MemoFloatingChat({
     recognitionRef.current = recognition;
     recognition.start();
     setListening(true);
+    isPttModeRef.current = isPtt;
+  };
+
+  // マウス/タッチ開始
+  const handleMicDown = () => {
+    // 長押し判定タイマー開始
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      // 長押し: PTTモードで開始
+      if (!listening) {
+        startRecognition(true);
+      }
+    }, LONG_PRESS_THRESHOLD);
+  };
+
+  // マウス/タッチ終了
+  const handleMicUp = () => {
+    if (longPressTimerRef.current) {
+      // タイマーがまだあれば短押し → トグル動作
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+      toggleListening();
+      return;
+    }
+
+    // 長押しモードで録音中なら送信
+    if (listening && isPttModeRef.current && recognitionRef.current) {
+      recognitionRef.current.onresult = null;
+      recognitionRef.current.stop();
+      setListening(false);
+      isPttModeRef.current = false;
+
+      // 最後の結果を取得して即座に送信
+      const content = pttInputRef.current.trim();
+      if (content) {
+        handleSend(content);
+        pttInputRef.current = "";
+      }
+    }
+  };
+
+  // マウスがボタンから離れた場合
+  const handleMicLeave = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    // PTTモードで録音中なら送信
+    if (listening && isPttModeRef.current) {
+      handleMicUp();
+    }
   };
 
   const handleRefresh = async () => {
@@ -283,17 +367,67 @@ export function MemoFloatingChat({
     onSidebarChange?.(newMode === "sidebar");
   };
 
+  // 閉じた状態: クリックで開く、長押しでPTT
+  const handleClosedButtonDown = () => {
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      if (!listening) {
+        startRecognition(true);
+      }
+    }, LONG_PRESS_THRESHOLD);
+  };
+
+  const handleClosedButtonUp = () => {
+    if (longPressTimerRef.current) {
+      // 短押し → パネルを開く
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+      setIsOpen(true);
+      return;
+    }
+
+    // 長押しモードで録音中なら送信
+    if (listening && isPttModeRef.current && recognitionRef.current) {
+      recognitionRef.current.onresult = null;
+      recognitionRef.current.stop();
+      setListening(false);
+      isPttModeRef.current = false;
+
+      // 最後の結果を取得して即座に送信
+      const content = pttInputRef.current.trim();
+      if (content) {
+        handleSend(content);
+        pttInputRef.current = "";
+      }
+    }
+  };
+
+  const handleClosedButtonLeave = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    if (listening && isPttModeRef.current) {
+      handleClosedButtonUp();
+    }
+  };
+
   // 閉じた状態のボタン
   if (!isOpen) {
     return (
       <div className="fixed right-4 bottom-4 z-50">
         <Button
-          onClick={() => setIsOpen(true)}
-          className="h-14 w-14 rounded-full shadow-lg"
+          onMouseDown={handleClosedButtonDown}
+          onMouseUp={handleClosedButtonUp}
+          onMouseLeave={handleClosedButtonLeave}
+          onTouchStart={handleClosedButtonDown}
+          onTouchEnd={handleClosedButtonUp}
+          className={`h-14 w-14 rounded-full shadow-lg ${listening ? "animate-pulse bg-destructive hover:bg-destructive/90" : ""}`}
           size="icon"
+          title="クリック: 開く、長押し: 音声メモ"
         >
-          <StickyNote className="h-6 w-6" />
-          {memos.length > 0 && (
+          {listening ? <Mic className="h-6 w-6" /> : <StickyNote className="h-6 w-6" />}
+          {!listening && memos.length > 0 && (
             <Badge variant="destructive" className="absolute -top-1 -right-1 h-5 min-w-5 px-1.5">
               {memos.length}
             </Badge>
@@ -390,7 +524,7 @@ export function MemoFloatingChat({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="メモを入力... (Enter で送信)"
+              placeholder="メモを入力... (Cmd+Enter で送信)"
               className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               rows={2}
               disabled={sending}
@@ -399,11 +533,15 @@ export function MemoFloatingChat({
               <Button
                 size="icon"
                 variant={listening ? "destructive" : "outline"}
-                onClick={toggleListening}
-                title={listening ? "音声入力を停止" : "音声入力"}
-                className="h-8 w-8"
+                onMouseDown={handleMicDown}
+                onMouseUp={handleMicUp}
+                onMouseLeave={handleMicLeave}
+                onTouchStart={handleMicDown}
+                onTouchEnd={handleMicUp}
+                title="クリック: 録音開始/停止、長押し: 離すと送信"
+                className={`h-8 w-8 ${listening && isPttModeRef.current ? "animate-pulse" : ""}`}
               >
-                {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                <Mic className="h-4 w-4" />
               </Button>
               <Button
                 size="icon"
@@ -532,7 +670,7 @@ export function MemoFloatingChat({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="メモを入力... (Enter で送信)"
+            placeholder="メモを入力... (Cmd+Enter で送信)"
             className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             rows={2}
             disabled={sending}
@@ -541,11 +679,15 @@ export function MemoFloatingChat({
             <Button
               size="icon"
               variant={listening ? "destructive" : "outline"}
-              onClick={toggleListening}
-              title={listening ? "音声入力を停止" : "音声入力"}
-              className="h-8 w-8"
+              onMouseDown={handleMicDown}
+              onMouseUp={handleMicUp}
+              onMouseLeave={handleMicLeave}
+              onTouchStart={handleMicDown}
+              onTouchEnd={handleMicUp}
+              title="クリック: 録音開始/停止、長押し: 離すと送信"
+              className={`h-8 w-8 ${listening && isPttModeRef.current ? "animate-pulse" : ""}`}
             >
-              {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              <Mic className="h-4 w-4" />
             </Button>
             <Button
               size="icon"
@@ -563,7 +705,7 @@ export function MemoFloatingChat({
 }
 
 interface MemoItemProps {
-  memo: Memo;
+  memo: MemoWithPending;
   onUpdate: (id: number, content: string, tags?: string[] | null) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
 }
@@ -576,6 +718,7 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
   const [deleting, setDeleting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const memoTags = parseTags(memo.tags);
+  const isPending = memo.pending === true;
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -615,7 +758,8 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Cmd+Enter (Mac) / Ctrl+Enter (Windows) で保存
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
       handleSave();
     }
@@ -668,12 +812,25 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
   }
 
   return (
-    <div className="group rounded-md border border-blue-300 bg-blue-100 p-2 dark:border-blue-700 dark:bg-blue-900">
+    <div
+      className={`group rounded-md border p-2 ${
+        isPending
+          ? "border-blue-200 bg-blue-50 opacity-70 dark:border-blue-800 dark:bg-blue-950"
+          : "border-blue-300 bg-blue-100 dark:border-blue-700 dark:bg-blue-900"
+      }`}
+    >
       <div className="mb-1 flex items-center justify-between">
         <div className="flex flex-wrap items-center gap-1">
-          <span className="text-xs font-medium text-blue-500 dark:text-blue-300">
-            {formatTimeJST(memo.createdAt)}
-          </span>
+          {isPending ? (
+            <span className="flex items-center gap-1 text-xs font-medium text-blue-400 dark:text-blue-400">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              送信中...
+            </span>
+          ) : (
+            <span className="text-xs font-medium text-blue-500 dark:text-blue-300">
+              {formatTimeJST(memo.createdAt)}
+            </span>
+          )}
           {memoTags.map((tag) => (
             <span
               key={tag}
@@ -683,26 +840,28 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
             </span>
           ))}
         </div>
-        <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-5 w-5"
-            onClick={() => setIsEditing(true)}
-            disabled={deleting}
-          >
-            <Pencil className="h-3 w-3" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-5 w-5 text-destructive hover:text-destructive"
-            onClick={handleDelete}
-            disabled={deleting}
-          >
-            <Trash2 className="h-3 w-3" />
-          </Button>
-        </div>
+        {!isPending && (
+          <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-5 w-5"
+              onClick={() => setIsEditing(true)}
+              disabled={deleting}
+            >
+              <Pencil className="h-3 w-3" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-5 w-5 text-destructive hover:text-destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
       </div>
       <p className="text-sm whitespace-pre-wrap text-blue-900 dark:text-blue-100">{memo.content}</p>
     </div>
