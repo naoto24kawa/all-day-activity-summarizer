@@ -8,8 +8,8 @@ import type {
   AutoDetectProjectsResponse,
   CreateProjectRequest,
   Project,
-  ProjectsConfig,
   ProjectStats,
+  ProjectsConfig,
   ScanGitReposResponse,
   UpdateProjectRequest,
 } from "@repo/types";
