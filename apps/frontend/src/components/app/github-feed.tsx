@@ -1,16 +1,19 @@
 /**
  * GitHub Feed Component
  *
- * Displays GitHub issues, PRs, and review requests
+ * Displays GitHub issues, PRs, and review requests grouped by project
  */
 
-import type { GitHubComment, GitHubItem } from "@repo/types";
+import type { GitHubComment, GitHubItem, Project } from "@repo/types";
 import {
   Check,
   CheckCheck,
+  ChevronDown,
+  ChevronRight,
   CircleDot,
   ExternalLink,
   Eye,
+  FolderKanban,
   Github,
   GitMerge,
   GitPullRequest,
@@ -19,15 +22,18 @@ import {
   Settings,
   XCircle,
 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfig } from "@/hooks/use-config";
 import {
   useGitHubComments,
   useGitHubCommentsUnreadCounts,
+  useGitHubItemProjects,
   useGitHubItems,
   useGitHubUnreadCounts,
 } from "@/hooks/use-github";
@@ -44,6 +50,7 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
   const { counts } = useGitHubUnreadCounts(date);
   const { comments, loading: commentsLoading, markAsRead: markCommentAsRead } = useGitHubComments();
   const { counts: commentCounts } = useGitHubCommentsUnreadCounts(date);
+  const { projects } = useGitHubItemProjects();
 
   // 連携が無効な場合
   if (!configLoading && integrations && !integrations.github.enabled) {
@@ -174,13 +181,25 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="issues" className="min-h-0 flex-1">
-              <ItemList items={issues} onMarkAsRead={markAsRead} />
+              <ProjectGroupedItemList
+                items={issues}
+                projects={projects}
+                onMarkAsRead={markAsRead}
+              />
             </TabsContent>
             <TabsContent value="prs" className="min-h-0 flex-1">
-              <ItemList items={pullRequests} onMarkAsRead={markAsRead} />
+              <ProjectGroupedItemList
+                items={pullRequests}
+                projects={projects}
+                onMarkAsRead={markAsRead}
+              />
             </TabsContent>
             <TabsContent value="reviews" className="min-h-0 flex-1">
-              <ItemList items={reviewRequests} onMarkAsRead={markAsRead} />
+              <ProjectGroupedItemList
+                items={reviewRequests}
+                projects={projects}
+                onMarkAsRead={markAsRead}
+              />
             </TabsContent>
             <TabsContent value="comments" className="min-h-0 flex-1">
               {commentsLoading ? (
@@ -196,25 +215,168 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
   );
 }
 
-function ItemList({
+/** グループ化されたアイテム */
+interface ProjectGroup {
+  projectId: number | null;
+  projectName: string;
+  items: GitHubItem[];
+  unreadCount: number;
+}
+
+function ProjectGroupedItemList({
   items,
+  projects,
   onMarkAsRead,
 }: {
   items: GitHubItem[];
+  projects: Project[];
   onMarkAsRead: (id: number) => void;
 }) {
+  // プロジェクト別にグループ化
+  const groups = useMemo((): ProjectGroup[] => {
+    const projectMap = new Map<number, Project>();
+    for (const p of projects) {
+      projectMap.set(p.id, p);
+    }
+
+    const groupMap = new Map<number | null, GitHubItem[]>();
+
+    for (const item of items) {
+      const key = item.projectId;
+      const existing = groupMap.get(key) ?? [];
+      existing.push(item);
+      groupMap.set(key, existing);
+    }
+
+    const result: ProjectGroup[] = [];
+
+    // プロジェクトがあるグループを先に追加
+    for (const [projectId, groupItems] of groupMap.entries()) {
+      if (projectId !== null) {
+        const project = projectMap.get(projectId);
+        result.push({
+          projectId,
+          projectName: project?.name ?? `Project #${projectId}`,
+          items: groupItems,
+          unreadCount: groupItems.filter((i) => !i.isRead).length,
+        });
+      }
+    }
+
+    // プロジェクト名でソート
+    result.sort((a, b) => a.projectName.localeCompare(b.projectName));
+
+    // 未分類を最後に追加
+    const unassigned = groupMap.get(null);
+    if (unassigned && unassigned.length > 0) {
+      result.push({
+        projectId: null,
+        projectName: "未分類",
+        items: unassigned,
+        unreadCount: unassigned.filter((i) => !i.isRead).length,
+      });
+    }
+
+    return result;
+  }, [items, projects]);
+
+  // 開閉状態を管理
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    // デフォルトで全て開く
+    const initial = new Set<string>();
+    for (const g of groups) {
+      initial.add(String(g.projectId));
+    }
+    return initial;
+  });
+
+  const toggleGroup = (projectId: number | null) => {
+    setOpenGroups((prev) => {
+      const key = String(projectId);
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
   if (items.length === 0) {
     return <p className="py-4 text-center text-sm text-muted-foreground">No items.</p>;
   }
 
+  // グループが1つだけ、かつ全て未分類の場合はグループ化せずに表示
+  if (groups.length === 1 && groups[0].projectId === null) {
+    return (
+      <div className="h-full overflow-y-auto">
+        <div className="space-y-3">
+          {items.map((item) => (
+            <GitHubItemCard key={item.id} item={item} onMarkAsRead={onMarkAsRead} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-y-auto">
-      <div className="space-y-3">
-        {items.map((item) => (
-          <GitHubItemCard key={item.id} item={item} onMarkAsRead={onMarkAsRead} />
+      <div className="space-y-2">
+        {groups.map((group) => (
+          <ProjectCollapsible
+            key={String(group.projectId)}
+            group={group}
+            isOpen={openGroups.has(String(group.projectId))}
+            onToggle={() => toggleGroup(group.projectId)}
+            onMarkAsRead={onMarkAsRead}
+          />
         ))}
       </div>
     </div>
+  );
+}
+
+function ProjectCollapsible({
+  group,
+  isOpen,
+  onToggle,
+  onMarkAsRead,
+}: {
+  group: ProjectGroup;
+  isOpen: boolean;
+  onToggle: () => void;
+  onMarkAsRead: (id: number) => void;
+}) {
+  return (
+    <Collapsible open={isOpen} onOpenChange={onToggle}>
+      <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left hover:bg-muted/50">
+        <div className="flex items-center gap-2">
+          {isOpen ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          )}
+          <FolderKanban className="h-4 w-4 text-indigo-500" />
+          <span className="truncate text-sm font-medium">{group.projectName}</span>
+          <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+            {group.items.length}
+          </Badge>
+          {group.unreadCount > 0 && (
+            <Badge variant="destructive" className="h-5 px-1.5 text-xs">
+              {group.unreadCount} unread
+            </Badge>
+          )}
+        </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-2 space-y-3 pl-6">
+          {group.items.map((item) => (
+            <GitHubItemCard key={item.id} item={item} onMarkAsRead={onMarkAsRead} />
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

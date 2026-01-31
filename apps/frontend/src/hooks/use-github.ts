@@ -7,6 +7,7 @@ import type {
   GitHubCommentsUnreadCounts,
   GitHubItem,
   GitHubUnreadCounts,
+  Project,
 } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
 import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
@@ -165,4 +166,39 @@ export function useGitHubCommentsUnreadCounts(date?: string) {
   }, [fetchCounts]);
 
   return { counts, error, refetch: fetchCounts };
+}
+
+/**
+ * Fetch projects that have GitHub items
+ */
+export function useGitHubItemProjects() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchProjects = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await fetchAdasApi<Project[]>("/api/github-items/projects");
+      setProjects(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch projects");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
+
+  return { projects, loading, error, refetch: fetchProjects };
+}
+
+/**
+ * Sync projectId for existing GitHub items
+ */
+export async function syncGitHubItemProjects(): Promise<{ updated: number }> {
+  return await postAdasApi<{ updated: number }>("/api/github-items/sync-projects", {});
 }

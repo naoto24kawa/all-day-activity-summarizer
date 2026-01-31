@@ -19,14 +19,6 @@ const FIELD_LABELS: Record<string, string> = {
   learningGoals: "学習目標",
 };
 
-// 提案タイプラベル
-const SUGGESTION_TYPE_LABELS: Record<string, string> = {
-  add_technology: "技術追加",
-  add_specialty: "専門分野追加",
-  add_goal: "学習目標追加",
-  update_experience: "経験年数更新",
-};
-
 interface ProfileSuggestionFromWorker {
   suggestionType: string;
   field: string;
@@ -140,15 +132,13 @@ export async function handleProfileAnalyze(
 
         // タスクとしても登録
         const fieldLabel = FIELD_LABELS[suggestion.field] || suggestion.field;
-        const typeLabel =
-          SUGGESTION_TYPE_LABELS[suggestion.suggestionType] || suggestion.suggestionType;
 
         db.insert(schema.tasks)
           .values({
             date: today,
             profileSuggestionId: inserted.id,
             sourceType: "profile-suggestion",
-            title: `[プロフィール] ${typeLabel}: ${suggestion.value}`,
+            title: `${suggestion.value} を追加`,
             description: `${fieldLabel}に「${suggestion.value}」を追加\n\n理由: ${suggestion.reason || "なし"}`,
             status: "pending",
             confidence: suggestion.confidence,

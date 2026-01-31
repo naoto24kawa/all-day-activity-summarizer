@@ -238,7 +238,7 @@ export function createPromptImprovementsRouter(db: AdasDatabase, config?: AdasCo
         date: today!,
         promptImprovementId: result.id,
         sourceType: "prompt-improvement",
-        title: `[改善] ${targetLabels[target] || target} プロンプトを改善`,
+        title: `${targetLabels[target] || target} を改善`,
         description: improvement.reason,
         status: "pending",
         priority: "medium",

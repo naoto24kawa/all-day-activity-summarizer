@@ -1106,5 +1106,11 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_claude_code_sessions_project ON claude_code_sessions(project_id);
   `);
 
+  // Migration: add project_id to github_items (for project-level grouping in GitHub feed)
+  addColumnIfNotExists(sqlite, "github_items", "project_id", "INTEGER");
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS idx_github_items_project ON github_items(project_id);
+  `);
+
   return db;
 }

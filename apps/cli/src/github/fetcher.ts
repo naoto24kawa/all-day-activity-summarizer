@@ -7,7 +7,7 @@
 import type { AdasDatabase, GitHubQueueJob, NewGitHubComment, NewGitHubItem } from "@repo/db";
 import { schema } from "@repo/db";
 import consola from "consola";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import type { GitHubItemData, GitHubPRData } from "./client.js";
 import { getAssignedIssues, getAssignedPRs, getReviewRequestedPRs } from "./client.js";
 
@@ -22,6 +22,25 @@ function toJstDateString(isoString: string): string {
   const month = String(jstDate.getMonth() + 1).padStart(2, "0");
   const day = String(jstDate.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Find projectId by repoOwner/repoName match
+ */
+function findProjectIdByRepo(db: AdasDatabase, repoOwner: string, repoName: string): number | null {
+  const project = db
+    .select()
+    .from(schema.projects)
+    .where(
+      and(
+        eq(schema.projects.githubOwner, repoOwner),
+        eq(schema.projects.githubRepo, repoName),
+        isNotNull(schema.projects.githubOwner),
+        isNotNull(schema.projects.githubRepo),
+      ),
+    )
+    .get();
+  return project?.id ?? null;
 }
 
 /**
@@ -118,6 +137,7 @@ function processIssue(
 
   const repoOwner = issue.repository.owner.login;
   const repoName = issue.repository.name;
+  const projectId = findProjectIdByRepo(db, repoOwner, repoName);
 
   // Store the issue
   const dateStr = toJstDateString(issue.updatedAt);
@@ -138,6 +158,7 @@ function processIssue(
     githubUpdatedAt: issue.updatedAt,
     closedAt: issue.closedAt,
     commentCount: issue.comments.totalCount,
+    projectId,
   });
 
   if (inserted) {
@@ -181,6 +202,7 @@ function processPR(
 
   const repoOwner = pr.repository.owner.login;
   const repoName = pr.repository.name;
+  const projectId = findProjectIdByRepo(db, repoOwner, repoName);
 
   // Determine state
   let state = pr.state.toLowerCase();
@@ -211,6 +233,7 @@ function processPR(
     reviewDecision: pr.reviewDecision,
     isReviewRequested,
     commentCount: pr.comments.totalCount,
+    projectId,
   });
 
   if (inserted) {

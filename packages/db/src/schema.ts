@@ -341,6 +341,7 @@ export const githubItems = sqliteTable("github_items", {
   isReviewRequested: integer("is_review_requested", { mode: "boolean" }).default(false),
   commentCount: integer("comment_count").default(0),
   isRead: integer("is_read", { mode: "boolean" }).default(false),
+  projectId: integer("project_id"), // FK to projects (nullable, auto-assigned by repoOwner/repoName match)
   syncedAt: text("synced_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -568,7 +569,7 @@ export type NewLearning = typeof learnings.$inferInsert;
 export const extractionLogs = sqliteTable("extraction_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   extractionType: text("extraction_type", {
-    enum: ["task", "learning"],
+    enum: ["task", "learning", "vocabulary"],
   }).notNull(), // 抽出の種類
   sourceType: text("source_type", {
     enum: ["slack", "github", "github-comment", "memo", "claude-code", "transcription"],

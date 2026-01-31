@@ -9,7 +9,7 @@ import { schema } from "@repo/db";
 import consola from "consola";
 import { and, eq } from "drizzle-orm";
 
-export type ExtractionType = "task" | "learning";
+export type ExtractionType = "task" | "learning" | "vocabulary";
 export type ExtractionSourceType =
   | "slack"
   | "github"

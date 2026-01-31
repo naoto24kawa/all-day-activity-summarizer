@@ -399,7 +399,7 @@ async function processTarget(db: AdasDatabase, target: PromptTarget): Promise<bo
       date: today,
       promptImprovementId: result.id,
       sourceType: "prompt-improvement",
-      title: `[定期見直し] ${targetLabels[target] || target} プロンプトを改善`,
+      title: `${targetLabels[target] || target} を改善`,
       description: `${improvement.reason} (自動生成)`,
       status: "pending",
       priority: "medium",

@@ -12,9 +12,10 @@ import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import type { ExtractedTerm, VocabularySuggestionSourceType } from "@repo/types";
 import consola from "consola";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, notInArray } from "drizzle-orm";
 import type { AdasConfig } from "../../config.js";
 import { getTodayDateString } from "../../utils/date.js";
+import { type ExtractionSourceType, recordExtractionLog } from "../../utils/extraction-log.js";
 import type { JobResult } from "../worker.js";
 
 export async function handleVocabularyExtract(
@@ -52,10 +53,20 @@ async function handleSlackVocabularyExtract(
   date: string,
   limit: number,
 ): Promise<JobResult> {
+  // 処理済みメッセージIDを取得
+  const processedIds = getProcessedSourceIds(db, "slack");
+
   const messages = db
     .select()
     .from(schema.slackMessages)
-    .where(eq(schema.slackMessages.date, date))
+    .where(
+      processedIds.length > 0
+        ? and(
+            eq(schema.slackMessages.date, date),
+            notInArray(schema.slackMessages.id, processedIds),
+          )
+        : eq(schema.slackMessages.date, date),
+    )
     .orderBy(desc(schema.slackMessages.id))
     .limit(limit)
     .all();
@@ -63,8 +74,8 @@ async function handleSlackVocabularyExtract(
   if (messages.length === 0) {
     return {
       success: true,
-      resultSummary: "対象メッセージがありません",
-      data: { extracted: 0, skippedDuplicate: 0, tasksCreated: 0 },
+      resultSummary: "対象メッセージがありません (処理済み含む)",
+      data: { extracted: 0, skippedDuplicate: 0, tasksCreated: 0, skippedProcessed: 0 },
     };
   }
 
@@ -78,6 +89,11 @@ async function handleSlackVocabularyExtract(
     messages[0]?.id ?? null,
     date,
   );
+
+  // 処理済みとして記録
+  for (const msg of messages) {
+    recordExtractionLog(db, "vocabulary", "slack", String(msg.id), 0);
+  }
 
   return {
     success: true,
@@ -98,10 +114,21 @@ async function handleGitHubVocabularyExtract(
   date: string,
   limit: number,
 ): Promise<JobResult> {
+  // 処理済みIDを取得
+  const processedItemIds = getProcessedSourceIds(db, "github");
+  const processedCommentIds = getProcessedSourceIds(db, "github-comment");
+
   const comments = db
     .select()
     .from(schema.githubComments)
-    .where(eq(schema.githubComments.date, date))
+    .where(
+      processedCommentIds.length > 0
+        ? and(
+            eq(schema.githubComments.date, date),
+            notInArray(schema.githubComments.id, processedCommentIds),
+          )
+        : eq(schema.githubComments.date, date),
+    )
     .orderBy(desc(schema.githubComments.id))
     .limit(limit)
     .all();
@@ -109,7 +136,14 @@ async function handleGitHubVocabularyExtract(
   const items = db
     .select()
     .from(schema.githubItems)
-    .where(eq(schema.githubItems.date, date))
+    .where(
+      processedItemIds.length > 0
+        ? and(
+            eq(schema.githubItems.date, date),
+            notInArray(schema.githubItems.id, processedItemIds),
+          )
+        : eq(schema.githubItems.date, date),
+    )
     .orderBy(desc(schema.githubItems.id))
     .limit(limit)
     .all();
@@ -126,7 +160,7 @@ async function handleGitHubVocabularyExtract(
   if (texts.length === 0) {
     return {
       success: true,
-      resultSummary: "対象コンテンツがありません",
+      resultSummary: "対象コンテンツがありません (処理済み含む)",
       data: { extracted: 0, skippedDuplicate: 0, tasksCreated: 0 },
     };
   }
@@ -141,6 +175,14 @@ async function handleGitHubVocabularyExtract(
     items[0]?.id ?? comments[0]?.id ?? null,
     date,
   );
+
+  // 処理済みとして記録
+  for (const item of items) {
+    recordExtractionLog(db, "vocabulary", "github", String(item.id), 0);
+  }
+  for (const comment of comments) {
+    recordExtractionLog(db, "vocabulary", "github-comment", String(comment.id), 0);
+  }
 
   return {
     success: true,
@@ -161,10 +203,20 @@ async function handleClaudeCodeVocabularyExtract(
   date: string,
   limit: number,
 ): Promise<JobResult> {
+  // 処理済みメッセージIDを取得
+  const processedIds = getProcessedSourceIds(db, "claude-code");
+
   const messages = db
     .select()
     .from(schema.claudeCodeMessages)
-    .where(eq(schema.claudeCodeMessages.date, date))
+    .where(
+      processedIds.length > 0
+        ? and(
+            eq(schema.claudeCodeMessages.date, date),
+            notInArray(schema.claudeCodeMessages.id, processedIds),
+          )
+        : eq(schema.claudeCodeMessages.date, date),
+    )
     .orderBy(desc(schema.claudeCodeMessages.id))
     .limit(limit)
     .all();
@@ -172,7 +224,7 @@ async function handleClaudeCodeVocabularyExtract(
   if (messages.length === 0) {
     return {
       success: true,
-      resultSummary: "対象メッセージがありません",
+      resultSummary: "対象メッセージがありません (処理済み含む)",
       data: { extracted: 0, skippedDuplicate: 0, tasksCreated: 0 },
     };
   }
@@ -189,6 +241,11 @@ async function handleClaudeCodeVocabularyExtract(
     messages[0]?.id ?? null,
     date,
   );
+
+  // 処理済みとして記録
+  for (const msg of messages) {
+    recordExtractionLog(db, "vocabulary", "claude-code", String(msg.id), 0);
+  }
 
   return {
     success: true,
@@ -209,10 +266,17 @@ async function handleMemoVocabularyExtract(
   date: string,
   limit: number,
 ): Promise<JobResult> {
+  // 処理済みメモIDを取得
+  const processedIds = getProcessedSourceIds(db, "memo");
+
   const memos = db
     .select()
     .from(schema.memos)
-    .where(eq(schema.memos.date, date))
+    .where(
+      processedIds.length > 0
+        ? and(eq(schema.memos.date, date), notInArray(schema.memos.id, processedIds))
+        : eq(schema.memos.date, date),
+    )
     .orderBy(desc(schema.memos.id))
     .limit(limit)
     .all();
@@ -220,7 +284,7 @@ async function handleMemoVocabularyExtract(
   if (memos.length === 0) {
     return {
       success: true,
-      resultSummary: "対象メモがありません",
+      resultSummary: "対象メモがありません (処理済み含む)",
       data: { extracted: 0, skippedDuplicate: 0, tasksCreated: 0 },
     };
   }
@@ -236,6 +300,11 @@ async function handleMemoVocabularyExtract(
     date,
   );
 
+  // 処理済みとして記録
+  for (const memo of memos) {
+    recordExtractionLog(db, "vocabulary", "memo", String(memo.id), 0);
+  }
+
   return {
     success: true,
     resultSummary:
@@ -247,6 +316,24 @@ async function handleMemoVocabularyExtract(
 }
 
 // ========== ヘルパー関数 ==========
+
+/**
+ * 処理済みソースIDを取得
+ */
+function getProcessedSourceIds(db: AdasDatabase, sourceType: ExtractionSourceType): number[] {
+  const logs = db
+    .select({ sourceId: schema.extractionLogs.sourceId })
+    .from(schema.extractionLogs)
+    .where(
+      and(
+        eq(schema.extractionLogs.extractionType, "vocabulary"),
+        eq(schema.extractionLogs.sourceType, sourceType),
+      ),
+    )
+    .all();
+
+  return logs.map((l) => Number.parseInt(l.sourceId, 10)).filter((id) => !Number.isNaN(id));
+}
 
 interface ExtractTermsResult {
   extracted: number;
@@ -342,7 +429,7 @@ async function extractAndSaveTerms(
           date,
           sourceType: "vocabulary",
           vocabularySuggestionId: suggestion.id,
-          title: `用語追加: ${term.term}`,
+          title: term.term,
           description: term.reason ?? `${sourceType}から抽出された用語`,
           status: "pending",
           confidence: term.confidence,

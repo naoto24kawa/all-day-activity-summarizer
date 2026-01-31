@@ -161,7 +161,7 @@ export function Dashboard() {
                 <LearningsFeed date={date} className="h-full" />
               </TabsContent>
               <TabsContent value="whisper" className="min-h-0 flex-1">
-                <VocabularyPanel date={date} />
+                <VocabularyPanel date={date} className="h-full" />
               </TabsContent>
               <TabsContent value="logs" className="min-h-0 flex-1 overflow-auto">
                 <div className="space-y-4">

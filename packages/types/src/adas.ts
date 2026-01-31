@@ -436,6 +436,7 @@ export interface GitHubItem {
   isReviewRequested: boolean | null;
   commentCount: number | null;
   isRead: boolean | null;
+  projectId: number | null; // FK to projects (auto-assigned by repoOwner/repoName match)
   syncedAt: string;
 }
 

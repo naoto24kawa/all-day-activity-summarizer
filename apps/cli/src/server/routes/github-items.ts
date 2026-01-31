@@ -4,7 +4,7 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 
 export function createGitHubItemsRouter(db: AdasDatabase) {
@@ -175,6 +175,80 @@ export function createGitHubItemsRouter(db: AdasDatabase) {
       .all();
 
     return c.json({ updated: result.length });
+  });
+
+  /**
+   * POST /api/github-items/sync-projects
+   *
+   * Sync projectId for all github items based on repoOwner/repoName match
+   * This updates existing items that don't have projectId yet
+   */
+  router.post("/sync-projects", (c) => {
+    // Get all projects with GitHub info
+    const projects = db
+      .select()
+      .from(schema.projects)
+      .where(and(isNotNull(schema.projects.githubOwner), isNotNull(schema.projects.githubRepo)))
+      .all();
+
+    let updated = 0;
+
+    for (const project of projects) {
+      if (!project.githubOwner || !project.githubRepo) continue;
+
+      // Update github items where repoOwner/repoName matches
+      const result = db
+        .update(schema.githubItems)
+        .set({ projectId: project.id })
+        .where(
+          and(
+            eq(schema.githubItems.repoOwner, project.githubOwner),
+            eq(schema.githubItems.repoName, project.githubRepo),
+            isNull(schema.githubItems.projectId),
+          ),
+        )
+        .returning()
+        .all();
+
+      updated += result.length;
+    }
+
+    return c.json({ updated });
+  });
+
+  /**
+   * GET /api/github-items/projects
+   *
+   * Returns all projects that have github items
+   * Used for grouping display
+   */
+  router.get("/projects", (c) => {
+    // Get distinct project IDs from github items
+    const itemsWithProjects = db
+      .select({
+        projectId: schema.githubItems.projectId,
+      })
+      .from(schema.githubItems)
+      .where(isNotNull(schema.githubItems.projectId))
+      .groupBy(schema.githubItems.projectId)
+      .all();
+
+    const projectIds = itemsWithProjects
+      .map((i) => i.projectId)
+      .filter((id): id is number => id !== null);
+
+    if (projectIds.length === 0) {
+      return c.json([]);
+    }
+
+    // Get project details
+    const projects = db
+      .select()
+      .from(schema.projects)
+      .all()
+      .filter((p) => projectIds.includes(p.id));
+
+    return c.json(projects);
   });
 
   return router;

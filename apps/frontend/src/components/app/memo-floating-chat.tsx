@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   GripVertical,
+  ListTodo,
   Loader2,
   Mic,
   PanelRight,
@@ -19,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { type MemoWithPending, useMemos } from "@/hooks/use-memos";
+import { useTasks } from "@/hooks/use-tasks";
 import { formatTimeJST } from "@/lib/date";
 
 /** タグごとの色定義 */
@@ -110,6 +112,7 @@ export function MemoFloatingChat({
   onHeightChange,
 }: MemoFloatingChatProps) {
   const { memos, loading, error, postMemo, updateMemo, deleteMemo, refetch } = useMemos(date);
+  const { extractMemoTasks } = useTasks();
   const [isOpen, setIsOpen] = useState(true);
   const [mode, setMode] = useState<MemoMode>(initialSidebar ? "sidebar" : "floating");
   const [size, setSize] = useState(DEFAULT_SIZE);
@@ -505,7 +508,13 @@ export function MemoFloatingChat({
           ) : (
             <div className="space-y-3">
               {memos.map((memo) => (
-                <MemoItem key={memo.id} memo={memo} onUpdate={updateMemo} onDelete={deleteMemo} />
+                <MemoItem
+                  key={memo.id}
+                  memo={memo}
+                  onUpdate={updateMemo}
+                  onDelete={deleteMemo}
+                  onCreateTask={extractMemoTasks}
+                />
               ))}
             </div>
           )}
@@ -651,7 +660,13 @@ export function MemoFloatingChat({
         ) : (
           <div className="space-y-3">
             {memos.map((memo) => (
-              <MemoItem key={memo.id} memo={memo} onUpdate={updateMemo} onDelete={deleteMemo} />
+              <MemoItem
+                key={memo.id}
+                memo={memo}
+                onUpdate={updateMemo}
+                onDelete={deleteMemo}
+                onCreateTask={extractMemoTasks}
+              />
             ))}
           </div>
         )}
@@ -708,14 +723,16 @@ interface MemoItemProps {
   memo: MemoWithPending;
   onUpdate: (id: number, content: string, tags?: string[] | null) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
+  onCreateTask: (options: { memoIds: number[] }) => Promise<{ extracted: number }>;
 }
 
-function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
+function MemoItem({ memo, onUpdate, onDelete, onCreateTask }: MemoItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(memo.content);
   const [editTags, setEditTags] = useState<string[]>(parseTags(memo.tags));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [creatingTask, setCreatingTask] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const memoTags = parseTags(memo.tags);
   const isPending = memo.pending === true;
@@ -753,6 +770,23 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
       await onDelete(memo.id);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleCreateTask = async () => {
+    if (creatingTask) return;
+    setCreatingTask(true);
+    try {
+      const result = await onCreateTask({ memoIds: [memo.id] });
+      if (result.extracted > 0) {
+        alert(`${result.extracted} 件のタスクを作成しました`);
+      } else {
+        alert("タスクは抽出されませんでした");
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "タスク作成に失敗しました");
+    } finally {
+      setCreatingTask(false);
     }
   };
 
@@ -846,8 +880,22 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
               size="icon"
               variant="ghost"
               className="h-5 w-5"
+              onClick={handleCreateTask}
+              disabled={creatingTask || deleting}
+              title="タスク化"
+            >
+              {creatingTask ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <ListTodo className="h-3 w-3" />
+              )}
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-5 w-5"
               onClick={() => setIsEditing(true)}
-              disabled={deleting}
+              disabled={deleting || creatingTask}
             >
               <Pencil className="h-3 w-3" />
             </Button>
@@ -856,7 +904,7 @@ function MemoItem({ memo, onUpdate, onDelete }: MemoItemProps) {
               variant="ghost"
               className="h-5 w-5 text-destructive hover:text-destructive"
               onClick={handleDelete}
-              disabled={deleting}
+              disabled={deleting || creatingTask}
             >
               <Trash2 className="h-3 w-3" />
             </Button>

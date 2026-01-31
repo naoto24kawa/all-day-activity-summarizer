@@ -1,0 +1,1 @@
+ALTER TABLE `github_items` ADD `project_id` integer;

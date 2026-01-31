@@ -12,6 +12,7 @@ import { startPromptImprovementScheduler } from "../prompt-improvement/scheduler
 import { createApp } from "../server/app.js";
 import { startSlackSystem } from "../slack/scheduler.js";
 import { startScheduler } from "../summarizer/scheduler.js";
+import { startVocabularyExtractScheduler } from "../vocabulary/scheduler.js";
 
 // ファイルログを有効化
 setupFileLogger("serve");
@@ -105,6 +106,9 @@ export function registerServeCommand(program: Command): void {
 
       // Start Prompt Improvement scheduler
       startPromptImprovementScheduler(db);
+
+      // Start Vocabulary Extract scheduler
+      startVocabularyExtractScheduler(db);
 
       // Start AI Job scheduler
       startAIJobScheduler(db, config);

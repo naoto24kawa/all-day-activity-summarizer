@@ -728,6 +728,12 @@ export function createTasksRouter(db: AdasDatabase) {
         if (existing.sourceType === "prompt-improvement" && existing.promptImprovementId) {
           await applyPromptImprovement(db, existing.promptImprovementId, now);
         }
+
+        // 承認のみタスクは自動的に完了にする
+        if (isApprovalOnlyTask(existing.sourceType)) {
+          updates.status = "completed";
+          updates.completedAt = now;
+        }
       } else if (body.status === "rejected") {
         updates.rejectedAt = now;
         if (body.rejectReason) {
