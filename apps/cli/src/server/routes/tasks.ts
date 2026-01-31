@@ -231,7 +231,23 @@ export function createTasksRouter(db: AdasDatabase) {
 
     const tasks = query.all();
 
-    return c.json(tasks);
+    // vocabulary タスクの場合、用語提案の sourceType を取得して付加
+    const tasksWithVocabSource = tasks.map((task) => {
+      if (task.sourceType === "vocabulary" && task.vocabularySuggestionId) {
+        const suggestion = db
+          .select({ sourceType: schema.vocabularySuggestions.sourceType })
+          .from(schema.vocabularySuggestions)
+          .where(eq(schema.vocabularySuggestions.id, task.vocabularySuggestionId))
+          .get();
+        return {
+          ...task,
+          vocabularySuggestionSourceType: suggestion?.sourceType ?? null,
+        };
+      }
+      return task;
+    });
+
+    return c.json(tasksWithVocabSource);
   });
 
   /**
@@ -796,6 +812,11 @@ export function createTasksRouter(db: AdasDatabase) {
           await applyPromptImprovement(db, existing.promptImprovementId, now);
         }
 
+        // project-suggestion の場合、プロジェクトを作成
+        if (existing.sourceType === "project-suggestion" && existing.projectSuggestionId) {
+          await applyProjectSuggestion(db, existing.projectSuggestionId, now);
+        }
+
         // 承認のみタスクは自動的に完了にする
         if (isApprovalOnlyTask(existing.sourceType)) {
           updates.status = "completed";
@@ -828,6 +849,14 @@ export function createTasksRouter(db: AdasDatabase) {
           db.update(schema.promptImprovements)
             .set({ status: "rejected", rejectedAt: now })
             .where(eq(schema.promptImprovements.id, existing.promptImprovementId))
+            .run();
+        }
+
+        // project-suggestion の場合、提案も却下
+        if (existing.sourceType === "project-suggestion" && existing.projectSuggestionId) {
+          db.update(schema.projectSuggestions)
+            .set({ status: "rejected", rejectedAt: now })
+            .where(eq(schema.projectSuggestions.id, existing.projectSuggestionId))
             .run();
         }
       } else if (body.status === "in_progress") {
@@ -1561,6 +1590,11 @@ export function createTasksRouter(db: AdasDatabase) {
         await executeMerge(db, existing, now);
       }
 
+      // project-suggestion の場合、プロジェクトを作成
+      if (existing.sourceType === "project-suggestion" && existing.projectSuggestionId) {
+        await applyProjectSuggestion(db, existing.projectSuggestionId, now);
+      }
+
       const result = db
         .update(schema.tasks)
         .set({
@@ -1629,6 +1663,12 @@ export function createTasksRouter(db: AdasDatabase) {
       db.update(schema.vocabularySuggestions)
         .set({ status: "rejected", rejectedAt: now })
         .where(eq(schema.vocabularySuggestions.id, existing.vocabularySuggestionId))
+        .run();
+    }
+    if (existing.sourceType === "project-suggestion" && existing.projectSuggestionId) {
+      db.update(schema.projectSuggestions)
+        .set({ status: "rejected", rejectedAt: now })
+        .where(eq(schema.projectSuggestions.id, existing.projectSuggestionId))
         .run();
     }
 
@@ -2813,6 +2853,76 @@ async function applyPromptImprovement(
       approvedAt: now,
     })
     .where(eq(schema.promptImprovements.id, improvementId))
+    .run();
+}
+
+/**
+ * プロジェクト提案を承認してプロジェクトを作成
+ */
+async function applyProjectSuggestion(
+  db: AdasDatabase,
+  suggestionId: number,
+  now: string,
+): Promise<void> {
+  const suggestion = db
+    .select()
+    .from(schema.projectSuggestions)
+    .where(eq(schema.projectSuggestions.id, suggestionId))
+    .get();
+
+  if (!suggestion || suggestion.status !== "pending") {
+    return;
+  }
+
+  // 既存プロジェクトの重複チェック (path または owner/repo で)
+  let existingProject = null;
+
+  if (suggestion.path) {
+    existingProject = db
+      .select()
+      .from(schema.projects)
+      .where(eq(schema.projects.path, suggestion.path))
+      .get();
+  }
+
+  if (!existingProject && suggestion.githubOwner && suggestion.githubRepo) {
+    existingProject = db
+      .select()
+      .from(schema.projects)
+      .where(
+        and(
+          eq(schema.projects.githubOwner, suggestion.githubOwner),
+          eq(schema.projects.githubRepo, suggestion.githubRepo),
+        ),
+      )
+      .get();
+  }
+
+  if (!existingProject) {
+    // プロジェクトを作成
+    db.insert(schema.projects)
+      .values({
+        name: suggestion.name,
+        path: suggestion.path,
+        githubOwner: suggestion.githubOwner,
+        githubRepo: suggestion.githubRepo,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    consola.info(`[tasks] Created project: ${suggestion.name}`);
+  } else {
+    consola.debug(`[tasks] Project already exists: ${suggestion.name}`);
+  }
+
+  // 提案ステータスを更新
+  db.update(schema.projectSuggestions)
+    .set({
+      status: "accepted",
+      acceptedAt: now,
+    })
+    .where(eq(schema.projectSuggestions.id, suggestionId))
     .run();
 }
 

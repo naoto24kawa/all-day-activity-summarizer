@@ -13,6 +13,7 @@ import {
   type TaskCompletionSuggestion,
   type TaskSourceType,
   type TaskStatus,
+  type VocabularySuggestionSourceType,
 } from "@repo/types";
 import {
   AlertTriangle,
@@ -119,6 +120,17 @@ const SOURCE_LABELS: Record<TaskSourceType, string> = {
   vocabulary: "用語",
   merge: "統合",
   "profile-suggestion": "プロフィール",
+  "project-suggestion": "プロジェクト",
+};
+
+/** 用語提案ソースタイプのラベルマップ */
+const VOCABULARY_SOURCE_LABELS: Record<VocabularySuggestionSourceType, string> = {
+  interpret: "音声",
+  feedback: "フィードバック",
+  slack: "Slack",
+  github: "GitHub",
+  "claude-code": "Claude Code",
+  memo: "メモ",
 };
 
 /** タスクのスタイルを取得 */
@@ -310,7 +322,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     });
   };
 
-  const notifyHighPriorityTasks = (extractedTasks: Task[]) => {
+  const _notifyHighPriorityTasks = (extractedTasks: Task[]) => {
     const highPriorityTasks = extractedTasks.filter((t) => t.priority === "high");
     for (const task of highPriorityTasks) {
       notifyHighPriorityTask(task.title, getSourceLabel(task.sourceType));
@@ -1723,10 +1735,18 @@ function TaskItem({
                   </Badge>
                 )}
                 {task.sourceType === "vocabulary" && (
-                  <Badge variant="default" className="text-xs bg-teal-500">
-                    <BookOpen className="mr-1 h-3 w-3" />
-                    用語
-                  </Badge>
+                  <>
+                    <Badge variant="default" className="text-xs bg-teal-500">
+                      <BookOpen className="mr-1 h-3 w-3" />
+                      用語
+                    </Badge>
+                    {task.vocabularySuggestionSourceType && (
+                      <Badge variant="secondary" className="text-xs">
+                        {VOCABULARY_SOURCE_LABELS[task.vocabularySuggestionSourceType] ??
+                          task.vocabularySuggestionSourceType}
+                      </Badge>
+                    )}
+                  </>
                 )}
                 {task.sourceType === "merge" && (
                   <Badge variant="default" className="text-xs bg-amber-500">

@@ -373,6 +373,16 @@ export interface ClaudeCodeMessage {
   createdAt: string;
 }
 
+/** Claude Code プロジェクトパス (プロジェクト紐づけ用) */
+export interface ClaudeCodePath {
+  id: number;
+  projectPath: string;
+  projectName: string | null;
+  projectId: number | null; // FK to projects
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** 学びソース種別 */
 export type LearningSourceType =
   | "claude-code"
@@ -571,7 +581,8 @@ export type TaskSourceType =
   | "prompt-improvement"
   | "profile-suggestion"
   | "vocabulary"
-  | "merge";
+  | "merge"
+  | "project-suggestion";
 
 /** 承認のみで完了するタスクのソース種別 */
 export const APPROVAL_ONLY_SOURCE_TYPES: TaskSourceType[] = [
@@ -579,6 +590,7 @@ export const APPROVAL_ONLY_SOURCE_TYPES: TaskSourceType[] = [
   "profile-suggestion",
   "vocabulary",
   "merge",
+  "project-suggestion",
 ];
 
 /** 承認のみで完了するタスクかどうかを判定 */
@@ -606,6 +618,7 @@ export interface Task {
   promptImprovementId: number | null;
   profileSuggestionId: number | null;
   vocabularySuggestionId: number | null;
+  projectSuggestionId: number | null;
   projectId: number | null;
   sourceType: TaskSourceType;
   title: string;
@@ -638,6 +651,8 @@ export interface Task {
   stepNumber: number | null; // 子タスクの順序 (1, 2, 3...)
   createdAt: string;
   updatedAt: string;
+  // 用語タスク用: 抽出元ソース種別 (vocabulary suggestion から取得)
+  vocabularySuggestionSourceType?: VocabularySuggestionSourceType | null;
 }
 
 /** タスク抽出リクエスト */
@@ -981,6 +996,29 @@ export interface ProjectsConfig {
 export interface ProjectStats {
   tasksCount: number;
   learningsCount: number;
+}
+
+/** プロジェクト提案ソース種別 */
+export type ProjectSuggestionSourceType = "git-scan" | "claude-code" | "github";
+
+/** プロジェクト提案ステータス */
+export type ProjectSuggestionStatus = "pending" | "accepted" | "rejected";
+
+/** プロジェクト提案 */
+export interface ProjectSuggestion {
+  id: number;
+  name: string;
+  path: string | null;
+  githubOwner: string | null;
+  githubRepo: string | null;
+  reason: string | null;
+  sourceType: ProjectSuggestionSourceType;
+  sourceId: string | null;
+  confidence: number | null;
+  status: ProjectSuggestionStatus;
+  acceptedAt: string | null;
+  rejectedAt: string | null;
+  createdAt: string;
 }
 
 // ========== AI Processing Log 型定義 ==========
