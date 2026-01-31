@@ -7,7 +7,8 @@
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import type { AIJobStatus, AIJobType } from "@repo/types";
-import { and, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { getTodayDateString } from "../utils/date.js";
 
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5分
 
@@ -181,15 +182,18 @@ export function listJobs(
 }
 
 /**
- * ジョブ統計を取得
+ * ジョブ統計を取得 (当日のみ)
  */
 export function getJobStats(db: AdasDatabase) {
+  const today = getTodayDateString();
+
   const stats = db
     .select({
       status: schema.aiJobQueue.status,
       count: sql<number>`count(*)`,
     })
     .from(schema.aiJobQueue)
+    .where(gte(schema.aiJobQueue.createdAt, today))
     .groupBy(schema.aiJobQueue.status)
     .all();
 

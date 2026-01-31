@@ -48,7 +48,7 @@ tasks テーブルに登録 ([定期見直し] ラベル付き)
 |-----------|-------------------|
 | interpret | `packages/core/prompts/interpret.md` |
 | evaluate | `packages/core/prompts/evaluate.md` |
-| summarize-hourly | `packages/core/prompts/summarize-hourly.md` |
+| summarize-times | `packages/core/prompts/summarize-times.md` |
 | summarize-daily | `packages/core/prompts/summarize-daily.md` |
 | task-extract | `packages/core/prompts/task-extract.md` |
 

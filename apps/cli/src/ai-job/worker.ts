@@ -8,7 +8,7 @@ import type { AdasDatabase } from "@repo/db";
 import type { AIJobType } from "@repo/types";
 import consola from "consola";
 import type { AdasConfig } from "../config.js";
-import { dequeueJob, getJob, markJobCompleted, markJobFailed } from "./queue.js";
+import { dequeueJob, markJobCompleted, markJobFailed } from "./queue.js";
 
 /** ジョブ結果 */
 export interface JobResult {

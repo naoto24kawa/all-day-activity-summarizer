@@ -41,7 +41,7 @@ function updateIntegrationEnabled(config: AdasConfig, body: IntegrationsUpdateBo
 
   for (const key of INTEGRATION_KEYS) {
     if (body[key]?.enabled !== undefined) {
-      (config[key] as { enabled: boolean }).enabled = body[key]!.enabled;
+      (config[key] as { enabled: boolean }).enabled = body[key]?.enabled;
       updated = true;
     }
   }

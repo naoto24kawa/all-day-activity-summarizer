@@ -2,7 +2,7 @@ import type { GenerateSummaryResponse, Summary } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
 import { fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
-export function useSummaries(date: string, type?: "pomodoro" | "hourly" | "daily") {
+export function useSummaries(date: string, type?: "times" | "daily") {
   const [summaries, setSummaries] = useState<Summary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,7 +32,12 @@ export function useSummaries(date: string, type?: "pomodoro" | "hourly" | "daily
   }, [fetchSummaries]);
 
   const generateSummary = useCallback(
-    async (body: { date?: string; type?: "pomodoro" | "hourly" | "daily"; hour?: number }) => {
+    async (body: {
+      date?: string;
+      type?: "times" | "daily";
+      startHour?: number;
+      endHour?: number;
+    }) => {
       const result = await postAdasApi<GenerateSummaryResponse>("/api/summaries/generate", body);
       await fetchSummaries();
       return result;

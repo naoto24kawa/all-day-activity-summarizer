@@ -2,21 +2,22 @@ import type { AdasDatabase, SummaryQueueJob } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 
-export type JobType = "pomodoro" | "hourly" | "daily";
+export type JobType = "times" | "daily";
 
 export interface EnqueueOptions {
   jobType: JobType;
   date: string;
-  periodParam?: number; // pomodoro: 0-47, hourly: 0-23, daily: undefined
+  startHour?: number; // times 用: 開始時間 (0-23)
+  endHour?: number; // times 用: 終了時間 (0-23)
   runAfter?: string; // ISO8601 timestamp, defaults to now
 }
 
 /**
  * ジョブをキューに追加する
- * 同じ (jobType, date, periodParam) で pending/processing のジョブが既にある場合は無視
+ * 同じ (jobType, date, startHour, endHour) で pending/processing のジョブが既にある場合は無視
  */
 export function enqueue(db: AdasDatabase, options: EnqueueOptions): SummaryQueueJob | null {
-  const { jobType, date, periodParam, runAfter = new Date().toISOString() } = options;
+  const { jobType, date, startHour, endHour, runAfter = new Date().toISOString() } = options;
   const now = new Date().toISOString();
 
   // 重複チェック: 同じジョブが pending または processing で存在するか
@@ -27,9 +28,12 @@ export function enqueue(db: AdasDatabase, options: EnqueueOptions): SummaryQueue
       and(
         eq(schema.summaryQueue.jobType, jobType),
         eq(schema.summaryQueue.date, date),
-        periodParam !== undefined
-          ? eq(schema.summaryQueue.periodParam, periodParam)
-          : sql`${schema.summaryQueue.periodParam} IS NULL`,
+        startHour !== undefined
+          ? eq(schema.summaryQueue.startHour, startHour)
+          : sql`${schema.summaryQueue.startHour} IS NULL`,
+        endHour !== undefined
+          ? eq(schema.summaryQueue.endHour, endHour)
+          : sql`${schema.summaryQueue.endHour} IS NULL`,
         inArray(schema.summaryQueue.status, ["pending", "processing"]),
       ),
     )
@@ -44,7 +48,8 @@ export function enqueue(db: AdasDatabase, options: EnqueueOptions): SummaryQueue
     .values({
       jobType,
       date,
-      periodParam,
+      startHour,
+      endHour,
       status: "pending",
       retryCount: 0,
       maxRetries: 3,

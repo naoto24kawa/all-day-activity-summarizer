@@ -3,12 +3,21 @@
 音声/メモ、Slack、GitHub、Claude Code、タスク、学びを統合してサマリを生成。
 内容は「個人作業」と「チーム活動」のセクションに自動分類される。
 
+## サマリタイプ
+
+| タイプ | 説明 |
+|--------|------|
+| times | ユーザー指定の時間範囲 (最大12時間) |
+| daily | 1日分のサマリ (23時に自動生成) |
+
 ## ファイル構成
 
 | 種別 | パス |
 |------|------|
 | サマリ構築 | `apps/cli/src/summarizer/generator.ts` の `buildActivityTextWithProjectSections()` |
-| 時間単位プロンプト | `packages/core/prompts/summarize-hourly.md` |
+| 時間範囲サマリ | `apps/cli/src/summarizer/generator.ts` の `generateTimesSummary()` |
+| 日次サマリ | `apps/cli/src/summarizer/generator.ts` の `generateDailySummary()` |
+| 時間範囲プロンプト | `packages/core/prompts/summarize-times.md` |
 | 日次プロンプト | `packages/core/prompts/summarize-daily.md` |
 
 ## 含まれるデータ
@@ -44,7 +53,7 @@
 
 ## 出力形式
 
-### 時間単位 (pomodoro/hourly)
+### 時間範囲 (times)
 
 ```markdown
 ## 個人作業

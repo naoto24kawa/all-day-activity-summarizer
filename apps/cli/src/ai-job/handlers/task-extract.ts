@@ -10,7 +10,6 @@ import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import type { AdasConfig } from "../../config.js";
-import { loadConfig } from "../../config.js";
 import { hasExtractionLog, recordExtractionLog } from "../../utils/extraction-log.js";
 import { findOrCreateProjectByGitHub } from "../../utils/project-lookup.js";
 import { buildVocabularySection } from "../../utils/vocabulary.js";
@@ -51,7 +50,7 @@ interface TaskWithDependencies {
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complex extraction logic
 export async function handleTaskExtractSlack(
   db: AdasDatabase,
-  config: AdasConfig,
+  _config: AdasConfig,
   params: Record<string, unknown>,
 ): Promise<JobResult> {
   const date = (params.date as string) ?? getTodayDateString();
@@ -437,7 +436,7 @@ export async function handleTaskExtractGitHubComment(
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complex extraction logic
 export async function handleTaskExtractMemo(
   db: AdasDatabase,
-  config: AdasConfig,
+  _config: AdasConfig,
   params: Record<string, unknown>,
 ): Promise<JobResult> {
   const date = (params.date as string) ?? getTodayDateString();

@@ -14,7 +14,7 @@ import { schema } from "@repo/db";
 import { and, between, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { loadConfig } from "../config.js";
 import { generateSummary, getModelName } from "./client.js";
-import { buildDailySummaryPrompt, buildHourlySummaryPrompt } from "./prompts.js";
+import { buildDailySummaryPrompt, buildTimesSummaryPrompt } from "./prompts.js";
 
 // ---------------------------------------------------------------------------
 // Time utilities (JST)
@@ -189,7 +189,7 @@ function groupItemsByProject<T extends { projectId: number | null }>(
     if (!groups.has(projectId)) {
       groups.set(projectId, []);
     }
-    groups.get(projectId)!.push(item);
+    groups.get(projectId)?.push(item);
   }
 
   // プロジェクトIDでソート (nullは最後)
@@ -355,7 +355,7 @@ function formatActionableTasks(
     if (!tasksByProject.has(projectId)) {
       tasksByProject.set(projectId, []);
     }
-    tasksByProject.get(projectId)!.push(actionableTask);
+    tasksByProject.get(projectId)?.push(actionableTask);
   }
 
   // プロジェクトIDでソート (nullは最後)
@@ -744,46 +744,46 @@ function fetchActivityData(
   };
 }
 
-/** period index (0-47) から startTime/endTime を返す */
-export function periodToTimeRange(
+/**
+ * 開始時間と終了時間から startTime/endTime を返す。
+ * @param date - 対象日 (YYYY-MM-DD形式)
+ * @param startHour - 開始時間 (0-23)
+ * @param endHour - 終了時間 (0-23)
+ */
+export function hoursToTimeRange(
   date: string,
-  periodIndex: number,
+  startHour: number,
+  endHour: number,
 ): { startTime: string; endTime: string } {
-  const hour = Math.floor(periodIndex / 2);
-  const isSecondHalf = periodIndex % 2 === 1;
-  const hh = String(hour).padStart(2, "0");
-
-  if (isSecondHalf) {
-    return {
-      startTime: `${date}T${hh}:30:00`,
-      endTime: `${date}T${hh}:59:59`,
-    };
-  }
+  const startHH = String(startHour).padStart(2, "0");
+  const endHH = String(endHour).padStart(2, "0");
   return {
-    startTime: `${date}T${hh}:00:00`,
-    endTime: `${date}T${hh}:29:59`,
+    startTime: `${date}T${startHH}:00:00`,
+    endTime: `${date}T${endHH}:59:59`,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Pomodoro summary (30-min intervals)
+// Times summary (user-specified time range, max 12 hours)
 // ---------------------------------------------------------------------------
 
 /**
- * 30分間隔 (ポモドーロ) の要約を生成する。
+ * ユーザー指定の時間範囲の要約を生成する。
  *
  * @param db - データベース接続
  * @param date - 対象日 (YYYY-MM-DD形式)
- * @param startTime - 期間開始時刻 (ISO8601形式)
- * @param endTime - 期間終了時刻 (ISO8601形式)
+ * @param startHour - 開始時間 (0-23)
+ * @param endHour - 終了時間 (0-23)
  * @returns 生成された要約テキスト、データがない場合は null
  */
-export async function generatePomodoroSummary(
+export async function generateTimesSummary(
   db: AdasDatabase,
   date: string,
-  startTime: string,
-  endTime: string,
+  startHour: number,
+  endHour: number,
 ): Promise<string | null> {
+  const { startTime, endTime } = hoursToTimeRange(date, startHour, endHour);
+
   const {
     segments,
     memos,
@@ -827,7 +827,7 @@ export async function generatePomodoroSummary(
   const actionableTasks = fetchActionableTasks(db, 5);
   const actionableTasksText = formatActionableTasks(actionableTasks, projectNameMap);
 
-  const prompt = await buildHourlySummaryPrompt(activityText, db, actionableTasksText || undefined);
+  const prompt = await buildTimesSummaryPrompt(activityText, db, actionableTasksText || undefined);
   const content = await generateSummary(prompt);
   const segmentIds = segments.map((s) => s.id);
 
@@ -836,7 +836,7 @@ export async function generatePomodoroSummary(
     .where(
       and(
         eq(schema.summaries.date, date),
-        eq(schema.summaries.summaryType, "pomodoro"),
+        eq(schema.summaries.summaryType, "times"),
         eq(schema.summaries.periodStart, startTime),
         eq(schema.summaries.periodEnd, endTime),
       ),
@@ -848,7 +848,7 @@ export async function generatePomodoroSummary(
       date,
       periodStart: startTime,
       periodEnd: endTime,
-      summaryType: "pomodoro",
+      summaryType: "times",
       content,
       segmentIds: JSON.stringify(segmentIds),
       model: getModelName(),
@@ -859,197 +859,79 @@ export async function generatePomodoroSummary(
 }
 
 // ---------------------------------------------------------------------------
-// Hourly summary (1-hour, aggregates pomodoro summaries)
-// ---------------------------------------------------------------------------
-
-/**
- * 1時間単位の要約を生成する。
- * ポモドーロ要約が存在する場合はそれを集約し、
- * 存在しない場合はセグメントから直接生成する。
- *
- * @param db - データベース接続
- * @param date - 対象日 (YYYY-MM-DD形式)
- * @param hour - 対象時間 (0-23)
- * @returns 生成された要約テキスト、データがない場合は null
- */
-export async function generateHourlySummary(
-  db: AdasDatabase,
-  date: string,
-  hour: number,
-): Promise<string | null> {
-  const hh = String(hour).padStart(2, "0");
-  const startTime = `${date}T${hh}:00:00`;
-  const endTime = `${date}T${hh}:59:59`;
-
-  // プロジェクト名マップを取得
-  const projects = fetchActiveProjects(db);
-  const projectNameMap = buildProjectNameMap(projects);
-
-  // Prefer aggregating pomodoro summaries if they exist
-  const pomodoroSummaries = db
-    .select()
-    .from(schema.summaries)
-    .where(
-      and(
-        eq(schema.summaries.date, date),
-        eq(schema.summaries.summaryType, "pomodoro"),
-        between(schema.summaries.periodStart, startTime, endTime),
-      ),
-    )
-    .all();
-
-  if (pomodoroSummaries.length > 0) {
-    const summariesText = pomodoroSummaries
-      .map((s) => `### ${s.periodStart} - ${s.periodEnd}\n${s.content}`)
-      .join("\n\n");
-
-    // 着手すべきタスクを取得してプロンプトに追加
-    const actionableTasks = fetchActionableTasks(db, 5);
-    const actionableTasksText = formatActionableTasks(actionableTasks, projectNameMap);
-
-    const prompt = await buildHourlySummaryPrompt(
-      summariesText,
-      db,
-      actionableTasksText || undefined,
-    );
-    const content = await generateSummary(prompt);
-    const allSegmentIds = pomodoroSummaries.flatMap((s) => JSON.parse(s.segmentIds) as number[]);
-
-    // 同じ期間の既存サマリーを削除してから挿入(上書き)
-    db.delete(schema.summaries)
-      .where(
-        and(
-          eq(schema.summaries.date, date),
-          eq(schema.summaries.summaryType, "hourly"),
-          eq(schema.summaries.periodStart, startTime),
-          eq(schema.summaries.periodEnd, endTime),
-        ),
-      )
-      .run();
-
-    db.insert(schema.summaries)
-      .values({
-        date,
-        periodStart: startTime,
-        periodEnd: endTime,
-        summaryType: "hourly",
-        content,
-        segmentIds: JSON.stringify(allSegmentIds),
-        model: getModelName(),
-      })
-      .run();
-
-    return content;
-  }
-
-  // Fallback: generate directly from activity data
-  const {
-    segments,
-    memos,
-    slackMessages,
-    claudeSessions,
-    tasks,
-    learnings,
-    githubItems,
-    githubComments,
-  } = fetchActivityData(db, date, startTime, endTime);
-
-  const hasData =
-    segments.length > 0 ||
-    memos.length > 0 ||
-    slackMessages.length > 0 ||
-    claudeSessions.length > 0 ||
-    tasks.length > 0 ||
-    learnings.length > 0 ||
-    githubItems.length > 0 ||
-    githubComments.length > 0;
-
-  if (!hasData) {
-    return null;
-  }
-
-  // プロジェクト別にグループ化した活動テキストを生成
-  const activityText = buildActivityTextWithProjectSections(
-    segments,
-    memos,
-    slackMessages,
-    claudeSessions,
-    tasks,
-    learnings,
-    githubItems,
-    githubComments,
-    projectNameMap,
-  );
-
-  // 着手すべきタスクを取得してプロンプトに追加
-  const hourlyActionableTasks = fetchActionableTasks(db, 5);
-  const hourlyActionableTasksText = formatActionableTasks(hourlyActionableTasks, projectNameMap);
-
-  const prompt = await buildHourlySummaryPrompt(
-    activityText,
-    db,
-    hourlyActionableTasksText || undefined,
-  );
-  const content = await generateSummary(prompt);
-  const segmentIds = segments.map((s) => s.id);
-
-  // 同じ期間の既存サマリーを削除してから挿入(上書き)
-  db.delete(schema.summaries)
-    .where(
-      and(
-        eq(schema.summaries.date, date),
-        eq(schema.summaries.summaryType, "hourly"),
-        eq(schema.summaries.periodStart, startTime),
-        eq(schema.summaries.periodEnd, endTime),
-      ),
-    )
-    .run();
-
-  db.insert(schema.summaries)
-    .values({
-      date,
-      periodStart: startTime,
-      periodEnd: endTime,
-      summaryType: "hourly",
-      content,
-      segmentIds: JSON.stringify(segmentIds),
-      model: getModelName(),
-    })
-    .run();
-
-  return content;
-}
-
-// ---------------------------------------------------------------------------
-// Daily summary (aggregates hourly summaries)
+// Daily summary (aggregates times summaries)
 // ---------------------------------------------------------------------------
 
 /**
  * 日次要約を生成する。
- * 1時間単位の要約を集約して生成する。
+ * times サマリーを集約して生成する。times がない場合は直接活動データから生成。
  *
  * @param db - データベース接続
  * @param date - 対象日 (YYYY-MM-DD形式)
  * @returns 生成された要約テキスト、データがない場合は null
  */
 export async function generateDailySummary(db: AdasDatabase, date: string): Promise<string | null> {
-  const hourlySummaries = db
-    .select()
-    .from(schema.summaries)
-    .where(and(eq(schema.summaries.date, date), eq(schema.summaries.summaryType, "hourly")))
-    .all();
-
-  if (hourlySummaries.length === 0) {
-    return null;
-  }
-
   // プロジェクト名マップを取得
   const projects = fetchActiveProjects(db);
   const projectNameMap = buildProjectNameMap(projects);
 
-  const summariesText = hourlySummaries
-    .map((s) => `### ${s.periodStart} - ${s.periodEnd}\n${s.content}`)
-    .join("\n\n");
+  // times サマリーを集約
+  const timesSummaries = db
+    .select()
+    .from(schema.summaries)
+    .where(and(eq(schema.summaries.date, date), eq(schema.summaries.summaryType, "times")))
+    .all();
+
+  let summariesText: string;
+  let allSegmentIds: number[];
+
+  if (timesSummaries.length > 0) {
+    summariesText = timesSummaries
+      .map((s) => `### ${s.periodStart} - ${s.periodEnd}\n${s.content}`)
+      .join("\n\n");
+    allSegmentIds = timesSummaries.flatMap((s) => JSON.parse(s.segmentIds) as number[]);
+  } else {
+    // times サマリーがない場合、1日分の活動データから直接生成
+    const startTime = `${date}T00:00:00`;
+    const endTime = `${date}T23:59:59`;
+    const {
+      segments,
+      memos,
+      slackMessages,
+      claudeSessions,
+      tasks,
+      learnings,
+      githubItems,
+      githubComments,
+    } = fetchActivityData(db, date, startTime, endTime);
+
+    const hasData =
+      segments.length > 0 ||
+      memos.length > 0 ||
+      slackMessages.length > 0 ||
+      claudeSessions.length > 0 ||
+      tasks.length > 0 ||
+      learnings.length > 0 ||
+      githubItems.length > 0 ||
+      githubComments.length > 0;
+
+    if (!hasData) {
+      return null;
+    }
+
+    summariesText = buildActivityTextWithProjectSections(
+      segments,
+      memos,
+      slackMessages,
+      claudeSessions,
+      tasks,
+      learnings,
+      githubItems,
+      githubComments,
+      projectNameMap,
+    );
+    allSegmentIds = segments.map((s) => s.id);
+  }
 
   // 着手すべきタスクを取得してプロンプトに追加
   const actionableTasks = fetchActionableTasks(db, 5);
@@ -1057,7 +939,6 @@ export async function generateDailySummary(db: AdasDatabase, date: string): Prom
 
   const prompt = await buildDailySummaryPrompt(summariesText, db, actionableTasksText || undefined);
   const content = await generateSummary(prompt);
-  const allSegmentIds = hourlySummaries.flatMap((s) => JSON.parse(s.segmentIds) as number[]);
 
   // 同じ日の既存 daily サマリーを削除してから挿入(上書き)
   db.delete(schema.summaries)

@@ -5,12 +5,15 @@ import { Hono } from "hono";
 import { enqueueJob } from "../../ai-job/queue.js";
 import { getTodayDateString } from "../../utils/date.js";
 
+/** 時間範囲の最大値 (12時間) */
+const MAX_TIME_RANGE_HOURS = 12;
+
 export function createSummariesRouter(db: AdasDatabase) {
   const router = new Hono();
 
   router.get("/", (c) => {
     const date = c.req.query("date");
-    const type = c.req.query("type") as "pomodoro" | "hourly" | "daily" | undefined;
+    const type = c.req.query("type") as "times" | "daily" | undefined;
 
     const query = db.select().from(schema.summaries);
 
@@ -34,51 +37,53 @@ export function createSummariesRouter(db: AdasDatabase) {
   router.post("/generate", async (c) => {
     const body = await c.req.json<{
       date?: string;
-      type?: "pomodoro" | "hourly" | "daily";
-      hour?: number;
+      type?: "times" | "daily";
+      startHour?: number;
+      endHour?: number;
     }>();
     const date = body.date ?? getTodayDateString();
 
-    const jobIds: number[] = [];
-
+    // Daily のみの場合
     if (body.type === "daily") {
       const jobId = enqueueJob(db, "summarize-daily", { date });
       return c.json({ success: true, jobId, message: "日次サマリ生成をキューに追加しました" });
     }
 
-    if (body.hour !== undefined) {
-      const jobId = enqueueJob(db, "summarize-hourly", { date, hour: body.hour });
+    // Times (時間範囲指定)
+    if (body.startHour !== undefined && body.endHour !== undefined) {
+      const { startHour, endHour } = body;
+
+      // バリデーション
+      if (startHour < 0 || startHour > 23 || endHour < 0 || endHour > 23) {
+        return c.json({ success: false, error: "時間は 0-23 の範囲で指定してください" }, 400);
+      }
+      if (startHour > endHour) {
+        return c.json({ success: false, error: "開始時間は終了時間以前にしてください" }, 400);
+      }
+      const timeRange = endHour - startHour + 1;
+      if (timeRange > MAX_TIME_RANGE_HOURS) {
+        return c.json(
+          { success: false, error: `時間範囲は最大 ${MAX_TIME_RANGE_HOURS} 時間までです` },
+          400,
+        );
+      }
+
+      // Times サマリ生成をキューに追加
+      const timesJobId = enqueueJob(db, "summarize-times", { date, startHour, endHour });
+
+      // Daily サマリも自動的に再生成
+      const dailyJobId = enqueueJob(db, "summarize-daily", { date });
+
       return c.json({
         success: true,
-        jobId,
-        message: `${body.hour}時台のサマリ生成をキューに追加しました`,
+        jobIds: [timesJobId, dailyJobId],
+        message: `${startHour}時〜${endHour}時のサマリ生成と日次サマリの再生成をキューに追加しました`,
       });
     }
 
-    // Generate all: pomodoro → hourly → daily をキューに追加
-    for (let period = 0; period < 48; period++) {
-      const hour = Math.floor(period / 2);
-      const isSecondHalf = period % 2 === 1;
-      const hh = String(hour).padStart(2, "0");
-      const startTime = isSecondHalf ? `${date}T${hh}:30:00` : `${date}T${hh}:00:00`;
-      const endTime = isSecondHalf ? `${date}T${hh}:59:59` : `${date}T${hh}:29:59`;
-      const jobId = enqueueJob(db, "summarize-pomodoro", { date, startTime, endTime });
-      jobIds.push(jobId);
-    }
-
-    for (let hour = 0; hour < 24; hour++) {
-      const jobId = enqueueJob(db, "summarize-hourly", { date, hour });
-      jobIds.push(jobId);
-    }
-
-    const dailyJobId = enqueueJob(db, "summarize-daily", { date });
-    jobIds.push(dailyJobId);
-
-    return c.json({
-      success: true,
-      jobIds,
-      message: `${jobIds.length}件のサマリ生成ジョブをキューに追加しました`,
-    });
+    // デフォルト: Daily のみ生成
+    const jobId = enqueueJob(db, "summarize-daily", { date });
+    return c.json({ success: true, jobId, message: "日次サマリ生成をキューに追加しました" });
   });
 
   return router;

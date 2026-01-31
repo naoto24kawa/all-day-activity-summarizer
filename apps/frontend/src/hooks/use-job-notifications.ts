@@ -19,8 +19,7 @@ const JOB_TYPE_LABELS: Record<AIJobType, string> = {
   "learning-extract": "学び抽出",
   "vocabulary-extract": "用語抽出",
   "profile-analyze": "プロフィール分析",
-  "summarize-pomodoro": "Pomodoroサマリ",
-  "summarize-hourly": "時間サマリ",
+  "summarize-times": "時間範囲サマリ",
   "summarize-daily": "日次サマリ",
 };
 

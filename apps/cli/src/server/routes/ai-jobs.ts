@@ -5,7 +5,7 @@
  */
 
 import type { AdasDatabase } from "@repo/db";
-import type { AIJobStatus, AIJobType, CreateAIJobRequest, CreateAIJobResponse } from "@repo/types";
+import type { AIJobStatus, CreateAIJobRequest, CreateAIJobResponse } from "@repo/types";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { enqueueJob, getJob, getJobStats, listJobs } from "../../ai-job/queue.js";

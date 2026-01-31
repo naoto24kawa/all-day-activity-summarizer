@@ -18,7 +18,7 @@ import { featureDisabledResponse } from "../errors.js";
 const PROMPT_TARGETS: PromptTarget[] = [
   "interpret",
   "evaluate",
-  "summarize-hourly",
+  "summarize-times",
   "summarize-daily",
   "task-extract",
 ];
@@ -35,7 +35,7 @@ export function createPromptImprovementsRouter(db: AdasDatabase, config?: AdasCo
    * 改善提案一覧を取得
    * Query params:
    * - status: pending | approved | rejected (optional)
-   * - target: interpret | evaluate | summarize-hourly | summarize-daily | task-extract (optional)
+   * - target: interpret | evaluate | summarize-times | summarize-daily | task-extract (optional)
    */
   router.get("/", (c) => {
     const status = c.req.query("status") as "pending" | "approved" | "rejected" | undefined;
@@ -228,7 +228,7 @@ export function createPromptImprovementsRouter(db: AdasDatabase, config?: AdasCo
     const targetLabels: Record<string, string> = {
       interpret: "AI 解釈",
       evaluate: "ハルシネーション評価",
-      "summarize-hourly": "時間帯別サマリ",
+      "summarize-times": "時間範囲サマリ",
       "summarize-daily": "日次サマリ",
       "task-extract": "タスク抽出",
     };
@@ -437,7 +437,7 @@ async function collectFeedbackData(db: AdasDatabase, target: PromptTarget): Prom
       }
     }
   } else if (target.startsWith("summarize-")) {
-    const summaryType = target === "summarize-hourly" ? "hourly" : "daily";
+    const summaryType = target === "summarize-times" ? "times" : "daily";
 
     const feedbacks = db
       .select({

@@ -2,31 +2,22 @@ import { createDatabase } from "@repo/db";
 import type { Command } from "commander";
 import consola from "consola";
 import { loadConfig } from "../config.js";
-import {
-  generateDailySummary,
-  generateHourlySummary,
-  generatePomodoroSummary,
-} from "../summarizer/scheduler.js";
+import { generateDailySummary, generateTimesSummary } from "../summarizer/scheduler.js";
 import { getDateString } from "../utils/date.js";
 
-async function handleHourlySummary(
+async function handleTimesSummary(
   db: ReturnType<typeof createDatabase>,
   dateStr: string,
-  hourStr: string,
+  startHour: number,
+  endHour: number,
 ): Promise<void> {
-  const hour = Number.parseInt(hourStr, 10);
-  if (Number.isNaN(hour) || hour < 0 || hour > 23) {
-    consola.error("Hour must be between 0 and 23");
-    return;
-  }
-
-  consola.info(`Generating hourly summary for ${dateStr} hour ${hour}...`);
-  const result = await generateHourlySummary(db, dateStr, hour);
+  consola.info(`Generating times summary for ${dateStr} ${startHour}:00 - ${endHour}:59...`);
+  const result = await generateTimesSummary(db, dateStr, startHour, endHour);
   if (result) {
-    consola.success("Hourly summary generated:");
+    consola.success("Times summary generated:");
     consola.log(result);
   } else {
-    consola.warn("No transcription data found for this hour");
+    consola.warn("No data found for this time range");
   }
 }
 
@@ -40,41 +31,7 @@ async function handleDailySummary(
     consola.success("Daily summary generated:");
     consola.log(result);
   } else {
-    consola.warn("No hourly summaries found. Generate hourly summaries first.");
-  }
-}
-
-async function handleAllSummaries(
-  db: ReturnType<typeof createDatabase>,
-  dateStr: string,
-): Promise<void> {
-  consola.info(`Generating all summaries for ${dateStr}...`);
-
-  // Generate pomodoro summaries (30-min intervals)
-  for (let period = 0; period < 48; period++) {
-    const hour = Math.floor(period / 2);
-    const isSecondHalf = period % 2 === 1;
-    const hh = String(hour).padStart(2, "0");
-    const startTime = isSecondHalf ? `${dateStr}T${hh}:30:00` : `${dateStr}T${hh}:00:00`;
-    const endTime = isSecondHalf ? `${dateStr}T${hh}:59:59` : `${dateStr}T${hh}:29:59`;
-    const result = await generatePomodoroSummary(db, dateStr, startTime, endTime);
-    if (result) {
-      consola.success(`Pomodoro ${startTime} - ${endTime} summary generated`);
-    }
-  }
-
-  // Generate hourly summaries (aggregating pomodoro)
-  for (let hour = 0; hour < 24; hour++) {
-    const result = await generateHourlySummary(db, dateStr, hour);
-    if (result) {
-      consola.success(`Hour ${hour} summary generated`);
-    }
-  }
-
-  const dailyResult = await generateDailySummary(db, dateStr);
-  if (dailyResult) {
-    consola.success("Daily summary generated:");
-    consola.log(dailyResult);
+    consola.warn("No data found for this date.");
   }
 }
 
@@ -83,15 +40,38 @@ export function registerSummarizeCommand(program: Command): void {
     .command("summarize")
     .description("Generate summaries from transcriptions")
     .option("-d, --date <date>", "Date to summarize (YYYY-MM-DD or 'today')", "today")
-    .option("--hour <hour>", "Generate summary for a specific hour (0-23)")
+    .option("--start <hour>", "Start hour for times summary (0-23)")
+    .option("--end <hour>", "End hour for times summary (0-23)")
     .option("--daily", "Generate daily summary")
-    .action(async (options: { date?: string; hour?: string; daily?: boolean }) => {
+    .action(async (options: { date?: string; start?: string; end?: string; daily?: boolean }) => {
       const config = loadConfig();
       const db = createDatabase(config.dbPath);
       const dateStr = getDateString(options.date);
 
-      if (options.hour !== undefined) {
-        await handleHourlySummary(db, dateStr, options.hour);
+      // Times summary (指定した時間範囲)
+      if (options.start !== undefined && options.end !== undefined) {
+        const startHour = Number.parseInt(options.start, 10);
+        const endHour = Number.parseInt(options.end, 10);
+
+        if (Number.isNaN(startHour) || startHour < 0 || startHour > 23) {
+          consola.error("Start hour must be between 0 and 23");
+          return;
+        }
+        if (Number.isNaN(endHour) || endHour < 0 || endHour > 23) {
+          consola.error("End hour must be between 0 and 23");
+          return;
+        }
+        if (startHour > endHour) {
+          consola.error("Start hour must be less than or equal to end hour");
+          return;
+        }
+        const timeRange = endHour - startHour + 1;
+        if (timeRange > 12) {
+          consola.error("Time range must be 12 hours or less");
+          return;
+        }
+
+        await handleTimesSummary(db, dateStr, startHour, endHour);
         return;
       }
 
@@ -100,6 +80,7 @@ export function registerSummarizeCommand(program: Command): void {
         return;
       }
 
-      await handleAllSummaries(db, dateStr);
+      // デフォルトは daily
+      await handleDailySummary(db, dateStr);
     });
 }

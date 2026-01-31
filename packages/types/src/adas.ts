@@ -20,7 +20,7 @@ export interface Summary {
   date: string;
   periodStart: string;
   periodEnd: string;
-  summaryType: "pomodoro" | "hourly" | "daily";
+  summaryType: "times" | "daily";
   content: string;
   segmentIds: string;
   model: string;
@@ -82,8 +82,11 @@ export interface StatusResponse {
 /** 要約生成リクエスト */
 export interface GenerateSummaryRequest {
   date?: string;
-  type?: "pomodoro" | "hourly" | "daily";
-  hour?: number;
+  type?: "times" | "daily";
+  /** times 用: 開始時間 (0-23) */
+  startHour?: number;
+  /** times 用: 終了時間 (0-23) */
+  endHour?: number;
 }
 
 /** Evaluator ログ */
@@ -191,7 +194,7 @@ export interface RpcInterpretResponse {
 export type PromptTarget =
   | "interpret"
   | "evaluate"
-  | "summarize-hourly"
+  | "summarize-times"
   | "summarize-daily"
   | "task-extract";
 
@@ -1211,8 +1214,7 @@ export type AIJobType =
   | "learning-extract"
   | "vocabulary-extract"
   | "profile-analyze"
-  | "summarize-pomodoro"
-  | "summarize-hourly"
+  | "summarize-times"
   | "summarize-daily";
 
 /** AIジョブステータス */

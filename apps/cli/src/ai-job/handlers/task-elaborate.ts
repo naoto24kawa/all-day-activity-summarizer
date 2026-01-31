@@ -28,7 +28,7 @@ interface TaskElaborateParams {
  */
 export async function handleTaskElaborate(
   db: AdasDatabase,
-  config: AdasConfig,
+  _config: AdasConfig,
   params: Record<string, unknown>,
 ): Promise<JobResult> {
   const { taskId, userInstruction } = params as TaskElaborateParams;
@@ -171,7 +171,7 @@ function parseElaborationResponse(response: string): ElaborationResult {
   // ```json ... ``` を除去
   const jsonBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   if (jsonBlockMatch) {
-    jsonStr = jsonBlockMatch[1]!.trim();
+    jsonStr = jsonBlockMatch[1]?.trim();
   }
 
   // JSON の開始位置を見つける

@@ -5,7 +5,15 @@
  */
 
 import type { ClaudeCodeMessage, ClaudeCodeSession, Project } from "@repo/types";
-import { Code, FolderGit2, MessageSquare, RefreshCw, Settings, Wrench } from "lucide-react";
+import {
+  ChevronDown,
+  Code,
+  FolderGit2,
+  MessageSquare,
+  RefreshCw,
+  Settings,
+  Wrench,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   Accordion,
@@ -41,14 +49,34 @@ interface ClaudeCodeFeedProps {
   className?: string;
 }
 
+// デフォルト表示件数
+const DEFAULT_PROJECT_LIMIT = 3;
+const DEFAULT_SESSION_LIMIT = 3;
+
 export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
-  const { sessions, loading, error, syncSessions, updateSession } = useClaudeCodeSessions();
+  const { sessions, loading, error, syncSessions, syncing, updateSession } =
+    useClaudeCodeSessions();
   const { stats } = useClaudeCodeStats(date);
   const { projects } = useProjects();
   const { updatePathProject, getPathProjectId } = useClaudeCodePaths();
   const [selectedSession, setSelectedSession] = useState<ClaudeCodeSession | null>(null);
+  const [showAllProjects, setShowAllProjects] = useState(false);
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const activeProjects = projects.filter((p) => p.isActive);
+
+  // セッション表示を展開する
+  const toggleSessionExpand = (projectPath: string) => {
+    setExpandedSessions((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectPath)) {
+        next.delete(projectPath);
+      } else {
+        next.add(projectPath);
+      }
+      return next;
+    });
+  };
 
   // Group sessions by project (moved before conditional returns for hooks rules)
   const sessionsByProject = useMemo(() => {
@@ -143,9 +171,15 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
             </Badge>
           )}
         </CardTitle>
-        <Button variant="outline" size="sm" onClick={syncSessions} title="Sync sessions">
-          <RefreshCw className="mr-1 h-3 w-3" />
-          Sync
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={syncSessions}
+          disabled={syncing}
+          title="Sync sessions"
+        >
+          <RefreshCw className={`mr-1 h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
+          {syncing ? "Syncing..." : "Sync"}
         </Button>
       </CardHeader>
       <CardContent className="min-h-0 flex-1 overflow-auto">
@@ -153,68 +187,119 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
           <p className="text-sm text-muted-foreground">No Claude Code sessions for this date.</p>
         ) : (
           <Accordion type="multiple" className="w-full">
-            {Array.from(sessionsByProject.entries()).map(([projectPath, projectSessions]) => {
-              const pathProjectId = getPathProjectId(projectPath);
-              const handlePathProjectChange = (value: string) => {
-                const newProjectId = value === "none" ? null : Number(value);
-                const projectName = projectSessions[0]?.projectName ?? projectPath.split("/").pop();
-                updatePathProject(projectPath, newProjectId, projectName ?? undefined);
-              };
+            {(() => {
+              const allEntries = Array.from(sessionsByProject.entries());
+              const displayEntries = showAllProjects
+                ? allEntries
+                : allEntries.slice(0, DEFAULT_PROJECT_LIMIT);
+              const hasMoreProjects = allEntries.length > DEFAULT_PROJECT_LIMIT;
 
               return (
-                <AccordionItem key={projectPath} value={projectPath}>
-                  <div className="flex items-center justify-between pr-4">
-                    <AccordionTrigger className="flex-1 hover:no-underline">
-                      <div className="flex items-center gap-2">
-                        <FolderGit2 className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium">
-                          {projectSessions[0]?.projectName || projectPath.split("/").pop()}
-                        </span>
-                        <Badge variant="outline" className="ml-2">
-                          {projectSessions.length} sessions
-                        </Badge>
-                      </div>
-                    </AccordionTrigger>
-                    {activeProjects.length > 0 && (
-                      <Select
-                        value={pathProjectId?.toString() ?? "none"}
-                        onValueChange={handlePathProjectChange}
+                <>
+                  {displayEntries.map(([projectPath, projectSessions]) => {
+                    const pathProjectId = getPathProjectId(projectPath);
+                    const handlePathProjectChange = (value: string) => {
+                      const newProjectId = value === "none" ? null : Number(value);
+                      const projectName =
+                        projectSessions[0]?.projectName ?? projectPath.split("/").pop();
+                      updatePathProject(projectPath, newProjectId, projectName ?? undefined);
+                    };
+
+                    const isSessionExpanded = expandedSessions.has(projectPath);
+                    const displaySessions = isSessionExpanded
+                      ? projectSessions
+                      : projectSessions.slice(0, DEFAULT_SESSION_LIMIT);
+                    const hasMoreSessions = projectSessions.length > DEFAULT_SESSION_LIMIT;
+
+                    return (
+                      <AccordionItem key={projectPath} value={projectPath}>
+                        <div className="flex items-center justify-between pr-4">
+                          <AccordionTrigger className="flex-1 hover:no-underline">
+                            <div className="flex items-center gap-2">
+                              <FolderGit2 className="h-4 w-4 text-muted-foreground" />
+                              <span className="font-medium">
+                                {projectSessions[0]?.projectName || projectPath.split("/").pop()}
+                              </span>
+                              <Badge variant="outline" className="ml-2">
+                                {projectSessions.length} sessions
+                              </Badge>
+                            </div>
+                          </AccordionTrigger>
+                          {activeProjects.length > 0 && (
+                            <Select
+                              value={pathProjectId?.toString() ?? "none"}
+                              onValueChange={handlePathProjectChange}
+                            >
+                              <SelectTrigger
+                                className="h-7 w-[130px] text-xs"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <FolderGit2 className="mr-1 h-3 w-3" />
+                                <SelectValue placeholder="Path Project" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">なし</SelectItem>
+                                {activeProjects.map((project) => (
+                                  <SelectItem key={project.id} value={project.id.toString()}>
+                                    {project.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                        <AccordionContent>
+                          <div className="space-y-3 pl-6">
+                            {displaySessions.map((session) => (
+                              <SessionItem
+                                key={session.sessionId}
+                                session={session}
+                                onClick={() => setSelectedSession(session)}
+                                onUpdateProject={updateSession}
+                                projects={projects}
+                                inheritedProjectId={pathProjectId}
+                              />
+                            ))}
+                            {hasMoreSessions && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full text-muted-foreground"
+                                onClick={() => toggleSessionExpand(projectPath)}
+                              >
+                                <ChevronDown
+                                  className={`mr-1 h-4 w-4 transition-transform ${isSessionExpanded ? "rotate-180" : ""}`}
+                                />
+                                {isSessionExpanded
+                                  ? "閉じる"
+                                  : `他 ${projectSessions.length - DEFAULT_SESSION_LIMIT} セッションを表示`}
+                              </Button>
+                            )}
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    );
+                  })}
+                  {hasMoreProjects && (
+                    <div className="pt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => setShowAllProjects(!showAllProjects)}
                       >
-                        <SelectTrigger
-                          className="h-7 w-[130px] text-xs"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <FolderGit2 className="mr-1 h-3 w-3" />
-                          <SelectValue placeholder="Path Project" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">なし</SelectItem>
-                          {activeProjects.map((project) => (
-                            <SelectItem key={project.id} value={project.id.toString()}>
-                              {project.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                  <AccordionContent>
-                    <div className="space-y-3 pl-6">
-                      {projectSessions.map((session) => (
-                        <SessionItem
-                          key={session.sessionId}
-                          session={session}
-                          onClick={() => setSelectedSession(session)}
-                          onUpdateProject={updateSession}
-                          projects={projects}
-                          inheritedProjectId={pathProjectId}
+                        <ChevronDown
+                          className={`mr-1 h-4 w-4 transition-transform ${showAllProjects ? "rotate-180" : ""}`}
                         />
-                      ))}
+                        {showAllProjects
+                          ? "閉じる"
+                          : `他 ${allEntries.length - DEFAULT_PROJECT_LIMIT} プロジェクトを表示`}
+                      </Button>
                     </div>
-                  </AccordionContent>
-                </AccordionItem>
+                  )}
+                </>
               );
-            })}
+            })()}
           </Accordion>
         )}
       </CardContent>

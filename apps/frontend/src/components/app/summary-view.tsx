@@ -8,7 +8,6 @@ import {
   Sparkles,
   ThumbsDown,
   ThumbsUp,
-  Timer,
 } from "lucide-react";
 import { useState } from "react";
 import Markdown from "react-markdown";
@@ -30,17 +29,11 @@ interface SummaryViewProps {
 
 export function SummaryView({ date, className }: SummaryViewProps) {
   const {
-    summaries: pomodoroSummaries,
-    loading: pomodoroLoading,
-    error: pomodoroError,
-    refetch: refetchPomodoro,
-  } = useSummaries(date, "pomodoro");
-  const {
-    summaries: hourlySummaries,
-    loading: hourlyLoading,
-    error: hourlyError,
-    refetch: refetchHourly,
-  } = useSummaries(date, "hourly");
+    summaries: timesSummaries,
+    loading: timesLoading,
+    error: timesError,
+    refetch: refetchTimes,
+  } = useSummaries(date, "times");
   const {
     summaries: dailySummaries,
     loading: dailyLoading,
@@ -56,7 +49,7 @@ export function SummaryView({ date, className }: SummaryViewProps) {
   } | null>(null);
 
   const handleRefresh = async () => {
-    await Promise.all([refetchPomodoro(), refetchHourly(), refetchDaily()]);
+    await Promise.all([refetchTimes(), refetchDaily()]);
   };
 
   const handleGenerate = async () => {
@@ -109,7 +102,7 @@ export function SummaryView({ date, className }: SummaryViewProps) {
         </div>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col">
-        <Tabs defaultValue="pomodoro" className="flex min-h-0 flex-1 flex-col">
+        <Tabs defaultValue="daily" className="flex min-h-0 flex-1 flex-col">
           <TabsList className="mb-2 shrink-0">
             <TabsTrigger value="daily" className="gap-1">
               <Calendar className="h-3 w-3" />
@@ -120,21 +113,12 @@ export function SummaryView({ date, className }: SummaryViewProps) {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="hourly" className="gap-1">
+            <TabsTrigger value="times" className="gap-1">
               <Clock className="h-3 w-3" />
-              Hourly
-              {hourlySummaries.length > 0 && (
+              Times
+              {timesSummaries.length > 0 && (
                 <Badge variant="secondary" className="ml-1">
-                  {hourlySummaries.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="pomodoro" className="gap-1">
-              <Timer className="h-3 w-3" />
-              Pomodoro
-              {pomodoroSummaries.length > 0 && (
-                <Badge variant="secondary" className="ml-1">
-                  {pomodoroSummaries.length}
+                  {timesSummaries.length}
                 </Badge>
               )}
             </TabsTrigger>
@@ -162,38 +146,18 @@ export function SummaryView({ date, className }: SummaryViewProps) {
             )}
           </TabsContent>
 
-          <TabsContent value="hourly" className="min-h-0 flex-1 overflow-auto">
-            {hourlyLoading ? (
+          <TabsContent value="times" className="min-h-0 flex-1 overflow-auto">
+            {timesLoading ? (
               <Skeleton className="h-32 w-full" />
-            ) : hourlyError ? (
-              <p className="text-sm text-muted-foreground">{hourlyError}</p>
-            ) : hourlySummaries.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No hourly summaries yet.</p>
+            ) : timesError ? (
+              <p className="text-sm text-muted-foreground">{timesError}</p>
+            ) : timesSummaries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No times summaries yet. Use Integrations panel to generate.
+              </p>
             ) : (
               <div className="space-y-4">
-                {[...hourlySummaries].reverse().map((summary) => (
-                  <SummaryItem
-                    key={summary.id}
-                    summary={summary}
-                    feedback={getFeedback(summary.id)?.rating ?? null}
-                    onFeedback={(rating) => handleFeedbackClick(summary.id, rating)}
-                    showTimeRange
-                  />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="pomodoro" className="min-h-0 flex-1 overflow-auto">
-            {pomodoroLoading ? (
-              <Skeleton className="h-32 w-full" />
-            ) : pomodoroError ? (
-              <p className="text-sm text-muted-foreground">{pomodoroError}</p>
-            ) : pomodoroSummaries.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No pomodoro summaries yet.</p>
-            ) : (
-              <div className="space-y-4">
-                {[...pomodoroSummaries].reverse().map((summary) => (
+                {[...timesSummaries].reverse().map((summary) => (
                   <SummaryItem
                     key={summary.id}
                     summary={summary}

@@ -13,6 +13,7 @@ import {
   ExternalLink,
   FolderGit2,
   Hash,
+  Loader2,
   MessageSquare,
   RefreshCw,
   Search,
@@ -388,6 +389,9 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
   );
 }
 
+const INITIAL_MESSAGES_PER_CHANNEL = 5;
+const LOAD_MORE_COUNT = 10;
+
 function GroupedMessageList({
   messages,
   onMarkAsRead,
@@ -406,6 +410,10 @@ function GroupedMessageList({
   isDM?: boolean;
 }) {
   const [openChannels, setOpenChannels] = useState<Set<string>>(new Set());
+  // チャンネルごとの表示件数を管理
+  const [channelLimits, setChannelLimits] = useState<Record<string, number>>({});
+  // ローディング中のチャンネル
+  const [loadingChannels, setLoadingChannels] = useState<Set<string>>(new Set());
   const activeProjects = projects.filter((p) => p.isActive);
 
   if (messages.length === 0) {
@@ -444,6 +452,24 @@ function GroupedMessageList({
       } else {
         next.add(channelId);
       }
+      return next;
+    });
+  };
+
+  const getChannelLimit = (channelId: string) =>
+    channelLimits[channelId] ?? INITIAL_MESSAGES_PER_CHANNEL;
+
+  const loadMoreMessages = async (channelId: string) => {
+    setLoadingChannels((prev) => new Set(prev).add(channelId));
+    // 少し遅延を入れてローディング表示を見せる
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    setChannelLimits((prev) => ({
+      ...prev,
+      [channelId]: (prev[channelId] ?? INITIAL_MESSAGES_PER_CHANNEL) + LOAD_MORE_COUNT,
+    }));
+    setLoadingChannels((prev) => {
+      const next = new Set(prev);
+      next.delete(channelId);
       return next;
     });
   };
@@ -515,17 +541,46 @@ function GroupedMessageList({
                 )}
               </div>
               <CollapsibleContent className="mt-2 space-y-3 pl-4">
-                {channelMessages.map((message) => (
-                  <SlackMessageItem
-                    key={message.id}
-                    message={message}
-                    onMarkAsRead={onMarkAsRead}
-                    onUpdateProject={onUpdateProject}
-                    projects={projects}
-                    channelProjectId={channelProjectId}
-                    showChannel={false}
-                  />
-                ))}
+                {(() => {
+                  const limit = getChannelLimit(channelId);
+                  const displayedMessages = channelMessages.slice(0, limit);
+                  const hasMore = channelMessages.length > limit;
+                  const remainingCount = channelMessages.length - limit;
+
+                  return (
+                    <>
+                      {displayedMessages.map((message) => (
+                        <SlackMessageItem
+                          key={message.id}
+                          message={message}
+                          onMarkAsRead={onMarkAsRead}
+                          onUpdateProject={onUpdateProject}
+                          projects={projects}
+                          channelProjectId={channelProjectId}
+                          showChannel={false}
+                        />
+                      ))}
+                      {hasMore && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full text-muted-foreground"
+                          onClick={() => loadMoreMessages(channelId)}
+                          disabled={loadingChannels.has(channelId)}
+                        >
+                          {loadingChannels.has(channelId) ? (
+                            <>
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              読み込み中...
+                            </>
+                          ) : (
+                            <>もっと見る ({remainingCount}件)</>
+                          )}
+                        </Button>
+                      )}
+                    </>
+                  );
+                })()}
               </CollapsibleContent>
             </Collapsible>
           );

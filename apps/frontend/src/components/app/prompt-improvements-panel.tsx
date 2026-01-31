@@ -25,7 +25,7 @@ import {
 const TARGET_LABELS: Record<string, string> = {
   interpret: "AI 解釈",
   evaluate: "ハルシネーション評価",
-  "summarize-hourly": "時間帯別サマリ",
+  "summarize-times": "時間範囲サマリ",
   "summarize-daily": "日次サマリ",
   "task-extract": "タスク抽出",
 };

@@ -1,7 +1,7 @@
 /**
  * GitHub Feed Component
  *
- * Displays GitHub issues, PRs, and review requests grouped by project
+ * Displays GitHub issues, PRs, and review requests grouped by repository
  */
 
 import type { GitHubComment, GitHubItem, Project } from "@repo/types";
@@ -13,7 +13,7 @@ import {
   CircleDot,
   ExternalLink,
   Eye,
-  FolderKanban,
+  FolderGit2,
   Github,
   GitMerge,
   GitPullRequest,
@@ -27,16 +27,24 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfig } from "@/hooks/use-config";
 import {
   useGitHubComments,
   useGitHubCommentsUnreadCounts,
-  useGitHubItemProjects,
   useGitHubItems,
   useGitHubUnreadCounts,
 } from "@/hooks/use-github";
+import { useProjects } from "@/hooks/use-projects";
+import { postAdasApi } from "@/lib/adas-api";
 import { formatGitHubDateJST } from "@/lib/date";
 
 interface GitHubFeedProps {
@@ -50,7 +58,69 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
   const { counts } = useGitHubUnreadCounts(date);
   const { comments, loading: commentsLoading, markAsRead: markCommentAsRead } = useGitHubComments();
   const { counts: commentCounts } = useGitHubCommentsUnreadCounts(date);
-  const { projects } = useGitHubItemProjects();
+
+  // プロジェクト管理
+  const { projects: allProjects, updateProject } = useProjects(false);
+  const [syncing, setSyncing] = useState(false);
+
+  // アクティブなプロジェクト一覧 (紐付け先選択用)
+  const activeProjects = useMemo(
+    () => allProjects.filter((p) => p.isActive && !p.excludedAt),
+    [allProjects],
+  );
+
+  // repoKey → projectId のマッピングを作成
+  const repoToProjectMap = useMemo(() => {
+    const map = new Map<string, { projectId: number; projectName: string }>();
+    for (const p of allProjects) {
+      if (p.githubOwner && p.githubRepo) {
+        const key = `${p.githubOwner}/${p.githubRepo}`;
+        map.set(key, { projectId: p.id, projectName: p.name });
+      }
+    }
+    return map;
+  }, [allProjects]);
+
+  const syncProjects = async () => {
+    setSyncing(true);
+    try {
+      await postAdasApi<{ updated: number }>("/api/github-items/sync-projects", {});
+      refetch();
+    } catch (err) {
+      console.error("Failed to sync projects:", err);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // リポジトリ → プロジェクト紐付け変更
+  const handleRepoProjectChange = async (
+    repoOwner: string,
+    repoName: string,
+    currentProjectId: number | null,
+    newProjectIdStr: string,
+  ) => {
+    const newProjectId = newProjectIdStr === "none" ? null : Number(newProjectIdStr);
+
+    // 現在のプロジェクトから GitHub 情報をクリア
+    if (currentProjectId !== null) {
+      await updateProject(currentProjectId, {
+        githubOwner: null,
+        githubRepo: null,
+      });
+    }
+
+    // 新しいプロジェクトに GitHub 情報を設定
+    if (newProjectId !== null) {
+      await updateProject(newProjectId, {
+        githubOwner: repoOwner,
+        githubRepo: repoName,
+      });
+    }
+
+    // GitHub Items の projectId を同期
+    await syncProjects();
+  };
 
   // 連携が無効な場合
   if (!configLoading && integrations && !integrations.github.enabled) {
@@ -181,34 +251,46 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="issues" className="min-h-0 flex-1">
-              <ProjectGroupedItemList
+              <RepoGroupedItemList
                 items={issues}
-                projects={projects}
+                repoToProjectMap={repoToProjectMap}
+                activeProjects={activeProjects}
                 onMarkAsRead={markAsRead}
+                onProjectChange={handleRepoProjectChange}
+                syncing={syncing}
               />
             </TabsContent>
             <TabsContent value="prs" className="min-h-0 flex-1">
-              <ProjectGroupedItemList
+              <RepoGroupedItemList
                 items={pullRequests}
-                projects={projects}
+                repoToProjectMap={repoToProjectMap}
+                activeProjects={activeProjects}
                 onMarkAsRead={markAsRead}
+                onProjectChange={handleRepoProjectChange}
+                syncing={syncing}
               />
             </TabsContent>
             <TabsContent value="reviews" className="min-h-0 flex-1">
-              <ProjectGroupedItemList
+              <RepoGroupedItemList
                 items={reviewRequests}
-                projects={projects}
+                repoToProjectMap={repoToProjectMap}
+                activeProjects={activeProjects}
                 onMarkAsRead={markAsRead}
+                onProjectChange={handleRepoProjectChange}
+                syncing={syncing}
               />
             </TabsContent>
             <TabsContent value="comments" className="min-h-0 flex-1">
               {commentsLoading ? (
                 <Skeleton className="h-16 w-full" />
               ) : (
-                <ProjectGroupedCommentList
+                <RepoGroupedCommentList
                   comments={comments}
-                  projects={projects}
+                  repoToProjectMap={repoToProjectMap}
+                  activeProjects={activeProjects}
                   onMarkAsRead={markCommentAsRead}
+                  onProjectChange={handleRepoProjectChange}
+                  syncing={syncing}
                 />
               )}
             </TabsContent>
@@ -219,89 +301,86 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
   );
 }
 
-/** グループ化されたアイテム */
-interface ProjectGroup {
+/** リポジトリ別グループ */
+interface RepoGroup {
+  repoKey: string;
+  repoOwner: string;
+  repoName: string;
   projectId: number | null;
-  projectName: string;
+  projectName: string | null;
   items: GitHubItem[];
   unreadCount: number;
 }
 
-function ProjectGroupedItemList({
+function RepoGroupedItemList({
   items,
-  projects,
+  repoToProjectMap,
+  activeProjects,
   onMarkAsRead,
+  onProjectChange,
+  syncing,
 }: {
   items: GitHubItem[];
-  projects: Project[];
+  repoToProjectMap: Map<string, { projectId: number; projectName: string }>;
+  activeProjects: Project[];
   onMarkAsRead: (id: number) => void;
+  onProjectChange: (
+    repoOwner: string,
+    repoName: string,
+    currentProjectId: number | null,
+    newProjectIdStr: string,
+  ) => void;
+  syncing: boolean;
 }) {
-  // プロジェクト別にグループ化
-  const groups = useMemo((): ProjectGroup[] => {
-    const projectMap = new Map<number, Project>();
-    for (const p of projects) {
-      projectMap.set(p.id, p);
-    }
-
-    const groupMap = new Map<number | null, GitHubItem[]>();
+  // リポジトリ別にグループ化
+  const groups = useMemo((): RepoGroup[] => {
+    const groupMap = new Map<string, GitHubItem[]>();
 
     for (const item of items) {
-      const key = item.projectId;
+      const key = `${item.repoOwner}/${item.repoName}`;
       const existing = groupMap.get(key) ?? [];
       existing.push(item);
       groupMap.set(key, existing);
     }
 
-    const result: ProjectGroup[] = [];
+    const result: RepoGroup[] = [];
 
-    // プロジェクトがあるグループを先に追加
-    for (const [projectId, groupItems] of groupMap.entries()) {
-      if (projectId !== null) {
-        const project = projectMap.get(projectId);
-        result.push({
-          projectId,
-          projectName: project?.name ?? `Project #${projectId}`,
-          items: groupItems,
-          unreadCount: groupItems.filter((i) => !i.isRead).length,
-        });
-      }
-    }
-
-    // プロジェクト名でソート
-    result.sort((a, b) => a.projectName.localeCompare(b.projectName));
-
-    // 未分類を最後に追加
-    const unassigned = groupMap.get(null);
-    if (unassigned && unassigned.length > 0) {
+    for (const [repoKey, groupItems] of groupMap.entries()) {
+      const [repoOwner, repoName] = repoKey.split("/");
+      const projectInfo = repoToProjectMap.get(repoKey);
       result.push({
-        projectId: null,
-        projectName: "未分類",
-        items: unassigned,
-        unreadCount: unassigned.filter((i) => !i.isRead).length,
+        repoKey,
+        repoOwner: repoOwner ?? "",
+        repoName: repoName ?? "",
+        projectId: projectInfo?.projectId ?? null,
+        projectName: projectInfo?.projectName ?? null,
+        items: groupItems,
+        unreadCount: groupItems.filter((i) => !i.isRead).length,
       });
     }
 
+    // リポジトリ名でソート
+    result.sort((a, b) => a.repoKey.localeCompare(b.repoKey));
+
     return result;
-  }, [items, projects]);
+  }, [items, repoToProjectMap]);
 
   // 開閉状態を管理
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
-    // デフォルトで全て開く
     const initial = new Set<string>();
     for (const g of groups) {
-      initial.add(String(g.projectId));
+      initial.add(g.repoKey);
     }
     return initial;
   });
 
-  const toggleGroup = (projectId: number | null) => {
+  const toggleGroup = (repoKey: string) => {
     setOpenGroups((prev) => {
-      const key = String(projectId);
       const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
+      if (next.has(repoKey)) {
+        next.delete(repoKey);
       } else {
-        next.add(key);
+        next.add(repoKey);
       }
       return next;
     });
@@ -311,29 +390,19 @@ function ProjectGroupedItemList({
     return <p className="py-4 text-center text-sm text-muted-foreground">No items.</p>;
   }
 
-  // グループが1つだけ、かつ全て未分類の場合はグループ化せずに表示
-  if (groups.length === 1 && groups[0]?.projectId === null) {
-    return (
-      <div className="h-full overflow-y-auto">
-        <div className="space-y-3">
-          {items.map((item) => (
-            <GitHubItemCard key={item.id} item={item} onMarkAsRead={onMarkAsRead} />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="h-full overflow-y-auto">
       <div className="space-y-2">
         {groups.map((group) => (
-          <ProjectCollapsible
-            key={String(group.projectId)}
+          <RepoCollapsible
+            key={group.repoKey}
             group={group}
-            isOpen={openGroups.has(String(group.projectId))}
-            onToggle={() => toggleGroup(group.projectId)}
+            isOpen={openGroups.has(group.repoKey)}
+            onToggle={() => toggleGroup(group.repoKey)}
+            activeProjects={activeProjects}
             onMarkAsRead={onMarkAsRead}
+            onProjectChange={onProjectChange}
+            syncing={syncing}
           />
         ))}
       </div>
@@ -341,28 +410,39 @@ function ProjectGroupedItemList({
   );
 }
 
-function ProjectCollapsible({
+function RepoCollapsible({
   group,
   isOpen,
   onToggle,
+  activeProjects,
   onMarkAsRead,
+  onProjectChange,
+  syncing,
 }: {
-  group: ProjectGroup;
+  group: RepoGroup;
   isOpen: boolean;
   onToggle: () => void;
+  activeProjects: Project[];
   onMarkAsRead: (id: number) => void;
+  onProjectChange: (
+    repoOwner: string,
+    repoName: string,
+    currentProjectId: number | null,
+    newProjectIdStr: string,
+  ) => void;
+  syncing: boolean;
 }) {
   return (
     <Collapsible open={isOpen} onOpenChange={onToggle}>
-      <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left hover:bg-muted/50">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 rounded-md border p-2 hover:bg-muted/50">
+        <CollapsibleTrigger className="flex flex-1 items-center gap-2">
           {isOpen ? (
             <ChevronDown className="h-4 w-4 text-muted-foreground" />
           ) : (
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           )}
-          <FolderKanban className="h-4 w-4 text-indigo-500" />
-          <span className="truncate text-sm font-medium">{group.projectName}</span>
+          <FolderGit2 className="h-4 w-4 text-muted-foreground" />
+          <span className="truncate text-sm font-medium">{group.repoKey}</span>
           <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
             {group.items.length}
           </Badge>
@@ -371,8 +451,28 @@ function ProjectCollapsible({
               {group.unreadCount} unread
             </Badge>
           )}
-        </div>
-      </CollapsibleTrigger>
+        </CollapsibleTrigger>
+        {/* プロジェクト Select */}
+        <Select
+          value={group.projectId?.toString() ?? "none"}
+          onValueChange={(value) =>
+            onProjectChange(group.repoOwner, group.repoName, group.projectId, value)
+          }
+          disabled={syncing}
+        >
+          <SelectTrigger className="h-7 w-[130px] text-xs" onClick={(e) => e.stopPropagation()}>
+            <SelectValue placeholder="Project" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">なし</SelectItem>
+            {activeProjects.map((project) => (
+              <SelectItem key={project.id} value={project.id.toString()}>
+                {project.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <CollapsibleContent>
         <div className="mt-2 space-y-3 pl-6">
           {group.items.map((item) => (
@@ -413,9 +513,7 @@ function GitHubItemCard({
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {getStateIcon()}
-          <span className="text-xs font-medium text-muted-foreground">
-            {item.repoOwner}/{item.repoName}#{item.number}
-          </span>
+          <span className="text-xs font-medium text-muted-foreground">#{item.number}</span>
           {item.githubUpdatedAt && (
             <span className="text-xs text-muted-foreground">
               {formatGitHubDateJST(item.githubUpdatedAt)}
@@ -484,97 +582,86 @@ function GitHubItemCard({
   );
 }
 
-/** コメント用グループ */
-interface CommentProjectGroup {
+/** コメント用リポジトリ別グループ */
+interface CommentRepoGroup {
+  repoKey: string;
+  repoOwner: string;
+  repoName: string;
   projectId: number | null;
-  projectName: string;
+  projectName: string | null;
   comments: GitHubComment[];
   unreadCount: number;
 }
 
-function ProjectGroupedCommentList({
+function RepoGroupedCommentList({
   comments,
-  projects,
+  repoToProjectMap,
+  activeProjects,
   onMarkAsRead,
+  onProjectChange,
+  syncing,
 }: {
   comments: GitHubComment[];
-  projects: Project[];
+  repoToProjectMap: Map<string, { projectId: number; projectName: string }>;
+  activeProjects: Project[];
   onMarkAsRead: (id: number) => void;
+  onProjectChange: (
+    repoOwner: string,
+    repoName: string,
+    currentProjectId: number | null,
+    newProjectIdStr: string,
+  ) => void;
+  syncing: boolean;
 }) {
-  // プロジェクト別にグループ化
-  const groups = useMemo((): CommentProjectGroup[] => {
-    // repoOwner/repoName → project のマッピングを作成
-    const repoToProject = new Map<string, { id: number; name: string }>();
-    // projectId → name のマッピングも作成
-    const projectIdToName = new Map<number, string>();
-    for (const p of projects) {
-      if (p.githubOwner && p.githubRepo) {
-        const key = `${p.githubOwner}/${p.githubRepo}`;
-        repoToProject.set(key, { id: p.id, name: p.name });
-        projectIdToName.set(p.id, p.name);
-      }
-    }
-
-    const groupMap = new Map<number | null, GitHubComment[]>();
+  // リポジトリ別にグループ化
+  const groups = useMemo((): CommentRepoGroup[] => {
+    const groupMap = new Map<string, GitHubComment[]>();
 
     for (const comment of comments) {
-      const repoKey = `${comment.repoOwner}/${comment.repoName}`;
-      const project = repoToProject.get(repoKey);
-      const key = project?.id ?? null;
+      const key = `${comment.repoOwner}/${comment.repoName}`;
       const existing = groupMap.get(key) ?? [];
       existing.push(comment);
       groupMap.set(key, existing);
     }
 
-    const result: CommentProjectGroup[] = [];
+    const result: CommentRepoGroup[] = [];
 
-    // プロジェクトがあるグループを先に追加
-    for (const [projectId, groupComments] of groupMap.entries()) {
-      if (projectId !== null) {
-        result.push({
-          projectId,
-          projectName: projectIdToName.get(projectId) ?? `Project #${projectId}`,
-          comments: groupComments,
-          unreadCount: groupComments.filter((c) => !c.isRead).length,
-        });
-      }
-    }
-
-    // プロジェクト名でソート
-    result.sort((a, b) => a.projectName.localeCompare(b.projectName));
-
-    // 未分類を最後に追加
-    const unassigned = groupMap.get(null);
-    if (unassigned && unassigned.length > 0) {
+    for (const [repoKey, groupComments] of groupMap.entries()) {
+      const [repoOwner, repoName] = repoKey.split("/");
+      const projectInfo = repoToProjectMap.get(repoKey);
       result.push({
-        projectId: null,
-        projectName: "未分類",
-        comments: unassigned,
-        unreadCount: unassigned.filter((c) => !c.isRead).length,
+        repoKey,
+        repoOwner: repoOwner ?? "",
+        repoName: repoName ?? "",
+        projectId: projectInfo?.projectId ?? null,
+        projectName: projectInfo?.projectName ?? null,
+        comments: groupComments,
+        unreadCount: groupComments.filter((c) => !c.isRead).length,
       });
     }
 
+    // リポジトリ名でソート
+    result.sort((a, b) => a.repoKey.localeCompare(b.repoKey));
+
     return result;
-  }, [comments, projects]);
+  }, [comments, repoToProjectMap]);
 
   // 開閉状態を管理
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
-    // デフォルトで全て開く
     const initial = new Set<string>();
     for (const g of groups) {
-      initial.add(String(g.projectId));
+      initial.add(g.repoKey);
     }
     return initial;
   });
 
-  const toggleGroup = (projectId: number | null) => {
+  const toggleGroup = (repoKey: string) => {
     setOpenGroups((prev) => {
-      const key = String(projectId);
       const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
+      if (next.has(repoKey)) {
+        next.delete(repoKey);
       } else {
-        next.add(key);
+        next.add(repoKey);
       }
       return next;
     });
@@ -584,29 +671,19 @@ function ProjectGroupedCommentList({
     return <p className="py-4 text-center text-sm text-muted-foreground">No comments.</p>;
   }
 
-  // グループが1つだけ、かつ全て未分類の場合はグループ化せずに表示
-  if (groups.length === 1 && groups[0]?.projectId === null) {
-    return (
-      <div className="h-full overflow-y-auto">
-        <div className="space-y-3">
-          {comments.map((comment) => (
-            <GitHubCommentCard key={comment.id} comment={comment} onMarkAsRead={onMarkAsRead} />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="h-full overflow-y-auto">
       <div className="space-y-2">
         {groups.map((group) => (
-          <CommentProjectCollapsible
-            key={String(group.projectId)}
+          <CommentRepoCollapsible
+            key={group.repoKey}
             group={group}
-            isOpen={openGroups.has(String(group.projectId))}
-            onToggle={() => toggleGroup(group.projectId)}
+            isOpen={openGroups.has(group.repoKey)}
+            onToggle={() => toggleGroup(group.repoKey)}
+            activeProjects={activeProjects}
             onMarkAsRead={onMarkAsRead}
+            onProjectChange={onProjectChange}
+            syncing={syncing}
           />
         ))}
       </div>
@@ -614,28 +691,39 @@ function ProjectGroupedCommentList({
   );
 }
 
-function CommentProjectCollapsible({
+function CommentRepoCollapsible({
   group,
   isOpen,
   onToggle,
+  activeProjects,
   onMarkAsRead,
+  onProjectChange,
+  syncing,
 }: {
-  group: CommentProjectGroup;
+  group: CommentRepoGroup;
   isOpen: boolean;
   onToggle: () => void;
+  activeProjects: Project[];
   onMarkAsRead: (id: number) => void;
+  onProjectChange: (
+    repoOwner: string,
+    repoName: string,
+    currentProjectId: number | null,
+    newProjectIdStr: string,
+  ) => void;
+  syncing: boolean;
 }) {
   return (
     <Collapsible open={isOpen} onOpenChange={onToggle}>
-      <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left hover:bg-muted/50">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 rounded-md border p-2 hover:bg-muted/50">
+        <CollapsibleTrigger className="flex flex-1 items-center gap-2">
           {isOpen ? (
             <ChevronDown className="h-4 w-4 text-muted-foreground" />
           ) : (
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           )}
-          <FolderKanban className="h-4 w-4 text-indigo-500" />
-          <span className="truncate text-sm font-medium">{group.projectName}</span>
+          <FolderGit2 className="h-4 w-4 text-muted-foreground" />
+          <span className="truncate text-sm font-medium">{group.repoKey}</span>
           <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
             {group.comments.length}
           </Badge>
@@ -644,8 +732,28 @@ function CommentProjectCollapsible({
               {group.unreadCount} unread
             </Badge>
           )}
-        </div>
-      </CollapsibleTrigger>
+        </CollapsibleTrigger>
+        {/* プロジェクト Select */}
+        <Select
+          value={group.projectId?.toString() ?? "none"}
+          onValueChange={(value) =>
+            onProjectChange(group.repoOwner, group.repoName, group.projectId, value)
+          }
+          disabled={syncing}
+        >
+          <SelectTrigger className="h-7 w-[130px] text-xs" onClick={(e) => e.stopPropagation()}>
+            <SelectValue placeholder="Project" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">なし</SelectItem>
+            {activeProjects.map((project) => (
+              <SelectItem key={project.id} value={project.id.toString()}>
+                {project.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <CollapsibleContent>
         <div className="mt-2 space-y-3 pl-6">
           {group.comments.map((comment) => (
@@ -678,9 +786,7 @@ function GitHubCommentCard({
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs font-medium text-muted-foreground">
-            {comment.repoOwner}/{comment.repoName}#{comment.itemNumber}
-          </span>
+          <span className="text-xs font-medium text-muted-foreground">#{comment.itemNumber}</span>
           <Badge variant="outline" className="text-xs">
             {getTypeLabel()}
           </Badge>

@@ -18,7 +18,6 @@ import {
   type CreateMergeTaskResponse,
   type DetectDuplicatesResponse,
   type ElaborateTaskRequest,
-  type ElaborateTaskResponse,
   type ElaborationLevel,
   isApprovalOnlyTask,
   type PromptTarget,

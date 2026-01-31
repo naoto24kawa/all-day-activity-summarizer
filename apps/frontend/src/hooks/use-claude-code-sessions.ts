@@ -23,6 +23,7 @@ export function useClaudeCodeSessions() {
   const [sessions, setSessions] = useState<ClaudeCodeSession[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   const fetchSessions = useCallback(async (silent = false) => {
     try {
@@ -45,10 +46,13 @@ export function useClaudeCodeSessions() {
 
   const syncSessions = useCallback(async () => {
     try {
+      setSyncing(true);
       await postAdasApi("/api/claude-code-sessions/sync", {});
       await fetchSessions(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to sync sessions");
+    } finally {
+      setSyncing(false);
     }
   }, [fetchSessions]);
 
@@ -64,7 +68,15 @@ export function useClaudeCodeSessions() {
     [fetchSessions],
   );
 
-  return { sessions, error, loading, refetch: fetchSessions, syncSessions, updateSession };
+  return {
+    sessions,
+    error,
+    loading,
+    syncing,
+    refetch: fetchSessions,
+    syncSessions,
+    updateSession,
+  };
 }
 
 export function useClaudeCodeStats(date?: string) {

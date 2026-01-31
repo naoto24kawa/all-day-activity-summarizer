@@ -9,7 +9,7 @@ function readPrompt(name: string): string {
 }
 
 /**
- * 時間帯別サマリー用プロンプトを構築
+ * 時間範囲サマリー用プロンプトを構築
  * DB が渡された場合、フィードバックを few-shot examples として挿入
  * また、vocabulary から用語セクションを追加
  *
@@ -17,15 +17,15 @@ function readPrompt(name: string): string {
  * @param db - データベース接続 (オプション)
  * @param actionableTasks - 着手すべきタスクのテキスト (オプション)
  */
-export async function buildHourlySummaryPrompt(
+export async function buildTimesSummaryPrompt(
   transcription: string,
   db?: AdasDatabase,
   actionableTasks?: string,
 ): Promise<string> {
-  let template = readPrompt("summarize-hourly");
+  let template = readPrompt("summarize-times");
 
   if (db) {
-    template = await injectFeedbackExamples(template, "summarize-hourly", db);
+    template = await injectFeedbackExamples(template, "summarize-times", db);
     // vocabulary セクションを追加
     const vocabularySection = buildVocabularySection(db);
     if (vocabularySection) {

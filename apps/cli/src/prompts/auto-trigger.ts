@@ -5,7 +5,7 @@ import consola from "consola";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { improvePrompt } from "./improver.js";
 
-const TARGETS: PromptTarget[] = ["interpret", "evaluate", "summarize-hourly", "summarize-daily"];
+const TARGETS: PromptTarget[] = ["interpret", "evaluate", "summarize-times", "summarize-daily"];
 
 export async function checkAndAutoImprove(db: AdasDatabase, threshold: number): Promise<void> {
   for (const target of TARGETS) {

@@ -67,59 +67,49 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
   /**
    * GET /api/claude-code-sessions/stats
    *
-   * Returns statistics for sessions
+   * Returns statistics for sessions (SQL GROUP BY optimized)
    * Query params:
    * - date: YYYY-MM-DD (optional, filters by date)
    */
   router.get("/stats", (c) => {
     const date = c.req.query("date");
 
-    const sessions = date
-      ? db
-          .select()
-          .from(schema.claudeCodeSessions)
+    // Use SQL GROUP BY for efficient aggregation
+    const baseQuery = db
+      .select({
+        projectPath: schema.claudeCodeSessions.projectPath,
+        projectName: sql<string | null>`MAX(${schema.claudeCodeSessions.projectName})`.as(
+          "projectName",
+        ),
+        sessionCount: sql<number>`COUNT(*)`.as("sessionCount"),
+        totalUserMessages:
+          sql<number>`COALESCE(SUM(${schema.claudeCodeSessions.userMessageCount}), 0)`.as(
+            "totalUserMessages",
+          ),
+        totalAssistantMessages:
+          sql<number>`COALESCE(SUM(${schema.claudeCodeSessions.assistantMessageCount}), 0)`.as(
+            "totalAssistantMessages",
+          ),
+        totalToolUses: sql<number>`COALESCE(SUM(${schema.claudeCodeSessions.toolUseCount}), 0)`.as(
+          "totalToolUses",
+        ),
+      })
+      .from(schema.claudeCodeSessions);
+
+    const projects = date
+      ? baseQuery
           .where(eq(schema.claudeCodeSessions.date, date))
+          .groupBy(schema.claudeCodeSessions.projectPath)
           .all()
-      : db.select().from(schema.claudeCodeSessions).all();
+      : baseQuery.groupBy(schema.claudeCodeSessions.projectPath).all();
 
-    // Group by project
-    const projectStats = new Map<
-      string,
-      {
-        projectPath: string;
-        projectName: string | null;
-        sessionCount: number;
-        totalUserMessages: number;
-        totalAssistantMessages: number;
-        totalToolUses: number;
-      }
-    >();
-
-    for (const session of sessions) {
-      const key = session.projectPath;
-      const existing = projectStats.get(key);
-
-      if (existing) {
-        existing.sessionCount++;
-        existing.totalUserMessages += session.userMessageCount;
-        existing.totalAssistantMessages += session.assistantMessageCount;
-        existing.totalToolUses += session.toolUseCount;
-      } else {
-        projectStats.set(key, {
-          projectPath: session.projectPath,
-          projectName: session.projectName,
-          sessionCount: 1,
-          totalUserMessages: session.userMessageCount,
-          totalAssistantMessages: session.assistantMessageCount,
-          totalToolUses: session.toolUseCount,
-        });
-      }
-    }
+    // Calculate totals from aggregated results
+    const totalSessions = projects.reduce((sum, p) => sum + p.sessionCount, 0);
 
     return c.json({
-      totalSessions: sessions.length,
-      totalProjects: projectStats.size,
-      projects: Array.from(projectStats.values()),
+      totalSessions,
+      totalProjects: projects.length,
+      projects,
     });
   });
 

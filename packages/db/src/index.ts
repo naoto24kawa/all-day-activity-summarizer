@@ -1202,5 +1202,136 @@ export function createDatabase(dbPath: string) {
     // Migration already applied or fresh DB
   }
 
+  // Migration: summaries テーブルを pomodoro/hourly → times に変更
+  // 既存の pomodoro/hourly サマリーを削除し、CHECK 制約を更新
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='summaries'",
+      )
+      .get();
+    if (row && row.sql.includes("'pomodoro'") && !row.sql.includes("'times'")) {
+      sqlite.exec(`
+        -- 既存の pomodoro/hourly サマリーを削除
+        DELETE FROM summaries WHERE summary_type IN ('pomodoro', 'hourly');
+
+        -- テーブルを再作成して CHECK 制約を更新
+        ALTER TABLE summaries RENAME TO summaries_old;
+        CREATE TABLE summaries (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          period_start TEXT NOT NULL,
+          period_end TEXT NOT NULL,
+          summary_type TEXT NOT NULL CHECK(summary_type IN ('times', 'daily')),
+          content TEXT NOT NULL,
+          segment_ids TEXT NOT NULL,
+          model TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        INSERT INTO summaries SELECT * FROM summaries_old;
+        DROP TABLE summaries_old;
+        CREATE INDEX IF NOT EXISTS idx_summaries_date ON summaries(date);
+        CREATE INDEX IF NOT EXISTS idx_summaries_type ON summaries(summary_type);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: summary_queue テーブルを pomodoro/hourly → times に変更
+  addColumnIfNotExists(sqlite, "summary_queue", "start_hour", "INTEGER");
+  addColumnIfNotExists(sqlite, "summary_queue", "end_hour", "INTEGER");
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='summary_queue'",
+      )
+      .get();
+    if (row && row.sql.includes("'pomodoro'") && !row.sql.includes("'times'")) {
+      sqlite.exec(`
+        -- 既存の pomodoro/hourly ジョブを削除
+        DELETE FROM summary_queue WHERE job_type IN ('pomodoro', 'hourly');
+
+        -- テーブルを再作成して CHECK 制約を更新
+        ALTER TABLE summary_queue RENAME TO summary_queue_old;
+        CREATE TABLE summary_queue (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_type TEXT NOT NULL CHECK(job_type IN ('times', 'daily')),
+          date TEXT NOT NULL,
+          period_param INTEGER,
+          start_hour INTEGER,
+          end_hour INTEGER,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+          retry_count INTEGER NOT NULL DEFAULT 0,
+          max_retries INTEGER NOT NULL DEFAULT 3,
+          error_message TEXT,
+          locked_at TEXT,
+          run_after TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO summary_queue (id, job_type, date, period_param, start_hour, end_hour, status, retry_count, max_retries, error_message, locked_at, run_after, created_at, updated_at)
+          SELECT id, job_type, date, period_param, start_hour, end_hour, status, retry_count, max_retries, error_message, locked_at, run_after, created_at, updated_at FROM summary_queue_old;
+        DROP TABLE summary_queue_old;
+        CREATE INDEX IF NOT EXISTS idx_summary_queue_status ON summary_queue(status);
+        CREATE INDEX IF NOT EXISTS idx_summary_queue_run_after ON summary_queue(run_after);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_summary_queue_unique_job
+          ON summary_queue(job_type, date, start_hour, end_hour)
+          WHERE status IN ('pending', 'processing');
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: ai_job_queue の job_type を summarize-pomodoro/hourly → summarize-times に変更
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='ai_job_queue'",
+      )
+      .get();
+    if (row && row.sql.includes("'summarize-pomodoro'") && !row.sql.includes("'summarize-times'")) {
+      sqlite.exec(`
+        -- 既存の pomodoro/hourly ジョブを削除
+        DELETE FROM ai_job_queue WHERE job_type IN ('summarize-pomodoro', 'summarize-hourly');
+
+        -- テーブルを再作成して CHECK 制約を更新
+        ALTER TABLE ai_job_queue RENAME TO ai_job_queue_old;
+        CREATE TABLE ai_job_queue (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_type TEXT NOT NULL CHECK(job_type IN (
+            'task-extract-slack',
+            'task-extract-github',
+            'task-extract-github-comment',
+            'task-extract-memo',
+            'task-elaborate',
+            'learning-extract',
+            'vocabulary-extract',
+            'profile-analyze',
+            'summarize-times',
+            'summarize-daily'
+          )),
+          params TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+          result TEXT,
+          result_summary TEXT,
+          retry_count INTEGER NOT NULL DEFAULT 0,
+          max_retries INTEGER NOT NULL DEFAULT 3,
+          error_message TEXT,
+          locked_at TEXT,
+          run_after TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          completed_at TEXT,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO ai_job_queue SELECT * FROM ai_job_queue_old;
+        DROP TABLE ai_job_queue_old;
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
   return db;
 }

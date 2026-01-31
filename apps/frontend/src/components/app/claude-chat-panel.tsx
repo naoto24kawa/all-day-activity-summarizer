@@ -289,9 +289,7 @@ export function ClaudeChatPanel({
               {messages.map((msg, index) => (
                 <MessageBubble key={index} role={msg.role} content={msg.content} />
               ))}
-              {currentResponse && (
-                <MessageBubble role="assistant" content={currentResponse} isStreaming />
-              )}
+              {currentResponse && <MessageBubble content={currentResponse} isStreaming />}
             </div>
           )}
         </div>
@@ -428,9 +426,7 @@ export function ClaudeChatPanel({
             {messages.map((msg, index) => (
               <MessageBubble key={index} role={msg.role} content={msg.content} />
             ))}
-            {currentResponse && (
-              <MessageBubble role="assistant" content={currentResponse} isStreaming />
-            )}
+            {currentResponse && <MessageBubble content={currentResponse} isStreaming />}
           </div>
         )}
       </div>

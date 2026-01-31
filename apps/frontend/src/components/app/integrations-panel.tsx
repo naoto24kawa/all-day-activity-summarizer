@@ -1,6 +1,7 @@
 import {
   Bot,
   Check,
+  Clock,
   Github,
   Loader2,
   MessageSquare,
@@ -27,7 +28,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useConfig } from "@/hooks/use-config";
-import { fetchAdasApi } from "@/lib/adas-api";
+import { useSummaries } from "@/hooks/use-summaries";
+import { fetchAdasApi, postAdasApi } from "@/lib/adas-api";
+import { getTodayDateString } from "@/lib/date";
 
 export function IntegrationsPanel() {
   const { integrations, loading, error, updating, updateIntegration, updateSummarizerConfig } =
@@ -40,6 +43,14 @@ export function IntegrationsPanel() {
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "success" | "error">("idle");
   const [loadingModels, setLoadingModels] = useState(false);
+
+  // サマリー生成関連の状態
+  const today = getTodayDateString();
+  const { generateSummary, loading: summaryLoading } = useSummaries(today);
+  const [summaryStartHour, setSummaryStartHour] = useState("9");
+  const [summaryEndHour, setSummaryEndHour] = useState("18");
+  const [generatingSummary, setGeneratingSummary] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
 
   // 初期値を設定
   useEffect(() => {
@@ -70,12 +81,10 @@ export function IntegrationsPanel() {
     setTestingConnection(true);
     setConnectionStatus("idle");
     try {
-      const response = await fetch("/api/config/lmstudio/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: lmStudioUrl }),
-      });
-      const data = (await response.json()) as { success: boolean };
+      const data = await postAdasApi<{ success: boolean; error?: string }>(
+        "/api/config/lmstudio/test",
+        { url: lmStudioUrl },
+      );
       if (data.success) {
         setConnectionStatus("success");
         await fetchLmStudioModels(lmStudioUrl);
@@ -121,6 +130,32 @@ export function IntegrationsPanel() {
     },
     [updateSummarizerConfig],
   );
+
+  const handleGenerateTimesSummary = useCallback(async () => {
+    const startHour = Number.parseInt(summaryStartHour, 10);
+    const endHour = Number.parseInt(summaryEndHour, 10);
+    const timeRange = endHour - startHour + 1;
+
+    setSummaryError(null);
+
+    if (startHour > endHour) {
+      setSummaryError("開始時間は終了時間以前にしてください");
+      return;
+    }
+    if (timeRange > 12) {
+      setSummaryError("時間範囲は最大12時間までです");
+      return;
+    }
+
+    setGeneratingSummary(true);
+    try {
+      await generateSummary({ date: today, startHour, endHour });
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : "サマリ生成に失敗しました");
+    } finally {
+      setGeneratingSummary(false);
+    }
+  }, [summaryStartHour, summaryEndHour, today, generateSummary]);
 
   if (loading) {
     return (
@@ -391,6 +426,52 @@ export function IntegrationsPanel() {
                 </div>
               </div>
             )}
+
+            {/* 時間範囲指定サマリ生成 */}
+            <div className="mt-4 space-y-3 pt-4 border-t">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                <Label className="text-sm">時間範囲サマリ生成</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                指定した時間範囲のサマリを生成します (最大12時間)
+              </p>
+              <div className="flex items-center gap-2">
+                <Select value={summaryStartHour} onValueChange={setSummaryStartHour}>
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <SelectItem key={i} value={String(i)}>
+                        {String(i).padStart(2, "0")}:00
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground">〜</span>
+                <Select value={summaryEndHour} onValueChange={setSummaryEndHour}>
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <SelectItem key={i} value={String(i)}>
+                        {String(i).padStart(2, "0")}:59
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  onClick={handleGenerateTimesSummary}
+                  disabled={generatingSummary || summaryLoading}
+                >
+                  {generatingSummary ? <Loader2 className="h-4 w-4 animate-spin" /> : "生成"}
+                </Button>
+              </div>
+              {summaryError && <p className="text-xs text-destructive">{summaryError}</p>}
+            </div>
           </div>
         </div>
       </CardContent>

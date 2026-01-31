@@ -22,7 +22,7 @@ export const summaries = sqliteTable("summaries", {
   date: text("date").notNull(), // YYYY-MM-DD
   periodStart: text("period_start").notNull(), // ISO8601
   periodEnd: text("period_end").notNull(), // ISO8601
-  summaryType: text("summary_type", { enum: ["pomodoro", "hourly", "daily"] }).notNull(),
+  summaryType: text("summary_type", { enum: ["times", "daily"] }).notNull(),
   content: text("content").notNull(),
   segmentIds: text("segment_ids").notNull(), // JSON array of segment IDs
   model: text("model").notNull(),
@@ -54,7 +54,7 @@ export const segmentFeedbacks = sqliteTable("segment_feedbacks", {
   segmentId: integer("segment_id").notNull(),
   rating: text("rating", { enum: ["good", "bad"] }).notNull(),
   target: text("target", {
-    enum: ["interpret", "evaluate", "summarize-hourly", "summarize-daily", "task-extract"],
+    enum: ["interpret", "evaluate", "summarize-times", "summarize-daily", "task-extract"],
   })
     .notNull()
     .default("interpret"),
@@ -99,7 +99,7 @@ export type NewFeedback = typeof feedbacks.$inferInsert;
 export const promptImprovements = sqliteTable("prompt_improvements", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   target: text("target", {
-    enum: ["interpret", "evaluate", "summarize-hourly", "summarize-daily", "task-extract"],
+    enum: ["interpret", "evaluate", "summarize-times", "summarize-daily", "task-extract"],
   }).notNull(),
   previousPrompt: text("previous_prompt").notNull(),
   newPrompt: text("new_prompt").notNull(),
@@ -142,9 +142,11 @@ export type NewEvaluatorLog = typeof evaluatorLogs.$inferInsert;
 
 export const summaryQueue = sqliteTable("summary_queue", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  jobType: text("job_type", { enum: ["pomodoro", "hourly", "daily"] }).notNull(),
+  jobType: text("job_type", { enum: ["times", "daily"] }).notNull(),
   date: text("date").notNull(),
-  periodParam: integer("period_param"), // pomodoro: 0-47, hourly: 0-23
+  periodParam: integer("period_param"), // 未使用 (後方互換のため残す)
+  startHour: integer("start_hour"), // times用: 開始時間 (0-23)
+  endHour: integer("end_hour"), // times用: 終了時間 (0-23)
   status: text("status", { enum: ["pending", "processing", "completed", "failed"] })
     .notNull()
     .default("pending"),
@@ -766,8 +768,7 @@ export const aiJobQueue = sqliteTable("ai_job_queue", {
       "learning-extract",
       "vocabulary-extract",
       "profile-analyze",
-      "summarize-pomodoro",
-      "summarize-hourly",
+      "summarize-times",
       "summarize-daily",
     ],
   }).notNull(),

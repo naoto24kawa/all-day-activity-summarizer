@@ -8,7 +8,7 @@ import { improvePrompt } from "../prompts/improver.js";
 const VALID_TARGETS: PromptTarget[] = [
   "interpret",
   "evaluate",
-  "summarize-hourly",
+  "summarize-times",
   "summarize-daily",
 ];
 

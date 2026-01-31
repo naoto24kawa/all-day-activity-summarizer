@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useJobNotifications } from "@/hooks/use-job-notifications";
 import { useTabBadges } from "@/hooks/use-tab-badges";
-import { formatTimeJST, getTodayDateString } from "@/lib/date";
+import { getTodayDateString } from "@/lib/date";
 import { TAB_GROUPS, type TabGroupId, type TabId } from "@/lib/tab-groups";
 import { ActivityFeed } from "./activity-feed";
 import { AiProcessingLogPanel } from "./ai-processing-log-panel";
@@ -12,7 +11,6 @@ import { ClaudeChatPanel } from "./claude-chat-panel";
 import { ClaudeCodeFeed } from "./claude-code-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
 import { GitHubFeed } from "./github-feed";
-import { GitHubReposPanel } from "./github-repos-panel";
 import { HeaderControls } from "./header-controls";
 import { IntegrationsPanel } from "./integrations-panel";
 import { LearningsFeed } from "./learnings-feed";
@@ -23,7 +21,6 @@ import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
 import { SummaryView } from "./summary-view";
 import { TasksPanel } from "./tasks-panel";
-import { ThemeToggle } from "./theme-toggle";
 import { Timeline } from "./timeline";
 import { VocabularyPanel } from "./vocabulary-panel";
 
@@ -175,7 +172,6 @@ export function Dashboard() {
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="space-y-4">
                     <IntegrationsPanel />
-                    <GitHubReposPanel />
                     <ProfilePanel />
                   </div>
                   <div className="space-y-4">

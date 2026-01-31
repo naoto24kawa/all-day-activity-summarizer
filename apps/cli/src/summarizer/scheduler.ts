@@ -1,12 +1,7 @@
 import type { AdasDatabase, SummaryQueueJob } from "@repo/db";
 import consola from "consola";
 import { getTodayDateString } from "../utils/date.js";
-import {
-  generateDailySummary,
-  generateHourlySummary,
-  generatePomodoroSummary,
-  periodToTimeRange,
-} from "./generator.js";
+import { generateDailySummary, generateTimesSummary } from "./generator.js";
 import {
   cleanupOldJobs,
   dequeue,
@@ -18,63 +13,21 @@ import {
 } from "./queue.js";
 
 // Re-export generator functions for backward compatibility
-export {
-  generateDailySummary,
-  generateHourlySummary,
-  generatePomodoroSummary,
-} from "./generator.js";
-
-// ---------------------------------------------------------------------------
-// Period helpers
-// ---------------------------------------------------------------------------
-
-/** 30分間隔の period index (0-47) を返す */
-function getCurrentPeriodIndex(now: Date): number {
-  return now.getHours() * 2 + (now.getMinutes() >= 30 ? 1 : 0);
-}
+export { generateDailySummary, generateTimesSummary } from "./generator.js";
 
 // ---------------------------------------------------------------------------
 // Enqueue Scheduler - 時間境界を検出してジョブを投入
 // ---------------------------------------------------------------------------
 
 export function startEnqueueScheduler(db: AdasDatabase): () => void {
-  let lastPomodoroPeriod = -1;
-  let lastHourlyHour = -1;
   let lastDailyDate = "";
 
   const checkAndEnqueue = () => {
     const now = new Date();
     const date = getTodayDateString();
-    const currentPeriod = getCurrentPeriodIndex(now);
     const currentHour = now.getHours();
 
-    // Pomodoro: 30分の境界を越えたら前の period をキューに追加
-    if (currentPeriod !== lastPomodoroPeriod && currentPeriod > 0) {
-      lastPomodoroPeriod = currentPeriod;
-      const job = enqueue(db, {
-        jobType: "pomodoro",
-        date,
-        periodParam: currentPeriod - 1,
-      });
-      if (job) {
-        consola.info(`Enqueued pomodoro job for period ${currentPeriod - 1}`);
-      }
-    }
-
-    // Hourly: 時間の境界を越えたら前の1時間をキューに追加
-    if (currentHour !== lastHourlyHour && currentHour > 0) {
-      lastHourlyHour = currentHour;
-      const job = enqueue(db, {
-        jobType: "hourly",
-        date,
-        periodParam: currentHour - 1,
-      });
-      if (job) {
-        consola.info(`Enqueued hourly job for hour ${currentHour - 1}`);
-      }
-    }
-
-    // Daily: 23:00以降に1日分をキューに追加
+    // Daily: 23:00以降に1日分をキューに追加 (自動生成は daily のみ)
     if (currentHour >= 23 && lastDailyDate !== date) {
       lastDailyDate = date;
       const job = enqueue(db, {
@@ -101,34 +54,31 @@ export function startEnqueueScheduler(db: AdasDatabase): () => void {
 // ---------------------------------------------------------------------------
 
 async function processJob(db: AdasDatabase, job: SummaryQueueJob): Promise<void> {
-  const { jobType, date, periodParam } = job;
+  const { jobType, date } = job;
+  // SummaryQueueJob 型に startHour/endHour が追加されているはずだが、
+  // drizzle の型推論が追いついていない可能性があるため、any を経由してアクセス
+  const jobWithHours = job as SummaryQueueJob & {
+    startHour?: number | null;
+    endHour?: number | null;
+  };
+  const { startHour, endHour } = jobWithHours;
 
   switch (jobType) {
-    case "pomodoro": {
-      if (periodParam === null) {
-        throw new Error("periodParam is required for pomodoro job");
+    case "times": {
+      if (
+        startHour === null ||
+        startHour === undefined ||
+        endHour === null ||
+        endHour === undefined
+      ) {
+        throw new Error("startHour and endHour are required for times job");
       }
-      const { startTime, endTime } = periodToTimeRange(date, periodParam);
-      consola.info(`Processing pomodoro summary for ${startTime} - ${endTime}...`);
-      const result = await generatePomodoroSummary(db, date, startTime, endTime);
+      consola.info(`Processing times summary for ${date} ${startHour}:00 - ${endHour}:59...`);
+      const result = await generateTimesSummary(db, date, startHour, endHour);
       if (result) {
-        consola.success(`Pomodoro summary generated for ${startTime} - ${endTime}`);
+        consola.success(`Times summary generated for ${date} ${startHour}:00 - ${endHour}:59`);
       } else {
-        consola.debug(`No data for pomodoro summary ${startTime} - ${endTime}`);
-      }
-      break;
-    }
-
-    case "hourly": {
-      if (periodParam === null) {
-        throw new Error("periodParam is required for hourly job");
-      }
-      consola.info(`Processing hourly summary for ${date} hour ${periodParam}...`);
-      const result = await generateHourlySummary(db, date, periodParam);
-      if (result) {
-        consola.success(`Hourly summary generated for hour ${periodParam}`);
-      } else {
-        consola.debug(`No data for hourly summary ${date} hour ${periodParam}`);
+        consola.debug(`No data for times summary ${date} ${startHour}:00 - ${endHour}:59`);
       }
       break;
     }
@@ -139,7 +89,7 @@ async function processJob(db: AdasDatabase, job: SummaryQueueJob): Promise<void>
       if (result) {
         consola.success(`Daily summary generated for ${date}`);
       } else {
-        consola.debug(`No hourly summaries found for daily summary ${date}`);
+        consola.debug(`No data found for daily summary ${date}`);
       }
       break;
     }

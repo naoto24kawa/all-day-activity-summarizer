@@ -7,11 +7,7 @@
 import { registerJobHandler } from "../worker.js";
 import { handleLearningExtract } from "./learning-extract.js";
 import { handleProfileAnalyze } from "./profile-analyze.js";
-import {
-  handleSummarizeDaily,
-  handleSummarizeHourly,
-  handleSummarizePomodoro,
-} from "./summarize.js";
+import { handleSummarizeDaily, handleSummarizeTimes } from "./summarize.js";
 import { handleTaskElaborate } from "./task-elaborate.js";
 import {
   handleTaskExtractGitHub,
@@ -39,7 +35,6 @@ export function registerAllHandlers(): void {
   // プロフィール分析
   registerJobHandler("profile-analyze", handleProfileAnalyze);
   // サマリ生成
-  registerJobHandler("summarize-pomodoro", handleSummarizePomodoro);
-  registerJobHandler("summarize-hourly", handleSummarizeHourly);
+  registerJobHandler("summarize-times", handleSummarizeTimes);
   registerJobHandler("summarize-daily", handleSummarizeDaily);
 }

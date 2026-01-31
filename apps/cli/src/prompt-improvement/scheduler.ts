@@ -18,7 +18,7 @@ import { getTodayDateString } from "../utils/date.js";
 const PROMPT_TARGETS: PromptTarget[] = [
   "interpret",
   "evaluate",
-  "summarize-hourly",
+  "summarize-times",
   "summarize-daily",
   "task-extract",
 ];
@@ -174,7 +174,7 @@ async function collectFeedbackData(db: AdasDatabase, target: PromptTarget): Prom
       }
     }
   } else if (target.startsWith("summarize-")) {
-    const summaryType = target === "summarize-hourly" ? "hourly" : "daily";
+    const summaryType = target === "summarize-times" ? "times" : "daily";
 
     const feedbacks = db
       .select({
@@ -389,7 +389,7 @@ async function processTarget(db: AdasDatabase, target: PromptTarget): Promise<bo
   const targetLabels: Record<string, string> = {
     interpret: "AI 解釈",
     evaluate: "ハルシネーション評価",
-    "summarize-hourly": "時間帯別サマリ",
+    "summarize-times": "時間範囲サマリ",
     "summarize-daily": "日次サマリ",
     "task-extract": "タスク抽出",
   };

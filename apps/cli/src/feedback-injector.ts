@@ -102,11 +102,11 @@ export async function getInterpretFeedbackExamples(
 }
 
 /**
- * summarize フィードバックの例を取得 (hourly/daily 両方)
+ * summarize フィードバックの例を取得 (times/daily 両方)
  */
 export async function getSummarizeFeedbackExamples(
   db: AdasDatabase,
-  summaryType: "hourly" | "daily",
+  summaryType: "times" | "daily",
   maxGood = 3,
   maxBad = 2,
 ): Promise<FeedbackExample[]> {
@@ -322,8 +322,8 @@ export async function getFeedbackPromptSection(
     case "evaluate":
       examples = await getEvaluateFeedbackExamples(db);
       break;
-    case "summarize-hourly":
-      examples = await getSummarizeFeedbackExamples(db, "hourly");
+    case "summarize-times":
+      examples = await getSummarizeFeedbackExamples(db, "times");
       break;
     case "summarize-daily":
       examples = await getSummarizeFeedbackExamples(db, "daily");

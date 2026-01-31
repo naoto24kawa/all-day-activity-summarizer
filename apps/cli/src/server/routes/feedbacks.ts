@@ -64,7 +64,7 @@ export function createSegmentFeedbackRouter(db: AdasDatabase) {
       return c.json({ error: "rating must be 'good' or 'bad'" }, 400);
     }
 
-    const validTargets = ["interpret", "evaluate", "summarize-hourly", "summarize-daily"] as const;
+    const validTargets = ["interpret", "evaluate", "summarize-times", "summarize-daily"] as const;
     const target = body.target ?? "interpret";
     if (!validTargets.includes(target as (typeof validTargets)[number])) {
       return c.json({ error: `target must be one of: ${validTargets.join(", ")}` }, 400);
