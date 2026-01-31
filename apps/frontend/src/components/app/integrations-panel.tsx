@@ -509,6 +509,7 @@ export function IntegrationsPanel() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="0">無効</SelectItem>
+                    <SelectItem value="15">15分毎</SelectItem>
                     <SelectItem value="30">30分毎</SelectItem>
                     <SelectItem value="60">1時間毎</SelectItem>
                     <SelectItem value="120">2時間毎</SelectItem>
