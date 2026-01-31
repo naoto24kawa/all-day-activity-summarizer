@@ -9,14 +9,15 @@ import { schema } from "@repo/db";
 import consola from "consola";
 import { and, eq } from "drizzle-orm";
 
-export type ExtractionType = "task" | "learning" | "vocabulary";
+export type ExtractionType = "task" | "learning" | "vocabulary" | "project";
 export type ExtractionSourceType =
   | "slack"
   | "github"
   | "github-comment"
   | "memo"
   | "claude-code"
-  | "transcription";
+  | "transcription"
+  | "git-scan";
 
 /**
  * Check if extraction has already been attempted for this source

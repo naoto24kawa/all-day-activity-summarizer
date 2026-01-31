@@ -12,6 +12,7 @@ import { ClaudeChatPanel } from "./claude-chat-panel";
 import { ClaudeCodeFeed } from "./claude-code-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
 import { GitHubFeed } from "./github-feed";
+import { GitHubReposPanel } from "./github-repos-panel";
 import { HeaderControls } from "./header-controls";
 import { IntegrationsPanel } from "./integrations-panel";
 import { LearningsFeed } from "./learnings-feed";
@@ -174,6 +175,7 @@ export function Dashboard() {
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="space-y-4">
                     <IntegrationsPanel />
+                    <GitHubReposPanel />
                     <ProfilePanel />
                   </div>
                   <div className="space-y-4">

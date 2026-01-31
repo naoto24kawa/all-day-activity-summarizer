@@ -249,6 +249,14 @@ export function MemoFloatingChat({
   const toggleListening = () => {
     if (listening) {
       recognitionRef.current?.stop();
+      setListening(false);
+
+      // 最後の結果を取得して即座に送信
+      const content = pttInputRef.current.trim();
+      if (content) {
+        handleSend(content);
+        pttInputRef.current = "";
+      }
       return;
     }
     startRecognition(false);
@@ -554,7 +562,7 @@ export function MemoFloatingChat({
               </Button>
               <Button
                 size="icon"
-                onClick={handleSend}
+                onClick={() => handleSend()}
                 disabled={sending || !input.trim()}
                 className="h-8 w-8"
               >
@@ -706,7 +714,7 @@ export function MemoFloatingChat({
             </Button>
             <Button
               size="icon"
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={sending || !input.trim()}
               className="h-8 w-8"
             >
@@ -764,7 +772,6 @@ function MemoItem({ memo, onUpdate, onDelete, onCreateTask }: MemoItemProps) {
 
   const handleDelete = async () => {
     if (deleting) return;
-    if (!window.confirm("このメモを削除しますか?")) return;
     setDeleting(true);
     try {
       await onDelete(memo.id);

@@ -5,6 +5,7 @@ import * as schema from "./schema.js";
 export { schema };
 export type {
   ClaudeCodeMessage,
+  ClaudeCodePath,
   ClaudeCodeQueueJob,
   ClaudeCodeSession,
   EvaluatorLog,
@@ -16,6 +17,7 @@ export type {
   Learning,
   Memo,
   NewClaudeCodeMessage,
+  NewClaudeCodePath,
   NewClaudeCodeQueueJob,
   NewClaudeCodeSession,
   NewEvaluatorLog,
@@ -28,6 +30,7 @@ export type {
   NewMemo,
   NewProfileSuggestion,
   NewProject,
+  NewProjectSuggestion,
   NewPromptImprovement,
   NewSegmentFeedback,
   NewSlackChannel,
@@ -42,6 +45,7 @@ export type {
   NewVocabularySuggestion,
   ProfileSuggestion,
   Project,
+  ProjectSuggestion,
   PromptImprovement,
   SegmentFeedback,
   SlackChannel,
@@ -1111,6 +1115,92 @@ export function createDatabase(dbPath: string) {
   sqlite.exec(`
     CREATE INDEX IF NOT EXISTS idx_github_items_project ON github_items(project_id);
   `);
+
+  // Migration: create claude_code_paths table (for path-level project linking)
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS claude_code_paths (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL UNIQUE,
+      project_name TEXT,
+      project_id INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_claude_code_paths_project_path ON claude_code_paths(project_path);
+    CREATE INDEX IF NOT EXISTS idx_claude_code_paths_project ON claude_code_paths(project_id);
+  `);
+
+  // Migration: create project_suggestions table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS project_suggestions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      path TEXT,
+      github_owner TEXT,
+      github_repo TEXT,
+      reason TEXT,
+      source_type TEXT NOT NULL CHECK(source_type IN ('git-scan', 'claude-code', 'github')),
+      source_id TEXT,
+      confidence REAL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected')),
+      accepted_at TEXT,
+      rejected_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_project_suggestions_status ON project_suggestions(status);
+    CREATE INDEX IF NOT EXISTS idx_project_suggestions_source ON project_suggestions(source_type);
+    CREATE INDEX IF NOT EXISTS idx_project_suggestions_path ON project_suggestions(path);
+  `);
+
+  // Migration: add project_suggestion_id to tasks and update CHECK constraint to include 'project-suggestion'
+  addColumnIfNotExists(sqlite, "tasks", "project_suggestion_id", "INTEGER");
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'",
+      )
+      .get();
+    if (row && !row.sql.includes("'project-suggestion'")) {
+      // Add migration for project-suggestion source type
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_tasks_project_suggestion ON tasks(project_suggestion_id);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: add excluded_at column to projects
+  addColumnIfNotExists(sqlite, "projects", "excluded_at", "TEXT");
+
+  // Migration: update extraction_logs to include 'project' extraction_type and 'git-scan' source_type
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='extraction_logs'",
+      )
+      .get();
+    if (row && !row.sql.includes("'project'")) {
+      sqlite.exec(`
+        ALTER TABLE extraction_logs RENAME TO extraction_logs_old;
+        CREATE TABLE extraction_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          extraction_type TEXT NOT NULL CHECK(extraction_type IN ('task', 'learning', 'vocabulary', 'project')),
+          source_type TEXT NOT NULL CHECK(source_type IN ('slack', 'github', 'github-comment', 'memo', 'claude-code', 'transcription', 'git-scan')),
+          source_id TEXT NOT NULL,
+          extracted_count INTEGER NOT NULL DEFAULT 0,
+          extracted_at TEXT NOT NULL
+        );
+        INSERT INTO extraction_logs SELECT * FROM extraction_logs_old;
+        DROP TABLE extraction_logs_old;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_extraction_logs_unique ON extraction_logs(extraction_type, source_type, source_id);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
 
   return db;
 }

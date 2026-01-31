@@ -12,7 +12,7 @@ import consola from "consola";
  * デフォルト: http://localhost:3001
  */
 function getCliServerUrl(): string {
-  return process.env.ADAS_CLI_SERVER_URL || "http://localhost:3001";
+  return process.env.ADAS_CLI_SERVER_URL || "http://127.0.0.1:3001";
 }
 
 /**
@@ -31,6 +31,7 @@ async function sendProcessingLog(logData: CreateAiProcessingLogRequest): Promise
   const url = `${getCliServerUrl()}/api/ai-processing-logs`;
 
   try {
+    consola.info(`[log-processing] Sending log to ${url}`, logData.processType);
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -39,6 +40,8 @@ async function sendProcessingLog(logData: CreateAiProcessingLogRequest): Promise
 
     if (!response.ok) {
       consola.warn(`[log-processing] Failed to send log: ${response.status}`);
+    } else {
+      consola.debug(`[log-processing] Log sent successfully: ${logData.processType}`);
     }
   } catch (err) {
     // ログ送信失敗は警告のみ、処理は止めない

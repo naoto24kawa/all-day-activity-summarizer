@@ -7,9 +7,12 @@
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import type { CreateProjectRequest, GitRepoScanResult, UpdateProjectRequest } from "@repo/types";
+import consola from "consola";
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { loadConfig } from "../../config.js";
+import { getTodayDateString } from "../../utils/date.js";
+import { hasExtractionLog, recordExtractionLog } from "../../utils/extraction-log.js";
 import { scanGitRepositories } from "../../utils/git-scanner.js";
 
 export function createProjectsRouter(db: AdasDatabase) {
@@ -173,7 +176,7 @@ export function createProjectsRouter(db: AdasDatabase) {
   /**
    * POST /api/projects/scan
    *
-   * 設定されたパスから Git リポジトリをスキャンしてプロジェクト登録
+   * 設定されたパスから Git リポジトリをスキャンしてプロジェクト提案を作成
    */
   router.post("/scan", async (c) => {
     const config = loadConfig();
@@ -194,19 +197,26 @@ export function createProjectsRouter(db: AdasDatabase) {
     const repos = scanGitRepositories(scanPaths, excludePatterns, 3);
 
     const now = new Date().toISOString();
+    const today = getTodayDateString();
     let created = 0;
     let skipped = 0;
 
     for (const repo of repos) {
+      // extraction_logs で処理済みチェック
+      if (hasExtractionLog(db, "project", "git-scan", repo.path)) {
+        skipped++;
+        continue;
+      }
+
       // 既存プロジェクトを検索 (パスまたは GitHub owner/repo で)
-      let existing = db
+      let existingProject = db
         .select()
         .from(schema.projects)
         .where(eq(schema.projects.path, repo.path))
         .get();
 
-      if (!existing && repo.githubOwner && repo.githubRepo) {
-        existing = db
+      if (!existingProject && repo.githubOwner && repo.githubRepo) {
+        existingProject = db
           .select()
           .from(schema.projects)
           .where(
@@ -218,53 +228,75 @@ export function createProjectsRouter(db: AdasDatabase) {
           .get();
       }
 
-      if (existing) {
-        // excludedAt が設定されている場合はスキップ (復活させない)
-        if (existing.excludedAt) {
-          skipped++;
-          continue;
-        }
-
-        // パスまたは GitHub 情報を更新
-        const updates: {
-          updatedAt: string;
-          path?: string;
-          githubOwner?: string;
-          githubRepo?: string;
-        } = { updatedAt: now };
-        let hasUpdates = false;
-
-        if (!existing.path && repo.path) {
-          updates.path = repo.path;
-          hasUpdates = true;
-        }
-        if (!existing.githubOwner && repo.githubOwner) {
-          updates.githubOwner = repo.githubOwner;
-          hasUpdates = true;
-        }
-        if (!existing.githubRepo && repo.githubRepo) {
-          updates.githubRepo = repo.githubRepo;
-          hasUpdates = true;
-        }
-
-        if (hasUpdates) {
-          db.update(schema.projects).set(updates).where(eq(schema.projects.id, existing.id)).run();
-        }
+      // 既存プロジェクトがある場合 (除外済み含む) はスキップ
+      if (existingProject) {
+        recordExtractionLog(db, "project", "git-scan", repo.path, 0);
+        skipped++;
         continue;
       }
 
-      // 新規作成
-      db.insert(schema.projects)
+      // pending の提案がないかチェック
+      const existingSuggestion = db
+        .select()
+        .from(schema.projectSuggestions)
+        .where(
+          and(
+            eq(schema.projectSuggestions.path, repo.path),
+            eq(schema.projectSuggestions.status, "pending"),
+          ),
+        )
+        .get();
+
+      if (existingSuggestion) {
+        recordExtractionLog(db, "project", "git-scan", repo.path, 0);
+        skipped++;
+        continue;
+      }
+
+      // project_suggestions に追加
+      const suggestion = db
+        .insert(schema.projectSuggestions)
         .values({
           name: repo.name,
           path: repo.path,
           githubOwner: repo.githubOwner,
           githubRepo: repo.githubRepo,
+          reason: `Git リポジトリ: ${repo.path}`,
+          sourceType: "git-scan",
+          sourceId: repo.path,
+          confidence: 1.0,
+          status: "pending",
+          createdAt: now,
+        })
+        .returning()
+        .get();
+
+      // tasks に追加
+      const taskTitle =
+        repo.githubOwner && repo.githubRepo
+          ? `プロジェクト追加: ${repo.name} (${repo.githubOwner}/${repo.githubRepo})`
+          : `プロジェクト追加: ${repo.name}`;
+
+      db.insert(schema.tasks)
+        .values({
+          date: today,
+          sourceType: "project-suggestion",
+          projectSuggestionId: suggestion.id,
+          title: taskTitle,
+          description: `パス: ${repo.path}${repo.remoteUrl ? `\nリモート: ${repo.remoteUrl}` : ""}`,
+          status: "pending",
+          confidence: 1.0,
+          extractedAt: now,
           createdAt: now,
           updatedAt: now,
         })
         .run();
+
+      // extraction_logs に記録
+      recordExtractionLog(db, "project", "git-scan", repo.path, 1);
       created++;
+
+      consola.debug(`[projects] Created suggestion: ${repo.name}`);
     }
 
     return c.json({
@@ -356,20 +388,13 @@ export function createProjectsRouter(db: AdasDatabase) {
   /**
    * POST /api/projects/auto-detect
    *
-   * 既存データから自動検出してプロジェクト登録
+   * 既存データから自動検出してプロジェクト提案を作成
    */
   router.post("/auto-detect", (c) => {
     const now = new Date().toISOString();
-    const createdProjects: Array<{
-      id: number;
-      name: string;
-      path: string | null;
-      githubOwner: string | null;
-      githubRepo: string | null;
-      isActive: boolean;
-      createdAt: string;
-      updatedAt: string;
-    }> = [];
+    const today = getTodayDateString();
+    let created = 0;
+    let detected = 0;
 
     // 1. Claude Code セッションから projectPath を収集
     const sessions = db
@@ -381,29 +406,81 @@ export function createProjectsRouter(db: AdasDatabase) {
       .all();
 
     for (const session of sessions) {
-      // 既に同じ path のプロジェクトが存在するかチェック
-      const existing = db
+      detected++;
+      const sourceId = session.projectPath;
+
+      // extraction_logs で処理済みチェック
+      if (hasExtractionLog(db, "project", "claude-code", sourceId)) {
+        continue;
+      }
+
+      // 既存プロジェクトチェック
+      const existingProject = db
         .select()
         .from(schema.projects)
         .where(eq(schema.projects.path, session.projectPath))
         .get();
 
-      if (!existing) {
-        const name = session.projectName ?? session.projectPath.split("/").pop() ?? "Unknown";
-        const project = db
-          .insert(schema.projects)
-          .values({
-            name,
-            path: session.projectPath,
-            githubOwner: null,
-            githubRepo: null,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning()
-          .get();
-        createdProjects.push(project);
+      if (existingProject) {
+        recordExtractionLog(db, "project", "claude-code", sourceId, 0);
+        continue;
       }
+
+      // pending の提案チェック
+      const existingSuggestion = db
+        .select()
+        .from(schema.projectSuggestions)
+        .where(
+          and(
+            eq(schema.projectSuggestions.path, session.projectPath),
+            eq(schema.projectSuggestions.status, "pending"),
+          ),
+        )
+        .get();
+
+      if (existingSuggestion) {
+        recordExtractionLog(db, "project", "claude-code", sourceId, 0);
+        continue;
+      }
+
+      const name = session.projectName ?? session.projectPath.split("/").pop() ?? "Unknown";
+
+      // project_suggestions に追加
+      const suggestion = db
+        .insert(schema.projectSuggestions)
+        .values({
+          name,
+          path: session.projectPath,
+          githubOwner: null,
+          githubRepo: null,
+          reason: `Claude Code セッションから検出: ${session.projectPath}`,
+          sourceType: "claude-code",
+          sourceId,
+          confidence: 1.0,
+          status: "pending",
+          createdAt: now,
+        })
+        .returning()
+        .get();
+
+      // tasks に追加
+      db.insert(schema.tasks)
+        .values({
+          date: today,
+          sourceType: "project-suggestion",
+          projectSuggestionId: suggestion.id,
+          title: `プロジェクト追加: ${name}`,
+          description: `パス: ${session.projectPath}`,
+          status: "pending",
+          confidence: 1.0,
+          extractedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+
+      recordExtractionLog(db, "project", "claude-code", sourceId, 1);
+      created++;
     }
 
     // 2. GitHub Items から repoOwner/repoName を収集
@@ -416,8 +493,16 @@ export function createProjectsRouter(db: AdasDatabase) {
       .all();
 
     for (const repo of repos) {
-      // 既に同じ GitHub リポジトリのプロジェクトが存在するかチェック
-      const existing = db
+      detected++;
+      const sourceId = `${repo.repoOwner}/${repo.repoName}`;
+
+      // extraction_logs で処理済みチェック
+      if (hasExtractionLog(db, "project", "github", sourceId)) {
+        continue;
+      }
+
+      // 既存プロジェクトチェック
+      const existingProject = db
         .select()
         .from(schema.projects)
         .where(
@@ -428,21 +513,65 @@ export function createProjectsRouter(db: AdasDatabase) {
         )
         .get();
 
-      if (!existing) {
-        const project = db
-          .insert(schema.projects)
-          .values({
-            name: repo.repoName,
-            path: null,
-            githubOwner: repo.repoOwner,
-            githubRepo: repo.repoName,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning()
-          .get();
-        createdProjects.push(project);
+      if (existingProject) {
+        recordExtractionLog(db, "project", "github", sourceId, 0);
+        continue;
       }
+
+      // pending の提案チェック
+      const existingSuggestion = db
+        .select()
+        .from(schema.projectSuggestions)
+        .where(
+          and(
+            eq(schema.projectSuggestions.githubOwner, repo.repoOwner),
+            eq(schema.projectSuggestions.githubRepo, repo.repoName),
+            eq(schema.projectSuggestions.status, "pending"),
+          ),
+        )
+        .get();
+
+      if (existingSuggestion) {
+        recordExtractionLog(db, "project", "github", sourceId, 0);
+        continue;
+      }
+
+      // project_suggestions に追加
+      const suggestion = db
+        .insert(schema.projectSuggestions)
+        .values({
+          name: repo.repoName,
+          path: null,
+          githubOwner: repo.repoOwner,
+          githubRepo: repo.repoName,
+          reason: `GitHub リポジトリから検出: ${repo.repoOwner}/${repo.repoName}`,
+          sourceType: "github",
+          sourceId,
+          confidence: 1.0,
+          status: "pending",
+          createdAt: now,
+        })
+        .returning()
+        .get();
+
+      // tasks に追加
+      db.insert(schema.tasks)
+        .values({
+          date: today,
+          sourceType: "project-suggestion",
+          projectSuggestionId: suggestion.id,
+          title: `プロジェクト追加: ${repo.repoName} (${repo.repoOwner}/${repo.repoName})`,
+          description: `GitHub リポジトリ: ${repo.repoOwner}/${repo.repoName}`,
+          status: "pending",
+          confidence: 1.0,
+          extractedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+
+      recordExtractionLog(db, "project", "github", sourceId, 1);
+      created++;
     }
 
     // 全プロジェクト一覧を取得
@@ -453,8 +582,8 @@ export function createProjectsRouter(db: AdasDatabase) {
       .all();
 
     return c.json({
-      detected: sessions.length + repos.length,
-      created: createdProjects.length,
+      detected,
+      created,
       projects: allProjects,
     });
   });

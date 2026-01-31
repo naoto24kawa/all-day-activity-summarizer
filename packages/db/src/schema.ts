@@ -469,6 +469,7 @@ export const tasks = sqliteTable("tasks", {
   promptImprovementId: integer("prompt_improvement_id"), // FK to prompt_improvements (for prompt-improvement type)
   profileSuggestionId: integer("profile_suggestion_id"), // FK to profile_suggestions (for profile-suggestion type)
   vocabularySuggestionId: integer("vocabulary_suggestion_id"), // FK to vocabulary_suggestions (for vocabulary type)
+  projectSuggestionId: integer("project_suggestion_id"), // FK to project_suggestions (for project-suggestion type)
   projectId: integer("project_id"), // FK to projects (nullable for Slack/Memo tasks)
   sourceType: text("source_type", {
     enum: [
@@ -481,6 +482,7 @@ export const tasks = sqliteTable("tasks", {
       "profile-suggestion",
       "vocabulary",
       "merge",
+      "project-suggestion",
     ],
   })
     .notNull()
@@ -574,10 +576,10 @@ export type NewLearning = typeof learnings.$inferInsert;
 export const extractionLogs = sqliteTable("extraction_logs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   extractionType: text("extraction_type", {
-    enum: ["task", "learning", "vocabulary"],
+    enum: ["task", "learning", "vocabulary", "project"],
   }).notNull(), // 抽出の種類
   sourceType: text("source_type", {
-    enum: ["slack", "github", "github-comment", "memo", "claude-code", "transcription"],
+    enum: ["slack", "github", "github-comment", "memo", "claude-code", "transcription", "git-scan"],
   }).notNull(), // ソースの種類
   sourceId: text("source_id").notNull(), // 各ソースの ID (message_id, session_id など)
   extractedCount: integer("extracted_count").notNull().default(0), // 抽出された件数
@@ -661,6 +663,35 @@ export const projects = sqliteTable("projects", {
 
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Project Suggestions (プロジェクト提案 - 承認待ち)
+// ---------------------------------------------------------------------------
+
+export const projectSuggestions = sqliteTable("project_suggestions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  path: text("path"),
+  githubOwner: text("github_owner"),
+  githubRepo: text("github_repo"),
+  reason: text("reason"),
+  sourceType: text("source_type", {
+    enum: ["git-scan", "claude-code", "github"],
+  }).notNull(),
+  sourceId: text("source_id"),
+  confidence: real("confidence"),
+  status: text("status", { enum: ["pending", "accepted", "rejected"] })
+    .notNull()
+    .default("pending"),
+  acceptedAt: text("accepted_at"),
+  rejectedAt: text("rejected_at"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type ProjectSuggestion = typeof projectSuggestions.$inferSelect;
+export type NewProjectSuggestion = typeof projectSuggestions.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // AI Processing Logs (AI処理ログ)
@@ -790,3 +821,23 @@ export const taskDependencies = sqliteTable("task_dependencies", {
 
 export type TaskDependency = typeof taskDependencies.$inferSelect;
 export type NewTaskDependency = typeof taskDependencies.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Claude Code Paths (プロジェクトパス単位のプロジェクト紐づけ)
+// ---------------------------------------------------------------------------
+
+export const claudeCodePaths = sqliteTable("claude_code_paths", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectPath: text("project_path").notNull().unique(),
+  projectName: text("project_name"),
+  projectId: integer("project_id"), // FK to projects (nullable)
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type ClaudeCodePath = typeof claudeCodePaths.$inferSelect;
+export type NewClaudeCodePath = typeof claudeCodePaths.$inferInsert;

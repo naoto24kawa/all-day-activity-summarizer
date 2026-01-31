@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useClaudeCodePaths } from "@/hooks/use-claude-code-paths";
 import {
   useClaudeCodeMessages,
   useClaudeCodeSessions,
@@ -45,7 +46,9 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
   const { sessions, loading, error, syncSessions, updateSession } = useClaudeCodeSessions();
   const { stats } = useClaudeCodeStats(date);
   const { projects } = useProjects();
+  const { updatePathProject, getPathProjectId } = useClaudeCodePaths();
   const [selectedSession, setSelectedSession] = useState<ClaudeCodeSession | null>(null);
+  const activeProjects = projects.filter((p) => p.isActive);
 
   // Group sessions by project (moved before conditional returns for hooks rules)
   const sessionsByProject = useMemo(() => {
@@ -150,34 +153,68 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
           <p className="text-sm text-muted-foreground">No Claude Code sessions for this date.</p>
         ) : (
           <Accordion type="multiple" className="w-full">
-            {Array.from(sessionsByProject.entries()).map(([projectPath, projectSessions]) => (
-              <AccordionItem key={projectPath} value={projectPath}>
-                <AccordionTrigger className="hover:no-underline">
-                  <div className="flex items-center gap-2">
-                    <FolderGit2 className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-medium">
-                      {projectSessions[0]?.projectName || projectPath.split("/").pop()}
-                    </span>
-                    <Badge variant="outline" className="ml-2">
-                      {projectSessions.length} sessions
-                    </Badge>
+            {Array.from(sessionsByProject.entries()).map(([projectPath, projectSessions]) => {
+              const pathProjectId = getPathProjectId(projectPath);
+              const handlePathProjectChange = (value: string) => {
+                const newProjectId = value === "none" ? null : Number(value);
+                const projectName = projectSessions[0]?.projectName ?? projectPath.split("/").pop();
+                updatePathProject(projectPath, newProjectId, projectName ?? undefined);
+              };
+
+              return (
+                <AccordionItem key={projectPath} value={projectPath}>
+                  <div className="flex items-center justify-between pr-4">
+                    <AccordionTrigger className="flex-1 hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <FolderGit2 className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-medium">
+                          {projectSessions[0]?.projectName || projectPath.split("/").pop()}
+                        </span>
+                        <Badge variant="outline" className="ml-2">
+                          {projectSessions.length} sessions
+                        </Badge>
+                      </div>
+                    </AccordionTrigger>
+                    {activeProjects.length > 0 && (
+                      <Select
+                        value={pathProjectId?.toString() ?? "none"}
+                        onValueChange={handlePathProjectChange}
+                      >
+                        <SelectTrigger
+                          className="h-7 w-[130px] text-xs"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <FolderGit2 className="mr-1 h-3 w-3" />
+                          <SelectValue placeholder="Path Project" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">なし</SelectItem>
+                          {activeProjects.map((project) => (
+                            <SelectItem key={project.id} value={project.id.toString()}>
+                              {project.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <div className="space-y-3 pl-6">
-                    {projectSessions.map((session) => (
-                      <SessionItem
-                        key={session.sessionId}
-                        session={session}
-                        onClick={() => setSelectedSession(session)}
-                        onUpdateProject={updateSession}
-                        projects={projects}
-                      />
-                    ))}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            ))}
+                  <AccordionContent>
+                    <div className="space-y-3 pl-6">
+                      {projectSessions.map((session) => (
+                        <SessionItem
+                          key={session.sessionId}
+                          session={session}
+                          onClick={() => setSelectedSession(session)}
+                          onUpdateProject={updateSession}
+                          projects={projects}
+                          inheritedProjectId={pathProjectId}
+                        />
+                      ))}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              );
+            })}
           </Accordion>
         )}
       </CardContent>
@@ -196,9 +233,16 @@ interface SessionItemProps {
   onClick: () => void;
   onUpdateProject: (id: number, data: { projectId?: number | null }) => void;
   projects: Project[];
+  inheritedProjectId?: number | null;
 }
 
-function SessionItem({ session, onClick, onUpdateProject, projects }: SessionItemProps) {
+function SessionItem({
+  session,
+  onClick,
+  onUpdateProject,
+  projects,
+  inheritedProjectId,
+}: SessionItemProps) {
   // Format time
   const startTime = session.startTime ? new Date(session.startTime) : null;
   const endTime = session.endTime ? new Date(session.endTime) : null;
@@ -212,10 +256,14 @@ function SessionItem({ session, onClick, onUpdateProject, projects }: SessionIte
   const duration =
     startTime && endTime ? Math.round((endTime.getTime() - startTime.getTime()) / 60000) : null;
 
-  const projectName = session.projectId
-    ? projects.find((p) => p.id === session.projectId)?.name
-    : null;
   const activeProjects = projects.filter((p) => p.isActive);
+
+  // 継承の判定: セッション個別設定がなく、パス設定がある場合
+  const isInherited = !session.projectId && inheritedProjectId != null;
+  const effectiveProjectId = session.projectId ?? inheritedProjectId;
+  const inheritedProjectName = isInherited
+    ? projects.find((p) => p.id === inheritedProjectId)?.name
+    : null;
 
   const handleProjectChange = (value: string) => {
     const newProjectId = value === "none" ? null : Number(value);
@@ -239,12 +287,23 @@ function SessionItem({ session, onClick, onUpdateProject, projects }: SessionIte
               value={session.projectId?.toString() ?? "none"}
               onValueChange={handleProjectChange}
             >
-              <SelectTrigger className="h-6 w-[120px] text-xs" onClick={(e) => e.stopPropagation()}>
+              <SelectTrigger
+                className={`h-6 w-[120px] text-xs ${isInherited ? "border-dashed opacity-70" : ""}`}
+                onClick={(e) => e.stopPropagation()}
+              >
                 <FolderGit2 className="mr-1 h-3 w-3" />
-                <SelectValue placeholder="プロジェクト" />
+                <SelectValue
+                  placeholder={
+                    isInherited && inheritedProjectName ? inheritedProjectName : "プロジェクト"
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">なし</SelectItem>
+                <SelectItem value="none">
+                  {isInherited && inheritedProjectName
+                    ? `なし (継承: ${inheritedProjectName})`
+                    : "なし"}
+                </SelectItem>
                 {activeProjects.map((project) => (
                   <SelectItem key={project.id} value={project.id.toString()}>
                     {project.name}
@@ -253,10 +312,10 @@ function SessionItem({ session, onClick, onUpdateProject, projects }: SessionIte
               </SelectContent>
             </Select>
           )}
-          {!activeProjects.length && projectName && (
+          {!activeProjects.length && effectiveProjectId && (
             <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
               <FolderGit2 className="h-3 w-3" />
-              {projectName}
+              {projects.find((p) => p.id === effectiveProjectId)?.name}
             </span>
           )}
         </div>

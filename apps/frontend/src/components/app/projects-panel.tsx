@@ -231,14 +231,19 @@ export function ProjectsPanel() {
 
               {autoDetectResult && (
                 <p className="mb-4 shrink-0 text-sm text-muted-foreground">
-                  {autoDetectResult.detected} 件検出、{autoDetectResult.created} 件作成しました
+                  {autoDetectResult.detected} 件検出
+                  {autoDetectResult.created > 0
+                    ? `、${autoDetectResult.created} 件の候補が見つかりました。Tasks タブで確認してください。`
+                    : ""}
                 </p>
               )}
 
               {scanResult && (
                 <p className="mb-4 shrink-0 text-sm text-muted-foreground">
-                  {scanResult.scanned} 件スキャン、{scanResult.created} 件作成、
-                  {scanResult.skipped} 件スキップ
+                  {scanResult.scanned} 件スキャン
+                  {scanResult.created > 0
+                    ? `、${scanResult.created} 件の候補が見つかりました。Tasks タブで確認してください。`
+                    : `、${scanResult.skipped} 件スキップ`}
                 </p>
               )}
 

@@ -7,6 +7,7 @@ import { createAIJobsRouter } from "./routes/ai-jobs.js";
 import { createAiProcessingLogsRouter } from "./routes/ai-processing-logs.js";
 import { createBrowserRecordingRouter } from "./routes/browser-recording.js";
 import { createClaudeChatRouter } from "./routes/claude-chat.js";
+import { createClaudeCodePathsRouter } from "./routes/claude-code-paths.js";
 import { createClaudeCodeSessionsRouter } from "./routes/claude-code-sessions.js";
 import { createConfigRouter } from "./routes/config.js";
 import { createEvaluatorLogsRouter } from "./routes/evaluator-logs.js";
@@ -58,6 +59,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/github-items", createGitHubItemsRouter(db));
   app.route("/api/github-comments", createGitHubCommentsRouter(db));
   app.route("/api/claude-code-sessions", createClaudeCodeSessionsRouter(db, options?.config));
+  app.route("/api/claude-code-paths", createClaudeCodePathsRouter(db));
   app.route("/api/learnings", createLearningsRouter(db, options?.config));
   app.route("/api/server-logs", createServerLogsRouter(options?.config));
   app.route("/api/status", createStatusRouter(db));

@@ -124,6 +124,7 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
   const [listening, setListening] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const lastInputRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
@@ -180,8 +181,8 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
     prevCountRef.current = memos.length;
   }, [memos.length]);
 
-  const handleSend = async () => {
-    const content = input.trim();
+  const handleSend = async (contentOverride?: string) => {
+    const content = (contentOverride ?? input).trim();
     if (!content || sending) return;
 
     // 音声入力中の場合は停止し、結果ハンドラを無効化
@@ -218,6 +219,14 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
   const toggleListening = () => {
     if (listening) {
       recognitionRef.current?.stop();
+      setListening(false);
+
+      // 最後の結果を取得して即座に送信
+      const content = lastInputRef.current.trim();
+      if (content) {
+        handleSend(content);
+        lastInputRef.current = "";
+      }
       return;
     }
 
@@ -235,6 +244,7 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
     // 音声認識開始時のテキストを保持
     const baseText = input;
     let committed = "";
+    lastInputRef.current = baseText;
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       let interim = "";
@@ -248,7 +258,9 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
         }
       }
       if (newFinal) committed += newFinal;
-      setInput(baseText + committed + interim);
+      const newInput = baseText + committed + interim;
+      setInput(newInput);
+      lastInputRef.current = newInput;
     };
 
     recognition.onend = () => {
@@ -413,7 +425,7 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
               >
                 {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
               </Button>
-              <Button onClick={handleSend} disabled={sending || !input.trim()}>
+              <Button onClick={() => handleSend()} disabled={sending || !input.trim()}>
                 <Send className="mr-1 h-4 w-4" />
                 {sending ? "..." : "送信"}
               </Button>
@@ -480,7 +492,6 @@ function MemoItem({ memo, projects, onUpdate, onDelete, onCreateTask }: MemoItem
 
   const handleDelete = async () => {
     if (deleting) return;
-    if (!window.confirm("このメモを削除しますか?")) return;
     setDeleting(true);
     try {
       await onDelete(memo.id);

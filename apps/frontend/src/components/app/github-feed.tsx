@@ -205,7 +205,11 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
               {commentsLoading ? (
                 <Skeleton className="h-16 w-full" />
               ) : (
-                <CommentList comments={comments} onMarkAsRead={markCommentAsRead} />
+                <ProjectGroupedCommentList
+                  comments={comments}
+                  projects={projects}
+                  onMarkAsRead={markCommentAsRead}
+                />
               )}
             </TabsContent>
           </Tabs>
@@ -308,7 +312,7 @@ function ProjectGroupedItemList({
   }
 
   // グループが1つだけ、かつ全て未分類の場合はグループ化せずに表示
-  if (groups.length === 1 && groups[0].projectId === null) {
+  if (groups.length === 1 && groups[0]?.projectId === null) {
     return (
       <div className="h-full overflow-y-auto">
         <div className="space-y-3">
@@ -480,25 +484,176 @@ function GitHubItemCard({
   );
 }
 
-function CommentList({
+/** コメント用グループ */
+interface CommentProjectGroup {
+  projectId: number | null;
+  projectName: string;
+  comments: GitHubComment[];
+  unreadCount: number;
+}
+
+function ProjectGroupedCommentList({
   comments,
+  projects,
   onMarkAsRead,
 }: {
   comments: GitHubComment[];
+  projects: Project[];
   onMarkAsRead: (id: number) => void;
 }) {
+  // プロジェクト別にグループ化
+  const groups = useMemo((): CommentProjectGroup[] => {
+    // repoOwner/repoName → project のマッピングを作成
+    const repoToProject = new Map<string, { id: number; name: string }>();
+    // projectId → name のマッピングも作成
+    const projectIdToName = new Map<number, string>();
+    for (const p of projects) {
+      if (p.githubOwner && p.githubRepo) {
+        const key = `${p.githubOwner}/${p.githubRepo}`;
+        repoToProject.set(key, { id: p.id, name: p.name });
+        projectIdToName.set(p.id, p.name);
+      }
+    }
+
+    const groupMap = new Map<number | null, GitHubComment[]>();
+
+    for (const comment of comments) {
+      const repoKey = `${comment.repoOwner}/${comment.repoName}`;
+      const project = repoToProject.get(repoKey);
+      const key = project?.id ?? null;
+      const existing = groupMap.get(key) ?? [];
+      existing.push(comment);
+      groupMap.set(key, existing);
+    }
+
+    const result: CommentProjectGroup[] = [];
+
+    // プロジェクトがあるグループを先に追加
+    for (const [projectId, groupComments] of groupMap.entries()) {
+      if (projectId !== null) {
+        result.push({
+          projectId,
+          projectName: projectIdToName.get(projectId) ?? `Project #${projectId}`,
+          comments: groupComments,
+          unreadCount: groupComments.filter((c) => !c.isRead).length,
+        });
+      }
+    }
+
+    // プロジェクト名でソート
+    result.sort((a, b) => a.projectName.localeCompare(b.projectName));
+
+    // 未分類を最後に追加
+    const unassigned = groupMap.get(null);
+    if (unassigned && unassigned.length > 0) {
+      result.push({
+        projectId: null,
+        projectName: "未分類",
+        comments: unassigned,
+        unreadCount: unassigned.filter((c) => !c.isRead).length,
+      });
+    }
+
+    return result;
+  }, [comments, projects]);
+
+  // 開閉状態を管理
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    // デフォルトで全て開く
+    const initial = new Set<string>();
+    for (const g of groups) {
+      initial.add(String(g.projectId));
+    }
+    return initial;
+  });
+
+  const toggleGroup = (projectId: number | null) => {
+    setOpenGroups((prev) => {
+      const key = String(projectId);
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
   if (comments.length === 0) {
     return <p className="py-4 text-center text-sm text-muted-foreground">No comments.</p>;
   }
 
+  // グループが1つだけ、かつ全て未分類の場合はグループ化せずに表示
+  if (groups.length === 1 && groups[0]?.projectId === null) {
+    return (
+      <div className="h-full overflow-y-auto">
+        <div className="space-y-3">
+          {comments.map((comment) => (
+            <GitHubCommentCard key={comment.id} comment={comment} onMarkAsRead={onMarkAsRead} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-y-auto">
-      <div className="space-y-3">
-        {comments.map((comment) => (
-          <GitHubCommentCard key={comment.id} comment={comment} onMarkAsRead={onMarkAsRead} />
+      <div className="space-y-2">
+        {groups.map((group) => (
+          <CommentProjectCollapsible
+            key={String(group.projectId)}
+            group={group}
+            isOpen={openGroups.has(String(group.projectId))}
+            onToggle={() => toggleGroup(group.projectId)}
+            onMarkAsRead={onMarkAsRead}
+          />
         ))}
       </div>
     </div>
+  );
+}
+
+function CommentProjectCollapsible({
+  group,
+  isOpen,
+  onToggle,
+  onMarkAsRead,
+}: {
+  group: CommentProjectGroup;
+  isOpen: boolean;
+  onToggle: () => void;
+  onMarkAsRead: (id: number) => void;
+}) {
+  return (
+    <Collapsible open={isOpen} onOpenChange={onToggle}>
+      <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-left hover:bg-muted/50">
+        <div className="flex items-center gap-2">
+          {isOpen ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          )}
+          <FolderKanban className="h-4 w-4 text-indigo-500" />
+          <span className="truncate text-sm font-medium">{group.projectName}</span>
+          <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+            {group.comments.length}
+          </Badge>
+          {group.unreadCount > 0 && (
+            <Badge variant="destructive" className="h-5 px-1.5 text-xs">
+              {group.unreadCount} unread
+            </Badge>
+          )}
+        </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-2 space-y-3 pl-6">
+          {group.comments.map((comment) => (
+            <GitHubCommentCard key={comment.id} comment={comment} onMarkAsRead={onMarkAsRead} />
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
