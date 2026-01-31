@@ -4,47 +4,15 @@
  * ユーザープロフィール管理とプロフィール提案のフィードバックループ
  */
 
-import type { AdasDatabase, NewProfileSuggestion } from "@repo/db";
+import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import type {
-  GenerateProfileSuggestionsResponse,
-  ProfileSuggestion,
-  ProfileSuggestionSourceType,
-  ProfileSuggestionType,
-  UpdateProfileRequest,
-  UserProfile,
-} from "@repo/types";
-import consola from "consola";
-import { and, desc, eq, gte } from "drizzle-orm";
+import type { ProfileSuggestion, UpdateProfileRequest, UserProfile } from "@repo/types";
+import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import { enqueueJob } from "../../ai-job/queue.js";
 import type { AdasConfig } from "../../config.js";
-import { getDateString, getTodayDateString } from "../../utils/date.js";
 
-interface AnalyzeProfileResponse {
-  suggestions: Array<{
-    suggestionType: ProfileSuggestionType;
-    field: string;
-    value: string;
-    reason: string;
-    confidence: number;
-  }>;
-}
-
-const SUGGESTION_TYPE_LABELS: Record<ProfileSuggestionType, string> = {
-  add_technology: "技術追加",
-  add_specialty: "専門分野追加",
-  add_goal: "学習目標追加",
-  update_experience: "経験年数更新",
-};
-
-const FIELD_LABELS: Record<string, string> = {
-  specialties: "専門分野",
-  knownTechnologies: "技術",
-  learningGoals: "学習目標",
-  experienceYears: "経験年数",
-};
-
-export function createProfileRouter(db: AdasDatabase, config?: AdasConfig) {
+export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
   const router = new Hono();
 
   /**
@@ -291,132 +259,20 @@ export function createProfileRouter(db: AdasDatabase, config?: AdasConfig) {
   /**
    * POST /api/profile/suggestions/generate
    *
-   * 活動データからプロフィール提案を生成
+   * 活動データからプロフィール提案を生成 (非同期キュー)
    * Body: { daysBack?: number }
    */
   router.post("/suggestions/generate", async (c) => {
-    if (!config) {
-      return c.json({ error: "Config not available" }, 500);
-    }
-
     const body = await c.req.json<{ daysBack?: number }>().catch(() => ({ daysBack: 7 }));
     const daysBack = body.daysBack ?? 7;
 
-    // 対象期間の日付を計算
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - daysBack);
-    const startDateStr = getDateString(startDate);
+    const jobId = enqueueJob(db, "profile-analyze", { daysBack });
 
-    // 現在のプロフィールを取得
-    let profile = db.select().from(schema.userProfile).where(eq(schema.userProfile.id, 1)).get();
-
-    if (!profile) {
-      // プロフィールがない場合は作成
-      db.insert(schema.userProfile)
-        .values({
-          id: 1,
-          experienceYears: null,
-          specialties: null,
-          knownTechnologies: null,
-          learningGoals: null,
-          updatedAt: new Date().toISOString(),
-        })
-        .run();
-      const insertedProfile = db
-        .select()
-        .from(schema.userProfile)
-        .where(eq(schema.userProfile.id, 1))
-        .get();
-      if (!insertedProfile) {
-        return c.json({ error: "Failed to create profile" }, 500);
-      }
-      profile = insertedProfile;
-    }
-
-    // 活動データを収集
-    const activityData = collectActivityData(db, startDateStr);
-
-    // Worker に解析を依頼
-    const suggestions = await analyzeProfileWithWorker(config, profile, activityData);
-
-    // 既存の pending 提案と重複チェック
-    const existingPending = db
-      .select()
-      .from(schema.profileSuggestions)
-      .where(eq(schema.profileSuggestions.status, "pending"))
-      .all();
-
-    const existingValues = new Set(existingPending.map((s) => `${s.field}:${s.value}`));
-
-    // 新しい提案を保存
-    const savedSuggestions: ProfileSuggestion[] = [];
-    const today = getTodayDateString();
-    const now = new Date().toISOString();
-
-    for (const suggestion of suggestions) {
-      const key = `${suggestion.field}:${suggestion.value}`;
-      if (existingValues.has(key)) {
-        continue;
-      }
-
-      // プロフィールに既に含まれているかチェック
-      if (isValueInProfile(profile, suggestion.field, suggestion.value)) {
-        continue;
-      }
-
-      const newSuggestion: NewProfileSuggestion = {
-        suggestionType: suggestion.suggestionType,
-        field: suggestion.field,
-        value: suggestion.value,
-        reason: suggestion.reason,
-        sourceType: suggestion.sourceType,
-        sourceId: suggestion.sourceId ?? null,
-        confidence: suggestion.confidence,
-        status: "pending",
-      };
-
-      try {
-        db.insert(schema.profileSuggestions).values(newSuggestion).run();
-
-        const inserted = db
-          .select()
-          .from(schema.profileSuggestions)
-          .orderBy(desc(schema.profileSuggestions.id))
-          .limit(1)
-          .get();
-
-        if (inserted) {
-          savedSuggestions.push(inserted as ProfileSuggestion);
-
-          // タスクとしても登録
-          const fieldLabel = FIELD_LABELS[suggestion.field] || suggestion.field;
-          const typeLabel =
-            SUGGESTION_TYPE_LABELS[suggestion.suggestionType] || suggestion.suggestionType;
-
-          db.insert(schema.tasks)
-            .values({
-              date: today,
-              profileSuggestionId: inserted.id,
-              sourceType: "profile-suggestion",
-              title: `[プロフィール] ${typeLabel}: ${suggestion.value}`,
-              description: `${fieldLabel}に「${suggestion.value}」を追加\n\n理由: ${suggestion.reason || "なし"}`,
-              status: "pending",
-              confidence: suggestion.confidence,
-              extractedAt: now,
-            })
-            .run();
-        }
-      } catch (err) {
-        consola.warn("[profile] Failed to save suggestion:", err);
-      }
-    }
-
-    const response: GenerateProfileSuggestionsResponse = {
-      generated: savedSuggestions.length,
-      suggestions: savedSuggestions,
-    };
-
-    return c.json(response);
+    return c.json({
+      success: true,
+      jobId,
+      message: "プロフィール分析ジョブをキューに追加しました",
+    });
   });
 
   /**
@@ -443,160 +299,6 @@ export function createProfileRouter(db: AdasDatabase, config?: AdasConfig) {
   });
 
   return router;
-}
-
-/**
- * 活動データを収集
- */
-function collectActivityData(
-  db: AdasDatabase,
-  startDateStr: string,
-): {
-  claudeCodeSessions: Array<{ projectName: string | null; summary: string | null }>;
-  learnings: Array<{ category: string | null; tags: string | null; content: string }>;
-  githubItems: Array<{ repoName: string; labels: string | null }>;
-} {
-  // Claude Code セッション
-  const claudeCodeSessions = db
-    .select({
-      projectName: schema.claudeCodeSessions.projectName,
-      summary: schema.claudeCodeSessions.summary,
-    })
-    .from(schema.claudeCodeSessions)
-    .where(gte(schema.claudeCodeSessions.date, startDateStr))
-    .all();
-
-  // 学び
-  const learnings = db
-    .select({
-      category: schema.learnings.category,
-      tags: schema.learnings.tags,
-      content: schema.learnings.content,
-    })
-    .from(schema.learnings)
-    .where(gte(schema.learnings.date, startDateStr))
-    .all();
-
-  // GitHub アイテム
-  const githubItems = db
-    .select({
-      repoName: schema.githubItems.repoName,
-      labels: schema.githubItems.labels,
-    })
-    .from(schema.githubItems)
-    .where(gte(schema.githubItems.date, startDateStr))
-    .all();
-
-  return { claudeCodeSessions, learnings, githubItems };
-}
-
-/**
- * Worker でプロフィール解析
- */
-async function analyzeProfileWithWorker(
-  config: AdasConfig,
-  profile: {
-    experienceYears: number | null;
-    specialties: string | null;
-    knownTechnologies: string | null;
-    learningGoals: string | null;
-  },
-  activityData: {
-    claudeCodeSessions: Array<{ projectName: string | null; summary: string | null }>;
-    learnings: Array<{ category: string | null; tags: string | null; content: string }>;
-    githubItems: Array<{ repoName: string; labels: string | null }>;
-  },
-): Promise<
-  Array<{
-    suggestionType: ProfileSuggestionType;
-    field: string;
-    value: string;
-    reason: string;
-    sourceType: ProfileSuggestionSourceType;
-    sourceId?: string;
-    confidence: number;
-  }>
-> {
-  const { url, timeout } = config.worker;
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    const response = await fetch(`${url}/rpc/analyze-profile`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        currentProfile: {
-          experienceYears: profile.experienceYears,
-          specialties: profile.specialties ? JSON.parse(profile.specialties) : [],
-          knownTechnologies: profile.knownTechnologies ? JSON.parse(profile.knownTechnologies) : [],
-          learningGoals: profile.learningGoals ? JSON.parse(profile.learningGoals) : [],
-        },
-        activityData,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      consola.warn(`[profile] Worker returned ${response.status}`);
-      return [];
-    }
-
-    const result = (await response.json()) as AnalyzeProfileResponse;
-
-    return result.suggestions.map((s) => ({
-      suggestionType: s.suggestionType,
-      field: s.field,
-      value: s.value,
-      reason: s.reason,
-      sourceType: "learning" as ProfileSuggestionSourceType,
-      confidence: s.confidence,
-    }));
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      consola.warn("[profile] Worker timeout");
-    } else {
-      consola.warn("[profile] Failed to analyze profile:", err);
-    }
-    return [];
-  }
-}
-
-/**
- * 値がプロフィールに既に含まれているかチェック
- */
-function isValueInProfile(
-  profile: {
-    experienceYears: number | null;
-    specialties: string | null;
-    knownTechnologies: string | null;
-    learningGoals: string | null;
-  },
-  field: string,
-  value: string,
-): boolean {
-  if (field === "experienceYears") {
-    return profile.experienceYears === Number.parseInt(value, 10);
-  }
-
-  const fieldMap: Record<string, string | null> = {
-    specialties: profile.specialties,
-    knownTechnologies: profile.knownTechnologies,
-    learningGoals: profile.learningGoals,
-  };
-
-  const jsonStr = fieldMap[field];
-  if (!jsonStr) return false;
-
-  try {
-    const array: string[] = JSON.parse(jsonStr);
-    return array.includes(value);
-  } catch {
-    return false;
-  }
 }
 
 /**

@@ -725,7 +725,11 @@ export const aiJobQueue = sqliteTable("ai_job_queue", {
       "task-extract-github-comment",
       "task-extract-memo",
       "learning-extract",
+      "vocabulary-extract",
       "profile-analyze",
+      "summarize-pomodoro",
+      "summarize-hourly",
+      "summarize-daily",
     ],
   }).notNull(),
   params: text("params"), // JSON: 入力パラメータ

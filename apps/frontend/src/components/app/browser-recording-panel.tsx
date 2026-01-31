@@ -83,63 +83,53 @@ export function BrowserRecordingPanel() {
           <p className="text-xs text-destructive">{browserRecording.error.message}</p>
         )}
 
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="flex items-center gap-1.5 text-sm font-medium">
-              {browserRecording.micRecording ? (
-                <Mic className="h-4 w-4 text-red-500" />
-              ) : (
-                <MicOff className="h-4 w-4 text-zinc-400" />
-              )}
-              Microphone
-            </Label>
-            <div className="flex items-center gap-2">
-              <Badge variant={browserRecording.micRecording ? "default" : "secondary"}>
-                {browserRecording.micRecording ? "ON" : "OFF"}
-              </Badge>
-              <Button
-                size="sm"
-                variant={browserRecording.micRecording ? "destructive" : "default"}
-                disabled={micLoading}
-                onClick={handleBrowserMicToggle}
-                className="h-7 px-2 text-xs"
-              >
-                {browserRecording.micRecording ? "Stop" : "Start"}
-              </Button>
-            </div>
-          </div>
-          {browserRecording.micRecording && <BrowserLevelMeter level={browserRecording.micLevel} />}
+        {/* Inline recording controls */}
+        <div className="flex items-center gap-3">
+          <Label className="flex items-center gap-1.5" title="Microphone">
+            {browserRecording.micRecording ? (
+              <Mic className="size-4 text-red-500" />
+            ) : (
+              <MicOff className="size-4 text-muted-foreground" />
+            )}
+            <Button
+              size="sm"
+              variant={browserRecording.micRecording ? "destructive" : "outline"}
+              disabled={micLoading}
+              onClick={handleBrowserMicToggle}
+              className="h-6 px-2 text-xs"
+            >
+              {browserRecording.micRecording ? "Stop" : "Start"}
+            </Button>
+          </Label>
+          <Label className="flex items-center gap-1.5" title="System Audio">
+            {browserRecording.systemRecording ? (
+              <Volume2 className="size-4 text-red-500" />
+            ) : (
+              <VolumeX className="size-4 text-muted-foreground" />
+            )}
+            <Button
+              size="sm"
+              variant={browserRecording.systemRecording ? "destructive" : "outline"}
+              disabled={systemLoading}
+              onClick={handleBrowserSystemToggle}
+              className="h-6 px-2 text-xs"
+            >
+              {browserRecording.systemRecording ? "Stop" : "Start"}
+            </Button>
+          </Label>
         </div>
 
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="flex items-center gap-1.5 text-sm font-medium">
-              {browserRecording.systemRecording ? (
-                <Volume2 className="h-4 w-4 text-red-500" />
-              ) : (
-                <VolumeX className="h-4 w-4 text-zinc-400" />
-              )}
-              System Audio
-            </Label>
-            <div className="flex items-center gap-2">
-              <Badge variant={browserRecording.systemRecording ? "default" : "secondary"}>
-                {browserRecording.systemRecording ? "ON" : "OFF"}
-              </Badge>
-              <Button
-                size="sm"
-                variant={browserRecording.systemRecording ? "destructive" : "default"}
-                disabled={systemLoading}
-                onClick={handleBrowserSystemToggle}
-                className="h-7 px-2 text-xs"
-              >
-                {browserRecording.systemRecording ? "Stop" : "Start"}
-              </Button>
-            </div>
+        {/* Level meters when recording */}
+        {isBrowserRecording && (
+          <div className="flex gap-2">
+            {browserRecording.micRecording && (
+              <BrowserLevelMeter level={browserRecording.micLevel} className="flex-1" />
+            )}
+            {browserRecording.systemRecording && (
+              <BrowserLevelMeter level={browserRecording.systemLevel} className="flex-1" />
+            )}
           </div>
-          {browserRecording.systemRecording && (
-            <BrowserLevelMeter level={browserRecording.systemLevel} />
-          )}
-        </div>
+        )}
 
         {isBrowserRecording && browserRecording.lastChunkTime && (
           <div className="text-xs text-muted-foreground">

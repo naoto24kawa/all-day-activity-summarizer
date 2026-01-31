@@ -33,7 +33,11 @@ const JOB_TYPE_LABELS: Record<AIJobType, string> = {
   "task-extract-github-comment": "GitHub コメント抽出",
   "task-extract-memo": "メモ タスク抽出",
   "learning-extract": "学び抽出",
+  "vocabulary-extract": "用語抽出",
   "profile-analyze": "プロフィール分析",
+  "summarize-pomodoro": "Pomodoro サマリ",
+  "summarize-hourly": "時間サマリ",
+  "summarize-daily": "日次サマリ",
 };
 
 /** ステータスアイコン */

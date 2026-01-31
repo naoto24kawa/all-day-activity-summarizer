@@ -7,11 +7,9 @@ import { schema } from "@repo/db";
 import type { LearningSourceType } from "@repo/types";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { extractAndSaveLearningsFromContent } from "../../claude-code/extractor.js";
+import { enqueueJob } from "../../ai-job/queue.js";
 import type { AdasConfig } from "../../config.js";
 import { getTodayDateString } from "../../utils/date.js";
-import { hasExtractionLog } from "../../utils/extraction-log.js";
-import { findOrCreateProjectByGitHub } from "../../utils/project-lookup.js";
 import { getVocabularyTerms } from "../../utils/vocabulary.js";
 
 interface ExplainLearningResponse {
@@ -549,206 +547,68 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
   /**
    * POST /api/learnings/extract/transcriptions
    *
-   * Extract learnings from transcription segments
+   * Extract learnings from transcription segments (async queue)
    * Body: { date?: string, segmentIds?: number[] }
    */
   router.post("/extract/transcriptions", async (c) => {
-    if (!config) {
-      return c.json({ error: "Config not available" }, 500);
-    }
-
     const body = await c.req.json<{ date?: string; segmentIds?: number[] }>();
     const date = body.date ?? getTodayDateString();
 
-    // Get target segments
-    let segments: Array<{
-      id: number;
-      date: string;
-      transcription: string;
-      interpretedText: string | null;
-      speaker: string | null;
-    }>;
-
-    if (body.segmentIds && body.segmentIds.length > 0) {
-      segments = db
-        .select({
-          id: schema.transcriptionSegments.id,
-          date: schema.transcriptionSegments.date,
-          transcription: schema.transcriptionSegments.transcription,
-          interpretedText: schema.transcriptionSegments.interpretedText,
-          speaker: schema.transcriptionSegments.speaker,
-        })
-        .from(schema.transcriptionSegments)
-        .where(sql`${schema.transcriptionSegments.id} IN (${body.segmentIds.join(",")})`)
-        .all();
-    } else {
-      segments = db
-        .select({
-          id: schema.transcriptionSegments.id,
-          date: schema.transcriptionSegments.date,
-          transcription: schema.transcriptionSegments.transcription,
-          interpretedText: schema.transcriptionSegments.interpretedText,
-          speaker: schema.transcriptionSegments.speaker,
-        })
-        .from(schema.transcriptionSegments)
-        .where(eq(schema.transcriptionSegments.date, date))
-        .all();
-    }
-
-    if (segments.length === 0) {
-      return c.json({ extracted: 0, saved: 0, message: "No segments found" });
-    }
-
-    // Group segments into batches for extraction
-    // Use date as source_id (one extraction per day)
-    const sourceId = `transcription-${date}`;
-
-    if (hasExtractionLog(db, "learning", "transcription", sourceId)) {
-      return c.json({
-        extracted: 0,
-        saved: 0,
-        message: "Already processed for this date",
-      });
-    }
-
-    // Format segments as messages
-    const messages = segments.map((s) => ({
-      role: s.speaker || "speaker",
-      content: s.interpretedText || s.transcription,
-    }));
-
-    const result = await extractAndSaveLearningsFromContent(
-      db,
-      config,
-      "transcription",
-      sourceId,
+    const jobId = enqueueJob(db, "learning-extract", {
+      sourceType: "transcription",
       date,
-      messages,
-      { contextInfo: "音声文字起こしからの学び抽出" },
-    );
+      segmentIds: body.segmentIds,
+    });
 
-    return c.json(result);
+    return c.json({
+      success: true,
+      jobId,
+      message: "学び抽出ジョブをキューに追加しました",
+    });
   });
 
   /**
    * POST /api/learnings/extract/github-comments
    *
-   * Extract learnings from GitHub comments (especially PR reviews)
+   * Extract learnings from GitHub comments (async queue)
    * Body: { date?: string }
    */
   router.post("/extract/github-comments", async (c) => {
-    if (!config) {
-      return c.json({ error: "Config not available" }, 500);
-    }
-
     const body = await c.req.json<{ date?: string }>();
     const date = body.date ?? getTodayDateString();
 
-    // Get GitHub comments for the date
-    const comments = db
-      .select()
-      .from(schema.githubComments)
-      .where(eq(schema.githubComments.date, date))
-      .all();
-
-    if (comments.length === 0) {
-      return c.json({ extracted: 0, saved: 0, message: "No comments found" });
-    }
-
-    // Use date as source_id
-    const sourceId = `github-comment-${date}`;
-
-    if (hasExtractionLog(db, "learning", "github-comment", sourceId)) {
-      return c.json({
-        extracted: 0,
-        saved: 0,
-        message: "Already processed for this date",
-      });
-    }
-
-    // Format comments as messages
-    const messages = comments.map((c) => ({
-      role: c.authorLogin || "reviewer",
-      content: `[${c.commentType}] ${c.repoName}#${c.itemNumber}: ${c.body}`,
-    }));
-
-    // Get projectId from first comment's repo (auto-link to ADAS project)
-    let projectId: number | null = null;
-    const firstComment = comments[0];
-    if (firstComment) {
-      projectId = findOrCreateProjectByGitHub(db, firstComment.repoOwner, firstComment.repoName);
-    }
-
-    const result = await extractAndSaveLearningsFromContent(
-      db,
-      config,
-      "github-comment",
-      sourceId,
+    const jobId = enqueueJob(db, "learning-extract", {
+      sourceType: "github-comment",
       date,
-      messages,
-      { contextInfo: "GitHub PR レビューコメントからの学び抽出", projectId },
-    );
+    });
 
-    return c.json(result);
+    return c.json({
+      success: true,
+      jobId,
+      message: "学び抽出ジョブをキューに追加しました",
+    });
   });
 
   /**
    * POST /api/learnings/extract/slack-messages
    *
-   * Extract learnings from Slack messages (mentions, DMs)
+   * Extract learnings from Slack messages (async queue)
    * Body: { date?: string }
    */
   router.post("/extract/slack-messages", async (c) => {
-    if (!config) {
-      return c.json({ error: "Config not available" }, 500);
-    }
-
     const body = await c.req.json<{ date?: string }>();
     const date = body.date ?? getTodayDateString();
 
-    // Get Slack messages for the date
-    const messages = db
-      .select()
-      .from(schema.slackMessages)
-      .where(eq(schema.slackMessages.date, date))
-      .all();
-
-    if (messages.length === 0) {
-      return c.json({ extracted: 0, saved: 0, message: "No messages found" });
-    }
-
-    // Use date as source_id
-    const sourceId = `slack-message-${date}`;
-
-    if (hasExtractionLog(db, "learning", "slack", sourceId)) {
-      return c.json({
-        extracted: 0,
-        saved: 0,
-        message: "Already processed for this date",
-      });
-    }
-
-    // Format Slack messages
-    const formattedMessages = messages.map((m) => ({
-      role: m.userName || m.userId,
-      content: `[${m.channelName || m.channelId}] ${m.text}`,
-    }));
-
-    // Get the most common projectId from messages (for auto-linking)
-    const projectIds = messages.map((m) => m.projectId).filter((id) => id !== null);
-    const projectId = projectIds.length > 0 ? projectIds[0] : null;
-
-    const result = await extractAndSaveLearningsFromContent(
-      db,
-      config,
-      "slack-message",
-      sourceId,
+    const jobId = enqueueJob(db, "learning-extract", {
+      sourceType: "slack-message",
       date,
-      formattedMessages,
-      { contextInfo: "Slack メッセージからの学び抽出", projectId },
-    );
+    });
 
-    return c.json(result);
+    return c.json({
+      success: true,
+      jobId,
+      message: "学び抽出ジョブをキューに追加しました",
+    });
   });
 
   return router;

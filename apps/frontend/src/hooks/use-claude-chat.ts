@@ -14,11 +14,17 @@ interface UseClaudeChatReturn {
   clearMessages: () => void;
 }
 
+// セッションID生成
+function generateSessionId(): string {
+  return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
 export function useClaudeChat(): UseClaudeChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentResponse, setCurrentResponse] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
+  const sessionIdRef = useRef<string>(generateSessionId());
 
   const sendMessage = useCallback(
     async (prompt: string) => {
@@ -35,16 +41,10 @@ export function useClaudeChat(): UseClaudeChatReturn {
       abortControllerRef.current = new AbortController();
 
       try {
-        // 過去の履歴を含めて送信
-        const history = messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        }));
-
         const response = await fetch(`${ADAS_API_URL}/api/claude-chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt, history }),
+          body: JSON.stringify({ prompt, sessionId: sessionIdRef.current }),
           signal: abortControllerRef.current.signal,
         });
 
@@ -127,10 +127,20 @@ export function useClaudeChat(): UseClaudeChatReturn {
         setCurrentResponse("");
       }
     },
-    [isStreaming, messages],
+    [isStreaming],
   );
 
   const clearMessages = useCallback(() => {
+    // バックエンドのセッションをクリア
+    fetch(`${ADAS_API_URL}/api/claude-chat/${sessionIdRef.current}`, {
+      method: "DELETE",
+    }).catch(() => {
+      // エラーは無視
+    });
+
+    // 新しいセッションID
+    sessionIdRef.current = generateSessionId();
+
     setMessages([]);
     setCurrentResponse("");
     abortControllerRef.current?.abort();

@@ -8,11 +8,11 @@ import { formatTimeJST, getTodayDateString } from "@/lib/date";
 import { TAB_GROUPS, type TabGroupId, type TabId } from "@/lib/tab-groups";
 import { ActivityFeed } from "./activity-feed";
 import { AiProcessingLogPanel } from "./ai-processing-log-panel";
-import { BrowserRecordingPanel } from "./browser-recording-panel";
 import { ClaudeChatPanel } from "./claude-chat-panel";
 import { ClaudeCodeFeed } from "./claude-code-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
 import { GitHubFeed } from "./github-feed";
+import { HeaderControls } from "./header-controls";
 import { IntegrationsPanel } from "./integrations-panel";
 import { LearningsFeed } from "./learnings-feed";
 import { MemoFloatingChat } from "./memo-floating-chat";
@@ -20,7 +20,6 @@ import { MonitoringPanel } from "./monitoring-panel";
 import { ProfilePanel } from "./profile-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
-import { StatusPanel } from "./status-panel";
 import { SummaryView } from "./summary-view";
 import { TasksPanel } from "./tasks-panel";
 import { ThemeToggle } from "./theme-toggle";
@@ -85,26 +84,7 @@ export function Dashboard() {
     <div className="flex h-screen overflow-hidden">
       {/* メインコンテンツ */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden p-4">
-        <div className="flex shrink-0 items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold">All Day Activity Summarizer</h1>
-            <span className="font-mono text-lg text-muted-foreground">{formatTimeJST(now)}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-auto"
-            />
-            <ThemeToggle />
-          </div>
-        </div>
-
-        <div className="mt-4 grid shrink-0 gap-4 lg:grid-cols-2">
-          <StatusPanel jobStats={jobStats} />
-          <BrowserRecordingPanel />
-        </div>
+        <HeaderControls now={now} date={date} onDateChange={setDate} jobStats={jobStats} />
 
         {/* 2段タブ構造 */}
         <div className="mt-4 flex min-h-0 flex-1 flex-col">

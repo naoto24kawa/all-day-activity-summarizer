@@ -2,11 +2,7 @@ import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import {
-  generateDailySummary,
-  generateHourlySummary,
-  generatePomodoroSummary,
-} from "../../summarizer/scheduler.js";
+import { enqueueJob } from "../../ai-job/queue.js";
 import { getTodayDateString } from "../../utils/date.js";
 
 export function createSummariesRouter(db: AdasDatabase) {
@@ -43,41 +39,45 @@ export function createSummariesRouter(db: AdasDatabase) {
     }>();
     const date = body.date ?? getTodayDateString();
 
+    const jobIds: number[] = [];
+
     if (body.type === "daily") {
-      const result = await generateDailySummary(db, date);
-      return c.json({ success: !!result, content: result });
+      const jobId = enqueueJob(db, "summarize-daily", { date });
+      return c.json({ success: true, jobId, message: "日次サマリ生成をキューに追加しました" });
     }
 
     if (body.hour !== undefined) {
-      const result = await generateHourlySummary(db, date, body.hour);
-      return c.json({ success: !!result, content: result });
+      const jobId = enqueueJob(db, "summarize-hourly", { date, hour: body.hour });
+      return c.json({
+        success: true,
+        jobId,
+        message: `${body.hour}時台のサマリ生成をキューに追加しました`,
+      });
     }
 
-    // Generate all: pomodoro → hourly → daily
-    const pomodoroResults: string[] = [];
+    // Generate all: pomodoro → hourly → daily をキューに追加
     for (let period = 0; period < 48; period++) {
       const hour = Math.floor(period / 2);
       const isSecondHalf = period % 2 === 1;
       const hh = String(hour).padStart(2, "0");
       const startTime = isSecondHalf ? `${date}T${hh}:30:00` : `${date}T${hh}:00:00`;
       const endTime = isSecondHalf ? `${date}T${hh}:59:59` : `${date}T${hh}:29:59`;
-      const result = await generatePomodoroSummary(db, date, startTime, endTime);
-      if (result) pomodoroResults.push(result);
+      const jobId = enqueueJob(db, "summarize-pomodoro", { date, startTime, endTime });
+      jobIds.push(jobId);
     }
 
-    const hourlyResults: string[] = [];
     for (let hour = 0; hour < 24; hour++) {
-      const result = await generateHourlySummary(db, date, hour);
-      if (result) hourlyResults.push(result);
+      const jobId = enqueueJob(db, "summarize-hourly", { date, hour });
+      jobIds.push(jobId);
     }
 
-    const daily = await generateDailySummary(db, date);
+    const dailyJobId = enqueueJob(db, "summarize-daily", { date });
+    jobIds.push(dailyJobId);
 
     return c.json({
       success: true,
-      pomodoroCount: pomodoroResults.length,
-      hourlyCount: hourlyResults.length,
-      dailyGenerated: !!daily,
+      jobIds,
+      message: `${jobIds.length}件のサマリ生成ジョブをキューに追加しました`,
     });
   });
 

@@ -8,20 +8,35 @@ import { registerJobHandler } from "../worker.js";
 import { handleLearningExtract } from "./learning-extract.js";
 import { handleProfileAnalyze } from "./profile-analyze.js";
 import {
+  handleSummarizeDaily,
+  handleSummarizeHourly,
+  handleSummarizePomodoro,
+} from "./summarize.js";
+import {
   handleTaskExtractGitHub,
   handleTaskExtractGitHubComment,
   handleTaskExtractMemo,
   handleTaskExtractSlack,
 } from "./task-extract.js";
+import { handleVocabularyExtract } from "./vocabulary-extract.js";
 
 /**
  * 全ハンドラーを登録
  */
 export function registerAllHandlers(): void {
+  // タスク抽出
   registerJobHandler("task-extract-slack", handleTaskExtractSlack);
   registerJobHandler("task-extract-github", handleTaskExtractGitHub);
   registerJobHandler("task-extract-github-comment", handleTaskExtractGitHubComment);
   registerJobHandler("task-extract-memo", handleTaskExtractMemo);
+  // 学び抽出 (claude-code/transcription/github-comment/slack-message)
   registerJobHandler("learning-extract", handleLearningExtract);
+  // 用語抽出 (slack/github/claude-code/memo)
+  registerJobHandler("vocabulary-extract", handleVocabularyExtract);
+  // プロフィール分析
   registerJobHandler("profile-analyze", handleProfileAnalyze);
+  // サマリ生成
+  registerJobHandler("summarize-pomodoro", handleSummarizePomodoro);
+  registerJobHandler("summarize-hourly", handleSummarizeHourly);
+  registerJobHandler("summarize-daily", handleSummarizeDaily);
 }

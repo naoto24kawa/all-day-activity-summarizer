@@ -1,5 +1,17 @@
 import type { AIJobStats } from "@repo/types";
-import { Activity, Bot, Mic, MicOff, RefreshCw, Volume2, VolumeX } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  Check,
+  Clock,
+  Loader2,
+  Mic,
+  MicOff,
+  RefreshCw,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +21,6 @@ import { Switch } from "@/components/ui/switch";
 import { useAudioLevels } from "@/hooks/use-audio-levels";
 import { useRecording } from "@/hooks/use-recording";
 import { useStatus } from "@/hooks/use-status";
-import { formatTimeJST } from "@/lib/date";
 import { LevelMeter } from "./level-meter";
 
 interface StatusPanelProps {
@@ -18,7 +29,7 @@ interface StatusPanelProps {
 }
 
 export function StatusPanel({ jobStats }: StatusPanelProps) {
-  const { status, error, loading, refetch } = useStatus();
+  const { error, loading, refetch } = useStatus();
   const { micRecording, speakerRecording, togglingMic, togglingSpeaker, toggleMic, toggleSpeaker } =
     useRecording();
   const { levels } = useAudioLevels({
@@ -70,125 +81,94 @@ export function StatusPanel({ jobStats }: StatusPanelProps) {
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        <dl className="grid grid-cols-2 gap-2 text-sm">
-          <dt className="text-muted-foreground">Date</dt>
-          <dd>{status?.date}</dd>
-          <dt className="text-muted-foreground">Transcriptions</dt>
-          <dd>{status?.transcriptionSegments}</dd>
-          <dt className="text-muted-foreground">Summaries</dt>
-          <dd>{status?.summaries}</dd>
-          <dt className="text-muted-foreground">Latest</dt>
-          <dd>
-            {status?.latestTranscriptionTime
-              ? formatTimeJST(status.latestTranscriptionTime)
-              : "N/A"}
-          </dd>
-        </dl>
-
-        {/* AI Job Queue */}
+        {/* AI Job Queue - Inline */}
         {jobStats && (
-          <div className="space-y-2 border-t pt-3">
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Bot className="size-3" />
-              AI Job Queue
+          <div className="flex items-center gap-3 text-sm">
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <Bot className="size-3.5" />
+              <span className="text-xs font-medium">AI</span>
             </div>
-            <dl className="grid grid-cols-2 gap-2 text-sm">
-              <dt className="text-muted-foreground">Processing</dt>
-              <dd>
-                {jobStats.processing > 0 ? (
-                  <Badge variant="secondary" className="text-xs">
-                    {jobStats.processing}
-                  </Badge>
-                ) : (
-                  "0"
-                )}
-              </dd>
-              <dt className="text-muted-foreground">Pending</dt>
-              <dd>
-                {jobStats.pending > 0 ? (
-                  <Badge variant="outline" className="text-xs">
-                    {jobStats.pending}
-                  </Badge>
-                ) : (
-                  "0"
-                )}
-              </dd>
-              <dt className="text-muted-foreground">Completed</dt>
-              <dd>{jobStats.completed}</dd>
-              <dt className="text-muted-foreground">Failed</dt>
-              <dd>
-                {jobStats.failed > 0 ? (
-                  <Badge variant="destructive" className="text-xs">
-                    {jobStats.failed}
-                  </Badge>
-                ) : (
-                  "0"
-                )}
-              </dd>
-            </dl>
+            <div className="flex items-center gap-3">
+              <span
+                className={`flex items-center gap-1 ${jobStats.processing > 0 ? "text-blue-500" : "text-muted-foreground"}`}
+                title="Processing"
+              >
+                <Loader2 className={`size-3.5 ${jobStats.processing > 0 ? "animate-spin" : ""}`} />
+                {jobStats.processing}
+              </span>
+              <span
+                className={`flex items-center gap-1 ${jobStats.pending > 0 ? "text-orange-500" : "text-muted-foreground"}`}
+                title="Pending"
+              >
+                <Clock className="size-3.5" />
+                {jobStats.pending}
+              </span>
+              <span className="flex items-center gap-1 text-muted-foreground" title="Completed">
+                <Check className="size-3.5" />
+                {jobStats.completed}
+              </span>
+              <span
+                className={`flex items-center gap-1 ${jobStats.failed > 0 ? "text-red-500" : "text-muted-foreground"}`}
+                title="Failed"
+              >
+                <X className="size-3.5" />
+                {jobStats.failed}
+              </span>
+            </div>
           </div>
         )}
 
+        {/* Native Recording - Inline */}
         {hasNativeRecording && (
-          <div className="space-y-3 border-t pt-3">
-            <div className="text-xs font-medium text-muted-foreground">Native Recording</div>
-            {micRecording !== null && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label
-                    htmlFor="mic-toggle"
-                    className="flex items-center gap-1.5 text-sm font-medium"
-                  >
-                    {micRecording ? (
-                      <Mic className="h-4 w-4 text-red-500" />
-                    ) : (
-                      <MicOff className="h-4 w-4 text-zinc-400" />
-                    )}
-                    Microphone
-                  </Label>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={micRecording ? "default" : "secondary"}>
-                      {micRecording ? "ON" : "OFF"}
-                    </Badge>
-                    <Switch
-                      id="mic-toggle"
-                      checked={micRecording}
-                      disabled={togglingMic}
-                      onCheckedChange={toggleMic}
-                    />
-                  </div>
-                </div>
-                {micRecording && <LevelMeter level={levels.mic} />}
-              </div>
-            )}
-
-            {speakerRecording !== null && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label
-                    htmlFor="speaker-toggle"
-                    className="flex items-center gap-1.5 text-sm font-medium"
-                  >
-                    {speakerRecording ? (
-                      <Volume2 className="h-4 w-4 text-red-500" />
-                    ) : (
-                      <VolumeX className="h-4 w-4 text-zinc-400" />
-                    )}
-                    System Audio
-                  </Label>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={speakerRecording ? "default" : "secondary"}>
-                      {speakerRecording ? "ON" : "OFF"}
-                    </Badge>
-                    <Switch
-                      id="speaker-toggle"
-                      checked={speakerRecording}
-                      disabled={togglingSpeaker}
-                      onCheckedChange={toggleSpeaker}
-                    />
-                  </div>
-                </div>
-                {speakerRecording && <LevelMeter level={levels.speaker} />}
+          <div className="space-y-2 border-t pt-3">
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-xs font-medium text-muted-foreground">Rec</span>
+              {micRecording !== null && (
+                <Label
+                  htmlFor="mic-toggle"
+                  className="flex cursor-pointer items-center gap-1.5"
+                  title="Microphone"
+                >
+                  {micRecording ? (
+                    <Mic className="size-4 text-red-500" />
+                  ) : (
+                    <MicOff className="size-4 text-muted-foreground" />
+                  )}
+                  <Switch
+                    id="mic-toggle"
+                    className="scale-75"
+                    checked={micRecording}
+                    disabled={togglingMic}
+                    onCheckedChange={toggleMic}
+                  />
+                </Label>
+              )}
+              {speakerRecording !== null && (
+                <Label
+                  htmlFor="speaker-toggle"
+                  className="flex cursor-pointer items-center gap-1.5"
+                  title="System Audio"
+                >
+                  {speakerRecording ? (
+                    <Volume2 className="size-4 text-red-500" />
+                  ) : (
+                    <VolumeX className="size-4 text-muted-foreground" />
+                  )}
+                  <Switch
+                    id="speaker-toggle"
+                    className="scale-75"
+                    checked={speakerRecording}
+                    disabled={togglingSpeaker}
+                    onCheckedChange={toggleSpeaker}
+                  />
+                </Label>
+              )}
+            </div>
+            {/* Level meters when recording */}
+            {(micRecording || speakerRecording) && (
+              <div className="flex gap-2">
+                {micRecording && <LevelMeter level={levels.mic} className="flex-1" />}
+                {speakerRecording && <LevelMeter level={levels.speaker} className="flex-1" />}
               </div>
             )}
           </div>

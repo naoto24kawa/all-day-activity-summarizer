@@ -4,7 +4,7 @@
  * AI ジョブ完了時の通知 (トースト + Web通知 + 音)
  */
 
-import type { AIJob, AIJobCompletedEvent, AIJobType } from "@repo/types";
+import type { AIJob, AIJobCompletedEvent, AIJobStats, AIJobType } from "@repo/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAIJobs } from "./use-ai-jobs";
@@ -16,7 +16,11 @@ const JOB_TYPE_LABELS: Record<AIJobType, string> = {
   "task-extract-github-comment": "GitHubコメントタスク抽出",
   "task-extract-memo": "メモタスク抽出",
   "learning-extract": "学び抽出",
+  "vocabulary-extract": "用語抽出",
   "profile-analyze": "プロフィール分析",
+  "summarize-pomodoro": "Pomodoroサマリ",
+  "summarize-hourly": "時間サマリ",
+  "summarize-daily": "日次サマリ",
 };
 
 interface UseJobNotificationsOptions {
@@ -31,8 +35,8 @@ interface UseJobNotificationsOptions {
 }
 
 interface UseJobNotificationsReturn {
-  /** ジョブ統計 (処理中ジョブ数など) */
-  stats: { pending: number; processing: number } | null;
+  /** ジョブ統計 */
+  stats: AIJobStats | null;
   /** ジョブ一覧 */
   jobs: AIJob[];
   /** SSE接続中 */
@@ -150,7 +154,7 @@ export function useJobNotifications(
   });
 
   return {
-    stats: stats ? { pending: stats.pending, processing: stats.processing } : null,
+    stats,
     jobs,
     isConnected,
     notificationPermission,

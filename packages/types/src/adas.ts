@@ -1024,7 +1024,11 @@ export type AIJobType =
   | "task-extract-github-comment"
   | "task-extract-memo"
   | "learning-extract"
-  | "profile-analyze";
+  | "vocabulary-extract"
+  | "profile-analyze"
+  | "summarize-pomodoro"
+  | "summarize-hourly"
+  | "summarize-daily";
 
 /** AIジョブステータス */
 export type AIJobStatus = "pending" | "processing" | "completed" | "failed";

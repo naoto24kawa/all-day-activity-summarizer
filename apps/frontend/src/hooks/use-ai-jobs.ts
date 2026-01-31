@@ -86,9 +86,15 @@ export function useAIJobs(options: UseAIJobsOptions = {}): UseAIJobsReturn {
     [refreshStats],
   );
 
-  // 初回統計取得 (SSE無効時も取得)
+  // 初回統計取得 + 定期ポーリング (10秒ごと)
   useEffect(() => {
     refreshStats();
+
+    const interval = setInterval(() => {
+      refreshStats();
+    }, 10000);
+
+    return () => clearInterval(interval);
   }, [refreshStats]);
 
   // SSE接続

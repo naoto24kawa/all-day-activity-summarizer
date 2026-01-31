@@ -37,6 +37,7 @@ export type {
   DuplicateTaskPair,
   EvaluatorJudgment,
   EvaluatorLog,
+  ExtractedTerm,
   ExtractTasksRequest,
   ExtractTasksResponse,
   Feedback,
@@ -103,6 +104,9 @@ export type {
   UserProfile,
   Vocabulary,
   VocabularySource,
+  VocabularySuggestion,
+  VocabularySuggestionSourceType,
+  VocabularySuggestionStatus,
 } from "./adas";
 
 export { isApprovalOnlyTask, MEMO_TAGS } from "./adas";
