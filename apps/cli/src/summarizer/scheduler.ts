@@ -22,14 +22,42 @@ export { generateDailySummary, generateTimesSummary } from "./generator.js";
 
 export function startEnqueueScheduler(db: AdasDatabase, config: AdasConfig): () => void {
   let lastDailyDate = "";
+  let lastTimesEnqueueTime = 0;
   const dailyScheduleHour = config.summarizer.dailyScheduleHour ?? 23;
+  const timesIntervalMinutes = config.summarizer.timesIntervalMinutes ?? 0;
 
   const checkAndEnqueue = () => {
     const now = new Date();
     const date = getTodayDateString();
     const currentHour = now.getHours();
 
-    // Daily: 指定時間以降に1日分をキューに追加 (自動生成は daily のみ)
+    // Times: 指定間隔ごとに自動生成 (0 = 無効)
+    if (timesIntervalMinutes > 0) {
+      const intervalMs = timesIntervalMinutes * 60 * 1000;
+      const elapsed = now.getTime() - lastTimesEnqueueTime;
+
+      if (elapsed >= intervalMs) {
+        lastTimesEnqueueTime = now.getTime();
+
+        // 直近の時間範囲を計算 (interval に基づく時間数)
+        // 例: 60分間隔 → 直近1時間、30分間隔 → 直近1時間
+        const hoursToSummarize = Math.max(1, Math.ceil(timesIntervalMinutes / 60));
+        const endHour = currentHour;
+        const startHour = Math.max(0, endHour - hoursToSummarize + 1);
+
+        const job = enqueue(db, {
+          jobType: "times",
+          date,
+          startHour,
+          endHour,
+        });
+        if (job) {
+          consola.info(`Enqueued times job for ${date} ${startHour}:00 - ${endHour}:59`);
+        }
+      }
+    }
+
+    // Daily: 指定時間以降に1日分をキューに追加
     if (currentHour >= dailyScheduleHour && lastDailyDate !== date) {
       lastDailyDate = date;
       const job = enqueue(db, {
@@ -43,6 +71,9 @@ export function startEnqueueScheduler(db: AdasDatabase, config: AdasConfig): () 
   };
 
   consola.info(`Daily summary scheduled at ${dailyScheduleHour}:00`);
+  if (timesIntervalMinutes > 0) {
+    consola.info(`Times summary auto-generation every ${timesIntervalMinutes} minutes`);
+  }
 
   // 初回実行
   checkAndEnqueue();

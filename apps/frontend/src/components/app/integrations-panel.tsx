@@ -55,12 +55,16 @@ export function IntegrationsPanel() {
   // Daily サマリ自動実行時間
   const [dailyScheduleHour, setDailyScheduleHour] = useState("23");
 
+  // Times サマリ自動生成間隔
+  const [timesIntervalMinutes, setTimesIntervalMinutes] = useState("0");
+
   // 初期値を設定
   useEffect(() => {
     if (integrations?.summarizer) {
       setLmStudioUrl(integrations.summarizer.lmstudio.url);
       setLmStudioModel(integrations.summarizer.lmstudio.model);
       setDailyScheduleHour(String(integrations.summarizer.dailyScheduleHour ?? 23));
+      setTimesIntervalMinutes(String(integrations.summarizer.timesIntervalMinutes ?? 0));
     }
   }, [integrations?.summarizer]);
 
@@ -166,6 +170,18 @@ export function IntegrationsPanel() {
       setDailyScheduleHour(value);
       try {
         await updateSummarizerConfig({ dailyScheduleHour: Number.parseInt(value, 10) });
+      } catch {
+        // エラーはhook内で処理済み
+      }
+    },
+    [updateSummarizerConfig],
+  );
+
+  const handleTimesIntervalChange = useCallback(
+    async (value: string) => {
+      setTimesIntervalMinutes(value);
+      try {
+        await updateSummarizerConfig({ timesIntervalMinutes: Number.parseInt(value, 10) });
       } catch {
         // エラーはhook内で処理済み
       }
@@ -473,6 +489,35 @@ export function IntegrationsPanel() {
               </div>
             </div>
 
+            {/* Times サマリ自動生成間隔 */}
+            <div className="mt-4 space-y-3 pt-4 border-t">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                <Label className="text-sm">Times サマリ自動生成</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                指定間隔で直近の作業サマリを自動生成します (0 = 無効)
+              </p>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={timesIntervalMinutes}
+                  onValueChange={handleTimesIntervalChange}
+                  disabled={updating}
+                >
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">無効</SelectItem>
+                    <SelectItem value="30">30分毎</SelectItem>
+                    <SelectItem value="60">1時間毎</SelectItem>
+                    <SelectItem value="120">2時間毎</SelectItem>
+                    <SelectItem value="180">3時間毎</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             {/* 時間範囲指定サマリ生成 */}
             <div className="mt-4 space-y-3 pt-4 border-t">
               <div className="flex items-center gap-2">
@@ -489,7 +534,7 @@ export function IntegrationsPanel() {
                   </SelectTrigger>
                   <SelectContent>
                     {Array.from({ length: 24 }, (_, i) => (
-                      <SelectItem key={i} value={String(i)}>
+                      <SelectItem key={`start-${i}`} value={String(i)}>
                         {String(i).padStart(2, "0")}:00
                       </SelectItem>
                     ))}
@@ -502,7 +547,7 @@ export function IntegrationsPanel() {
                   </SelectTrigger>
                   <SelectContent>
                     {Array.from({ length: 24 }, (_, i) => (
-                      <SelectItem key={i} value={String(i)}>
+                      <SelectItem key={`end-${i}`} value={String(i)}>
                         {String(i).padStart(2, "0")}:59
                       </SelectItem>
                     ))}

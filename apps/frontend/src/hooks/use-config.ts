@@ -14,6 +14,7 @@ export interface IntegrationStatus {
 export interface SummarizerConfig {
   provider: "claude" | "lmstudio";
   dailyScheduleHour: number;
+  timesIntervalMinutes: number;
   lmstudio: {
     url: string;
     model: string;
@@ -146,6 +147,7 @@ export function useConfig() {
     async (config: {
       provider?: "claude" | "lmstudio";
       dailyScheduleHour?: number;
+      timesIntervalMinutes?: number;
       lmstudio?: { url?: string; model?: string };
     }) => {
       try {
