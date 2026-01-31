@@ -10,6 +10,7 @@ import { and, eq, isNotNull } from "drizzle-orm";
 
 /**
  * プロジェクトを検索または作成 (GitHub 用)
+ * excludedAt が設定されている場合は新規作成しない
  */
 export function findOrCreateProjectByGitHub(
   db: AdasDatabase,
@@ -26,6 +27,10 @@ export function findOrCreateProjectByGitHub(
     .get();
 
   if (existing) {
+    // excludedAt が設定されている場合は null を返す (作成しない)
+    if (existing.excludedAt) {
+      return null;
+    }
     return existing.id;
   }
 

@@ -1,6 +1,6 @@
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import { desc, eq } from "drizzle-orm";
+import { count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { suggestMemoTags } from "../../memo/tag-suggester.js";
 import { getTodayDateString } from "../../utils/date.js";
@@ -12,22 +12,38 @@ export function createMemosRouter(db: AdasDatabase) {
   /**
    * GET /api/memos
    *
-   * Returns all memos ordered by createdAt descending (newest first).
+   * Returns memos with pagination support.
    * Query params:
-   * - limit: number (optional, defaults to 100)
+   * - limit: number (optional, defaults to 50)
+   * - offset: number (optional, defaults to 0)
+   *
+   * Response:
+   * - memos: Memo[] (ordered by createdAt descending - newest first)
+   * - total: number (total count of memos)
+   * - hasMore: boolean (true if there are more memos to fetch)
    */
   router.get("/", (c) => {
     const limitStr = c.req.query("limit");
-    const limit = limitStr ? Number.parseInt(limitStr, 10) : 100;
+    const offsetStr = c.req.query("offset");
+    const limit = limitStr ? Number.parseInt(limitStr, 10) : 50;
+    const offset = offsetStr ? Number.parseInt(offsetStr, 10) : 0;
 
+    // Get total count
+    const totalResult = db.select({ count: count() }).from(schema.memos).get();
+    const total = totalResult?.count ?? 0;
+
+    // Get paginated memos
     const memos = db
       .select()
       .from(schema.memos)
       .orderBy(desc(schema.memos.createdAt))
       .limit(limit)
+      .offset(offset)
       .all();
 
-    return c.json(memos);
+    const hasMore = offset + memos.length < total;
+
+    return c.json({ memos, total, hasMore });
   });
 
   router.post("/", async (c) => {
@@ -140,7 +156,7 @@ export function createMemosRouter(db: AdasDatabase) {
 
     db.delete(schema.memos).where(eq(schema.memos.id, id)).run();
 
-    return c.json({ success: true });
+    return c.json({ deleted: true });
   });
 
   return router;

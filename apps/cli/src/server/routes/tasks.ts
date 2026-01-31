@@ -9,6 +9,9 @@ import { getPromptFilePath, runClaude } from "@repo/core";
 import type { AdasDatabase, SlackMessage } from "@repo/db";
 import { schema } from "@repo/db";
 import {
+  type BulkElaborateTaskResult,
+  type BulkElaborateTasksRequest,
+  type BulkElaborateTasksResponse,
   type CheckCompletionRequest,
   type CheckCompletionResponse,
   type CheckDuplicatesResponse,
@@ -16,6 +19,7 @@ import {
   type DetectDuplicatesResponse,
   type ElaborateTaskRequest,
   type ElaborateTaskResponse,
+  type ElaborationLevel,
   isApprovalOnlyTask,
   type PromptTarget,
   type SuggestCompletionsResponse,
@@ -33,6 +37,53 @@ import { getTodayDateString } from "../../utils/date";
 import { hasExtractionLog, recordExtractionLog } from "../../utils/extraction-log.js";
 import { findOrCreateProjectByGitHub } from "../../utils/project-lookup.js";
 import { buildVocabularySection } from "../../utils/vocabulary.js";
+
+/**
+ * 詳細化レベルに応じた出力形式の指示を構築
+ */
+function buildOutputFormatForLevel(level: ElaborationLevel): string {
+  switch (level) {
+    case "light":
+      return `
+
+## 出力形式の指示
+
+以下のセクション **のみ** を含めてください。それ以外のセクション (対象ファイル、実装手順、コード例等) は出力しないでください:
+
+### 1. 背景・目的
+- なぜこのタスクが必要なのか
+- 何を達成したいのか
+
+### 2. 完了条件
+- タスク完了とみなす具体的な基準をリストで記載`;
+
+    case "standard":
+      return `
+
+## 出力形式の指示
+
+以下のセクションを含めてください:
+
+### 1. 背景・目的
+- なぜこのタスクが必要なのか
+- 何を達成したいのか
+
+### 2. 対象ファイル
+- 変更が必要なファイルを簡潔にリスト
+
+### 3. 実装概要
+- 主要な変更点を箇条書きで簡潔に
+
+### 4. 完了条件
+- タスク完了とみなす具体的な基準をリストで記載
+
+※ 詳細な実装手順やコード例は不要です`;
+
+    case "detailed":
+      // 現状のプロンプトをそのまま使用 (制限なし)
+      return "";
+  }
+}
 
 interface ExtractedTaskDependency {
   type: "blocks" | "related";
@@ -121,6 +172,21 @@ interface TaskUpdates {
   originalDescription?: string | null;
 }
 
+/** 有効なタスクステータス */
+const VALID_TASK_STATUSES = [
+  "pending",
+  "accepted",
+  "rejected",
+  "in_progress",
+  "paused",
+  "completed",
+] as const;
+
+/** クエリパラメータが有効な TaskStatus かどうかを判定 */
+function isValidTaskStatus(value: unknown): value is TaskStatus {
+  return typeof value === "string" && (VALID_TASK_STATUSES as readonly string[]).includes(value);
+}
+
 export function createTasksRouter(db: AdasDatabase) {
   const router = new Hono();
 
@@ -134,7 +200,8 @@ export function createTasksRouter(db: AdasDatabase) {
    * - limit: number (optional, defaults to 100)
    */
   router.get("/", (c) => {
-    const status = c.req.query("status") as TaskStatus | undefined;
+    const statusParam = c.req.query("status");
+    const status = isValidTaskStatus(statusParam) ? statusParam : undefined;
     const projectIdStr = c.req.query("projectId");
     const noProject = c.req.query("noProject") === "true";
     const limitStr = c.req.query("limit");
@@ -1603,9 +1670,9 @@ export function createTasksRouter(db: AdasDatabase) {
   /**
    * POST /api/tasks/:id/elaborate
    *
-   * タスクを AI で詳細化
-   * コードベースを参照しながら実装手順や対象ファイルを含む詳細を生成
+   * タスクを非同期で AI 詳細化 (AI Job キューに登録)
    * Body: ElaborateTaskRequest
+   * Returns: { jobId, status: "pending" }
    */
   router.post("/:id/elaborate", async (c) => {
     const id = Number(c.req.param("id"));
@@ -1620,104 +1687,439 @@ export function createTasksRouter(db: AdasDatabase) {
 
     const body = await c.req.json<ElaborateTaskRequest>().catch(() => ({}));
 
-    // プロジェクト情報を取得
-    let project = null;
-    if (task.projectId) {
-      project = db
+    // 既に詳細化中の場合はエラー
+    if (task.elaborationStatus === "pending") {
+      return c.json({ error: "Elaboration already in progress" }, 400);
+    }
+
+    // タスクの elaborationStatus を pending に設定
+    db.update(schema.tasks)
+      .set({
+        elaborationStatus: "pending",
+        pendingElaboration: null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.tasks.id, id))
+      .run();
+
+    // AI Job キューに登録
+    const jobId = enqueueJob(db, "task-elaborate", {
+      taskId: id,
+      userInstruction: body.userInstruction,
+    });
+
+    consola.info(`[tasks/elaborate] Queued elaboration job ${jobId} for task ${id}`);
+
+    return c.json({ jobId, status: "pending" });
+  });
+
+  /**
+   * GET /api/tasks/:id/elaboration
+   *
+   * 詳細化状態を取得
+   * Returns: ElaborationStatusResponse
+   */
+  router.get("/:id/elaboration", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    // pending または failed 状態の場合、AI Job の状態を確認
+    let jobId: number | null = null;
+    let jobStatus: string | null = null;
+    let errorMessage: string | null = null;
+
+    if (task.elaborationStatus === "pending" || task.elaborationStatus === "failed") {
+      // 最新の task-elaborate ジョブを取得
+      const jobs = db
         .select()
-        .from(schema.projects)
-        .where(eq(schema.projects.id, task.projectId))
-        .get();
-    }
+        .from(schema.aiJobQueue)
+        .where(eq(schema.aiJobQueue.jobType, "task-elaborate"))
+        .orderBy(desc(schema.aiJobQueue.createdAt))
+        .limit(10)
+        .all();
 
-    // プロンプトを構築
-    const systemPrompt = readFileSync(getPromptFilePath("task-elaborate"), "utf-8");
-
-    let userPrompt = `# タスク情報\n\n`;
-    userPrompt += `**タイトル**: ${task.title}\n\n`;
-
-    if (task.description) {
-      userPrompt += `**現在の説明**:\n${task.description}\n\n`;
-    }
-
-    if (project) {
-      userPrompt += `**プロジェクト**: ${project.name}\n`;
-      if (project.path) {
-        userPrompt += `**プロジェクトパス**: ${project.path}\n`;
-      }
-      userPrompt += "\n";
-    }
-
-    // 修正依頼の場合
-    if (body.currentElaboration && body.revisionInstruction) {
-      userPrompt += `## 修正依頼\n\n`;
-      userPrompt += `**現在の詳細化結果**:\n${body.currentElaboration}\n\n`;
-      userPrompt += `**修正指示**: ${body.revisionInstruction}\n\n`;
-      userPrompt += `上記の修正指示に従って、詳細化結果を改善してください。\n`;
-    } else if (body.userInstruction) {
-      // 初回詳細化で追加指示がある場合
-      userPrompt += `## ユーザー指示\n${body.userInstruction}\n\n`;
-      userPrompt += `上記の指示を考慮してタスクを詳細化してください。\n`;
-    } else {
-      userPrompt += `このタスクを詳細化してください。\n`;
-    }
-
-    // vocabulary セクションを追加
-    const vocabularySection = buildVocabularySection(db);
-    if (vocabularySection) {
-      userPrompt += `\n${vocabularySection}\n`;
-    }
-
-    try {
-      const cwd = project?.path ?? undefined;
-      const allowedTools = cwd ? "Glob,Grep,Read" : undefined;
-      const disableTools = !cwd;
-
-      consola.info(`[tasks/elaborate] Starting elaboration for task ${id} (cwd: ${cwd ?? "none"})`);
-
-      const response = await runClaude(userPrompt, {
-        model: "sonnet",
-        systemPrompt,
-        allowedTools,
-        disableTools,
-        cwd,
-        dangerouslySkipPermissions: true,
+      const job = jobs.find((j) => {
+        const params = j.params ? JSON.parse(j.params) : {};
+        return params.taskId === id;
       });
 
-      // レスポンスからファイルパスを抽出 (パターンマッチング)
-      const filePatterns = [
-        /`([^`]+\.[a-z]{1,4})`/g, // バッククォートで囲まれたファイルパス
-        /- `([^`]+\.[a-z]{1,4})`/g, // リスト項目のファイルパス
-      ];
-
-      const referencedFiles = new Set<string>();
-      for (const pattern of filePatterns) {
-        for (const match of response.matchAll(pattern)) {
-          const filePath = match[1];
-          if (filePath && !filePath.includes(" ") && filePath.includes("/")) {
-            referencedFiles.add(filePath);
-          }
+      if (job) {
+        jobId = job.id;
+        jobStatus = job.status;
+        if (job.status === "failed" || task.elaborationStatus === "failed") {
+          errorMessage = job.errorMessage;
         }
       }
+    }
 
-      const result: ElaborateTaskResponse = {
-        elaboration: response,
-        codebaseReferenced: !!cwd,
-        referencedFiles: referencedFiles.size > 0 ? Array.from(referencedFiles) : undefined,
-      };
+    // 結果をパース
+    let result = null;
+    if (task.elaborationStatus === "completed" && task.pendingElaboration) {
+      try {
+        result = JSON.parse(task.pendingElaboration);
+      } catch {
+        consola.warn(`[tasks/elaboration] Failed to parse pendingElaboration for task ${id}`);
+      }
+    }
 
-      consola.success(
-        `[tasks/elaborate] Done (${response.length} chars, ${referencedFiles.size} files referenced)`,
-      );
+    return c.json({
+      taskId: id,
+      status: task.elaborationStatus,
+      jobId,
+      jobStatus,
+      result,
+      errorMessage,
+    });
+  });
 
-      return c.json(result);
-    } catch (error) {
-      consola.error(`[tasks/elaborate] Failed:`, error);
-      return c.json(
-        { error: error instanceof Error ? error.message : "Failed to elaborate task" },
-        500,
+  /**
+   * POST /api/tasks/:id/elaboration/apply
+   *
+   * 詳細化結果を適用 (親タスクの説明更新 + 子タスク作成)
+   * Body: ApplyElaborationRequest
+   * Returns: ApplyElaborationResponse
+   */
+  router.post("/:id/elaboration/apply", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    if (task.elaborationStatus !== "completed" || !task.pendingElaboration) {
+      return c.json({ error: "No completed elaboration to apply" }, 400);
+    }
+
+    const body = await c.req
+      .json<{
+        updateParentDescription?: boolean;
+        createChildTasks?: boolean;
+        childTaskEdits?: Array<{
+          stepNumber: number;
+          title?: string;
+          description?: string;
+          include?: boolean;
+        }>;
+      }>()
+      .catch(() => ({}));
+
+    const updateParentDescription = body.updateParentDescription ?? true;
+    const createChildTasks = body.createChildTasks ?? true;
+
+    // 結果をパース
+    let elaborationResult;
+    try {
+      elaborationResult = JSON.parse(task.pendingElaboration);
+    } catch {
+      return c.json({ error: "Invalid elaboration data" }, 500);
+    }
+
+    const now = new Date().toISOString();
+
+    // 親タスクの説明を更新
+    if (updateParentDescription && elaborationResult.elaboration) {
+      db.update(schema.tasks)
+        .set({
+          description: elaborationResult.elaboration,
+          elaborationStatus: null, // 適用済みなのでクリア
+          pendingElaboration: null,
+          updatedAt: now,
+        })
+        .where(eq(schema.tasks.id, id))
+        .run();
+    } else {
+      // 説明を更新しない場合でも、elaboration をクリア
+      db.update(schema.tasks)
+        .set({
+          elaborationStatus: null,
+          pendingElaboration: null,
+          updatedAt: now,
+        })
+        .where(eq(schema.tasks.id, id))
+        .run();
+    }
+
+    // 子タスクを作成
+    const childTasks: (typeof schema.tasks.$inferSelect)[] = [];
+    if (createChildTasks && elaborationResult.childTasks?.length > 0) {
+      for (const childTask of elaborationResult.childTasks) {
+        // 編集がある場合は適用
+        const edit = body.childTaskEdits?.find((e) => e.stepNumber === childTask.stepNumber);
+        if (edit?.include === false) {
+          continue; // スキップ
+        }
+
+        const title = edit?.title ?? childTask.title;
+        const description = edit?.description ?? childTask.description;
+
+        const createdChild = db
+          .insert(schema.tasks)
+          .values({
+            date: task.date,
+            projectId: task.projectId,
+            sourceType: task.sourceType,
+            title,
+            description,
+            status: "pending",
+            priority: task.priority,
+            parentId: id,
+            stepNumber: childTask.stepNumber,
+            confidence: 1.0,
+          })
+          .returning()
+          .get();
+
+        childTasks.push(createdChild);
+      }
+
+      consola.info(
+        `[tasks/elaboration/apply] Created ${childTasks.length} child tasks for task ${id}`,
       );
     }
+
+    // 更新された親タスクを取得
+    const updatedTask = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+
+    return c.json({
+      parentTask: updatedTask,
+      childTasks,
+    });
+  });
+
+  /**
+   * POST /api/tasks/:id/elaboration/discard
+   *
+   * 詳細化結果を破棄
+   */
+  router.post("/:id/elaboration/discard", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    // 詳細化状態をクリア
+    db.update(schema.tasks)
+      .set({
+        elaborationStatus: null,
+        pendingElaboration: null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.tasks.id, id))
+      .run();
+
+    consola.info(`[tasks/elaboration/discard] Discarded elaboration for task ${id}`);
+
+    return c.json({ discarded: true });
+  });
+
+  /**
+   * GET /api/tasks/:id/children
+   *
+   * 子タスク一覧を取得
+   */
+  router.get("/:id/children", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    // 子タスクを stepNumber 順で取得
+    const childTasks = db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.parentId, id))
+      .orderBy(schema.tasks.stepNumber)
+      .all();
+
+    return c.json({
+      childTasks,
+      total: childTasks.length,
+    });
+  });
+
+  /**
+   * POST /api/tasks/bulk-elaborate
+   *
+   * 複数タスクを一括で AI 詳細化
+   * 最大 10 タスクまで、順次処理
+   * Body: BulkElaborateTasksRequest
+   */
+  router.post("/bulk-elaborate", async (c) => {
+    const body = await c.req
+      .json<BulkElaborateTasksRequest>()
+      .catch((): BulkElaborateTasksRequest => ({ taskIds: [] }));
+
+    if (!body.taskIds || body.taskIds.length === 0) {
+      return c.json({ error: "taskIds is required" }, 400);
+    }
+
+    if (body.taskIds.length > 10) {
+      return c.json({ error: "Maximum 10 tasks can be elaborated at once" }, 400);
+    }
+
+    // タスク情報を一括取得
+    const tasks = db
+      .select()
+      .from(schema.tasks)
+      .where(inArray(schema.tasks.id, body.taskIds))
+      .all();
+
+    if (tasks.length === 0) {
+      return c.json({ error: "No tasks found" }, 404);
+    }
+
+    // プロジェクト情報を一括取得してマッピング
+    const projectIds = [...new Set(tasks.filter((t) => t.projectId).map((t) => t.projectId!))];
+    const projectsMap = new Map<number, typeof schema.projects.$inferSelect>();
+
+    if (projectIds.length > 0) {
+      const projectsData = db
+        .select()
+        .from(schema.projects)
+        .where(inArray(schema.projects.id, projectIds))
+        .all();
+
+      for (const project of projectsData) {
+        projectsMap.set(project.id, project);
+      }
+    }
+
+    // レベルを取得 (リクエスト > 設定 > デフォルト の優先順)
+    const config = loadConfig();
+    const level: ElaborationLevel =
+      body.level ?? config.taskElaboration?.defaultLevel ?? "standard";
+
+    // プロンプトを読み込み
+    const systemPrompt = readFileSync(getPromptFilePath("task-elaborate"), "utf-8");
+
+    // vocabulary セクションを事前に構築
+    const vocabularySection = buildVocabularySection(db);
+
+    // 出力形式の指示を事前に構築
+    const outputFormatInstruction = buildOutputFormatForLevel(level);
+
+    // 各タスクを順次処理
+    const results: BulkElaborateTaskResult[] = [];
+
+    for (const task of tasks) {
+      try {
+        const project = task.projectId ? projectsMap.get(task.projectId) : null;
+
+        // プロンプトを構築
+        let userPrompt = `# タスク情報\n\n`;
+        userPrompt += `**タイトル**: ${task.title}\n\n`;
+
+        if (task.description) {
+          userPrompt += `**現在の説明**:\n${task.description}\n\n`;
+        }
+
+        if (project) {
+          userPrompt += `**プロジェクト**: ${project.name}\n`;
+          if (project.path) {
+            userPrompt += `**プロジェクトパス**: ${project.path}\n`;
+          }
+          userPrompt += "\n";
+        }
+
+        if (body.userInstruction) {
+          userPrompt += `## ユーザー指示\n${body.userInstruction}\n\n`;
+          userPrompt += `上記の指示を考慮してタスクを詳細化してください。\n`;
+        } else {
+          userPrompt += `このタスクを詳細化してください。\n`;
+        }
+
+        if (vocabularySection) {
+          userPrompt += `\n${vocabularySection}\n`;
+        }
+
+        // レベルに応じた出力形式の指示を追加
+        if (outputFormatInstruction) {
+          userPrompt += outputFormatInstruction;
+        }
+
+        const cwd = project?.path ?? undefined;
+        const allowedTools = cwd ? "Glob,Grep,Read" : undefined;
+        const disableTools = !cwd;
+
+        consola.info(
+          `[tasks/bulk-elaborate] Processing task ${task.id} (level: ${level}, cwd: ${cwd ?? "none"})`,
+        );
+
+        const response = await runClaude(userPrompt, {
+          model: "sonnet",
+          systemPrompt,
+          allowedTools,
+          disableTools,
+          cwd,
+          dangerouslySkipPermissions: true,
+        });
+
+        // レスポンスからファイルパスを抽出
+        const filePatterns = [/`([^`]+\.[a-z]{1,4})`/g, /- `([^`]+\.[a-z]{1,4})`/g];
+
+        const referencedFiles = new Set<string>();
+        for (const pattern of filePatterns) {
+          for (const match of response.matchAll(pattern)) {
+            const filePath = match[1];
+            if (filePath && !filePath.includes(" ") && filePath.includes("/")) {
+              referencedFiles.add(filePath);
+            }
+          }
+        }
+
+        results.push({
+          taskId: task.id,
+          taskTitle: task.title,
+          success: true,
+          elaboration: response,
+          referencedFiles: referencedFiles.size > 0 ? Array.from(referencedFiles) : undefined,
+        });
+
+        consola.success(`[tasks/bulk-elaborate] Task ${task.id} done (${response.length} chars)`);
+      } catch (error) {
+        consola.error(`[tasks/bulk-elaborate] Task ${task.id} failed:`, error);
+        results.push({
+          taskId: task.id,
+          taskTitle: task.title,
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+
+    const totalSucceeded = results.filter((r) => r.success).length;
+    const totalFailed = results.filter((r) => !r.success).length;
+
+    consola.info(
+      `[tasks/bulk-elaborate] Completed: ${totalSucceeded} succeeded, ${totalFailed} failed`,
+    );
+
+    return c.json({
+      results,
+      totalSucceeded,
+      totalFailed,
+    } satisfies BulkElaborateTasksResponse);
   });
 
   /**

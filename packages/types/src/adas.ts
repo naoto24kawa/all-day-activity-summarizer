@@ -37,6 +37,13 @@ export interface Memo {
   createdAt: string;
 }
 
+/** メモ一覧レスポンス (ページネーション対応) */
+export interface MemosResponse {
+  memos: Memo[];
+  total: number;
+  hasMore: boolean;
+}
+
 /** メモタグ定数 */
 export const MEMO_TAGS = [
   "完了",
@@ -624,6 +631,11 @@ export interface Task {
   mergeSourceTaskIds: string | null; // JSON array: 統合元タスクのID配列 (sourceType="merge" 時のみ)
   mergeTargetTaskId: number | null; // 統合先タスクID (統合された側に設定)
   mergedAt: string | null; // 統合された日時 (統合された側に設定)
+  // 親子タスク・詳細化関連
+  parentId: number | null; // 親タスク ID (子タスクの場合のみ)
+  elaborationStatus: ElaborationStatus | null; // 詳細化ステータス
+  pendingElaboration: string | null; // JSON: 詳細化結果 (適用前)
+  stepNumber: number | null; // 子タスクの順序 (1, 2, 3...)
   createdAt: string;
   updatedAt: string;
 }
@@ -913,6 +925,7 @@ export interface Project {
   githubOwner: string | null;
   githubRepo: string | null;
   isActive: boolean;
+  excludedAt: string | null; // ソフトデリート用 (スキャン除外)
   createdAt: string;
   updatedAt: string;
 }
@@ -939,6 +952,29 @@ export interface AutoDetectProjectsResponse {
   detected: number;
   created: number;
   projects: Project[];
+}
+
+/** Git リポジトリスキャン結果 */
+export interface GitRepoScanResult {
+  path: string;
+  name: string;
+  remoteUrl: string | null;
+  githubOwner: string | null;
+  githubRepo: string | null;
+}
+
+/** Git リポジトリスキャン実行レスポンス */
+export interface ScanGitReposResponse {
+  scanned: number;
+  created: number;
+  skipped: number;
+  repos: GitRepoScanResult[];
+}
+
+/** プロジェクト設定 */
+export interface ProjectsConfig {
+  gitScanPaths: string[];
+  excludePatterns: string[];
 }
 
 /** プロジェクト別統計 */
@@ -996,6 +1032,9 @@ export interface CreateAiProcessingLogRequest {
 
 // ========== Task Elaboration 型定義 ==========
 
+/** タスク詳細化レベル */
+export type ElaborationLevel = "light" | "standard" | "detailed";
+
 /** タスク詳細化リクエスト */
 export interface ElaborateTaskRequest {
   /** ユーザーからの追加指示 (初回詳細化時) */
@@ -1004,6 +1043,8 @@ export interface ElaborateTaskRequest {
   currentElaboration?: string;
   /** 修正依頼時: 修正指示 */
   revisionInstruction?: string;
+  /** 詳細化レベル (省略時は設定のデフォルト値) */
+  level?: ElaborationLevel;
 }
 
 /** タスク詳細化レスポンス */
@@ -1016,6 +1057,110 @@ export interface ElaborateTaskResponse {
   referencedFiles?: string[];
 }
 
+/** 一括詳細化リクエスト */
+export interface BulkElaborateTasksRequest {
+  taskIds: number[];
+  userInstruction?: string;
+  /** 詳細化レベル (省略時は設定のデフォルト値) */
+  level?: ElaborationLevel;
+}
+
+/** 一括詳細化の個別結果 */
+export interface BulkElaborateTaskResult {
+  taskId: number;
+  taskTitle: string;
+  success: boolean;
+  elaboration?: string;
+  referencedFiles?: string[];
+  error?: string;
+}
+
+/** 一括詳細化レスポンス */
+export interface BulkElaborateTasksResponse {
+  results: BulkElaborateTaskResult[];
+  totalSucceeded: number;
+  totalFailed: number;
+}
+
+// ========== 非同期タスク詳細化 型定義 ==========
+
+/** 詳細化ステータス */
+export type ElaborationStatus = "pending" | "completed" | "failed";
+
+/** 詳細化開始レスポンス (非同期) */
+export interface StartElaborationResponse {
+  jobId: number;
+  status: "pending";
+}
+
+/** 詳細化結果 (pending_elaboration に保存される JSON) */
+export interface ElaborationResult {
+  /** 親タスクの詳細説明 (Markdown) */
+  elaboration: string;
+  /** 子タスク (実装ステップ) */
+  childTasks: ElaborationChildTask[];
+  /** 参照したファイル */
+  referencedFiles: string[];
+}
+
+/** 詳細化で生成される子タスク */
+export interface ElaborationChildTask {
+  /** タスクタイトル */
+  title: string;
+  /** タスク説明 */
+  description: string | null;
+  /** ステップ番号 (1, 2, 3...) */
+  stepNumber: number;
+}
+
+/** 詳細化状態取得レスポンス */
+export interface ElaborationStatusResponse {
+  /** タスク ID */
+  taskId: number;
+  /** 詳細化ステータス */
+  status: ElaborationStatus | null;
+  /** ジョブ ID (pending 状態の場合) */
+  jobId: number | null;
+  /** ジョブステータス (pending 状態の場合) */
+  jobStatus: AIJobStatus | null;
+  /** 詳細化結果 (completed 状態の場合) */
+  result: ElaborationResult | null;
+  /** エラーメッセージ (failed 状態の場合) */
+  errorMessage: string | null;
+}
+
+/** 詳細化結果適用リクエスト */
+export interface ApplyElaborationRequest {
+  /** 親タスクの説明を更新するかどうか (デフォルト: true) */
+  updateParentDescription?: boolean;
+  /** 子タスクを作成するかどうか (デフォルト: true) */
+  createChildTasks?: boolean;
+  /** 子タスクの編集 (タイトルや説明の上書き) */
+  childTaskEdits?: Array<{
+    stepNumber: number;
+    title?: string;
+    description?: string;
+    /** false に設定するとその子タスクをスキップ */
+    include?: boolean;
+  }>;
+}
+
+/** 詳細化結果適用レスポンス */
+export interface ApplyElaborationResponse {
+  /** 更新された親タスク */
+  parentTask: Task;
+  /** 作成された子タスク */
+  childTasks: Task[];
+}
+
+/** 子タスク一覧レスポンス */
+export interface ChildTasksResponse {
+  /** 子タスク一覧 (stepNumber 順) */
+  childTasks: Task[];
+  /** 子タスク数 */
+  total: number;
+}
+
 // ========== AI Job Queue 型定義 ==========
 
 /** AIジョブタイプ */
@@ -1024,6 +1169,7 @@ export type AIJobType =
   | "task-extract-github"
   | "task-extract-github-comment"
   | "task-extract-memo"
+  | "task-elaborate"
   | "learning-extract"
   | "vocabulary-extract"
   | "profile-analyze"

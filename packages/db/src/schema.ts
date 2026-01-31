@@ -516,6 +516,11 @@ export const tasks = sqliteTable("tasks", {
   mergeSourceTaskIds: text("merge_source_task_ids"), // JSON array: 統合元タスクのID配列 (sourceType="merge" 時のみ)
   mergeTargetTaskId: integer("merge_target_task_id"), // 統合先タスクID (統合された側に設定)
   mergedAt: text("merged_at"), // 統合された日時 (統合された側に設定)
+  // 親子タスク・詳細化関連
+  parentId: integer("parent_id"), // 親タスク FK (子タスクの場合のみ)
+  elaborationStatus: text("elaboration_status", { enum: ["pending", "completed", "failed"] }), // 詳細化ステータス
+  pendingElaboration: text("pending_elaboration"), // JSON: 詳細化結果 (適用前)
+  stepNumber: integer("step_number"), // 子タスクの順序 (1, 2, 3...)
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -645,6 +650,7 @@ export const projects = sqliteTable("projects", {
   githubOwner: text("github_owner"), // GitHub owner
   githubRepo: text("github_repo"), // GitHub repo name
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  excludedAt: text("excluded_at"), // ソフトデリート用 (スキャン除外)
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -725,6 +731,7 @@ export const aiJobQueue = sqliteTable("ai_job_queue", {
       "task-extract-github",
       "task-extract-github-comment",
       "task-extract-memo",
+      "task-elaborate",
       "learning-extract",
       "vocabulary-extract",
       "profile-analyze",

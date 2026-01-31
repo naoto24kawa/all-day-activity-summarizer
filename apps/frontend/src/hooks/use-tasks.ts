@@ -3,10 +3,17 @@
  */
 
 import type {
+  ApplyElaborationRequest,
+  ApplyElaborationResponse,
+  BulkElaborateTasksRequest,
+  BulkElaborateTasksResponse,
+  ChildTasksResponse,
   CreateMergeTaskResponse,
   DetectDuplicatesResponse,
   ElaborateTaskRequest,
   ElaborateTaskResponse,
+  ElaborationStatusResponse,
+  StartElaborationResponse,
   Task,
   TaskStats,
   TaskStatus,
@@ -183,11 +190,100 @@ export function useTasks() {
     [fetchTasks],
   );
 
-  const elaborateTask = useCallback(
-    async (taskId: number, request?: ElaborateTaskRequest): Promise<ElaborateTaskResponse> => {
-      const result = await postAdasApi<ElaborateTaskResponse>(
+  // 非同期詳細化を開始
+  const startElaborate = useCallback(
+    async (taskId: number, request?: ElaborateTaskRequest): Promise<StartElaborationResponse> => {
+      const result = await postAdasApi<StartElaborationResponse>(
         `/api/tasks/${taskId}/elaborate`,
         request ?? {},
+      );
+      return result;
+    },
+    [],
+  );
+
+  // 詳細化状態を取得
+  const getElaborationStatus = useCallback(
+    async (taskId: number): Promise<ElaborationStatusResponse> => {
+      const result = await fetchAdasApi<ElaborationStatusResponse>(
+        `/api/tasks/${taskId}/elaboration`,
+      );
+      return result;
+    },
+    [],
+  );
+
+  // 詳細化結果を適用
+  const applyElaboration = useCallback(
+    async (
+      taskId: number,
+      request?: ApplyElaborationRequest,
+    ): Promise<ApplyElaborationResponse> => {
+      const result = await postAdasApi<ApplyElaborationResponse>(
+        `/api/tasks/${taskId}/elaboration/apply`,
+        request ?? {},
+      );
+      await fetchTasks(true);
+      return result;
+    },
+    [fetchTasks],
+  );
+
+  // 詳細化結果を破棄
+  const discardElaboration = useCallback(
+    async (taskId: number): Promise<{ discarded: boolean }> => {
+      const result = await postAdasApi<{ discarded: boolean }>(
+        `/api/tasks/${taskId}/elaboration/discard`,
+        {},
+      );
+      await fetchTasks(true);
+      return result;
+    },
+    [fetchTasks],
+  );
+
+  // 子タスク一覧を取得
+  const getChildTasks = useCallback(async (taskId: number): Promise<ChildTasksResponse> => {
+    const result = await fetchAdasApi<ChildTasksResponse>(`/api/tasks/${taskId}/children`);
+    return result;
+  }, []);
+
+  // 同期版 (後方互換性のため残す) - 実際は非同期で動作
+  const elaborateTask = useCallback(
+    async (taskId: number, request?: ElaborateTaskRequest): Promise<ElaborateTaskResponse> => {
+      // 非同期で開始
+      await startElaborate(taskId, request);
+
+      // ポーリングで完了を待つ
+      let status: ElaborationStatusResponse;
+      const maxAttempts = 60; // 最大3分 (3秒 x 60)
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        status = await getElaborationStatus(taskId);
+
+        if (status.status === "completed" && status.result) {
+          return {
+            elaboration: status.result.elaboration,
+            codebaseReferenced: status.result.referencedFiles?.length > 0,
+            referencedFiles: status.result.referencedFiles,
+          };
+        }
+
+        if (status.status === "failed") {
+          throw new Error(status.errorMessage ?? "詳細化に失敗しました");
+        }
+      }
+
+      throw new Error("詳細化がタイムアウトしました");
+    },
+    [startElaborate, getElaborationStatus],
+  );
+
+  const bulkElaborateTasks = useCallback(
+    async (request: BulkElaborateTasksRequest): Promise<BulkElaborateTasksResponse> => {
+      const result = await postAdasApi<BulkElaborateTasksResponse>(
+        "/api/tasks/bulk-elaborate",
+        request,
       );
       return result;
     },
@@ -212,7 +308,15 @@ export function useTasks() {
     extractMemoTasksAsync,
     detectDuplicates,
     createMergeTask,
+    // 非同期詳細化 API
+    startElaborate,
+    getElaborationStatus,
+    applyElaboration,
+    discardElaboration,
+    getChildTasks,
+    // 後方互換性のため残す
     elaborateTask,
+    bulkElaborateTasks,
   };
 }
 

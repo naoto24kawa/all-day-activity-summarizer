@@ -23,7 +23,6 @@ import {
   CheckCircle2,
   CheckSquare,
   ChevronDown,
-  ChevronRight,
   Circle,
   ClipboardCopy,
   FileText,
@@ -88,6 +87,7 @@ import {
 } from "@/hooks/use-prompt-improvements";
 import { useTaskStats, useTasks } from "@/hooks/use-tasks";
 import { ADAS_API_URL, postAdasApi } from "@/lib/adas-api";
+import { BulkElaborateDialog } from "./bulk-elaborate-dialog";
 import { DuplicateSuggestionsPanel } from "./duplicate-suggestions-panel";
 import { TaskElaborateDialog } from "./task-elaborate-dialog";
 
@@ -114,6 +114,7 @@ const SOURCE_LABELS: Record<TaskSourceType, string> = {
   github: "GitHub",
   "github-comment": "GitHub Comment",
   memo: "Memo",
+  manual: "手動",
   "prompt-improvement": "改善",
   vocabulary: "用語",
   merge: "統合",
@@ -143,7 +144,12 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     extractMemoTasksAsync,
     detectDuplicates,
     createMergeTask,
-    elaborateTask,
+    // 非同期詳細化 API
+    startElaborate,
+    getElaborationStatus,
+    applyElaboration,
+    discardElaboration,
+    bulkElaborateTasks,
   } = useTasks();
   const { stats } = useTaskStats(date);
   const {
@@ -202,8 +208,16 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     setElaborateTargetTask(null);
   };
 
-  const handleApplyElaboration = async (taskId: number, description: string) => {
+  // 一括詳細化ダイアログ
+  const [bulkElaborateDialogOpen, setBulkElaborateDialogOpen] = useState(false);
+
+  const closeBulkElaborateDialog = () => {
+    setBulkElaborateDialogOpen(false);
+  };
+
+  const handleApplyBulkElaboration = async (taskId: number, description: string) => {
     await updateTask(taskId, { description });
+    await refetch(true);
   };
 
   const getSourceLabel = (sourceType: TaskSourceType) => SOURCE_LABELS[sourceType] ?? "Slack";
@@ -1082,6 +1096,25 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <div className="h-4 w-px bg-border" />
+                {/* 一括詳細化ボタン */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => setBulkElaborateDialogOpen(true)}
+                  disabled={
+                    batchUpdating || selectedTaskIds.size === 0 || selectedTaskIds.size > 10
+                  }
+                  title={
+                    selectedTaskIds.size > 10
+                      ? "最大10件まで選択可能"
+                      : "選択したタスクを一括で AI 詳細化"
+                  }
+                >
+                  <Wand2 className="mr-1 h-3 w-3" />
+                  一括詳細化
+                </Button>
+                <div className="h-4 w-px bg-border" />
                 <Button
                   variant="ghost"
                   size="sm"
@@ -1319,11 +1352,23 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
           open={elaborateDialogOpen}
           task={elaborateTargetTask}
           project={projects.find((p) => p.id === elaborateTargetTask.projectId) ?? null}
-          onElaborate={elaborateTask}
-          onApply={handleApplyElaboration}
+          onStartElaborate={startElaborate}
+          onGetElaborationStatus={getElaborationStatus}
+          onApplyElaboration={applyElaboration}
+          onDiscardElaboration={discardElaboration}
           onClose={closeElaborateDialog}
         />
       )}
+
+      {/* 一括詳細化ダイアログ */}
+      <BulkElaborateDialog
+        open={bulkElaborateDialogOpen}
+        tasks={tasks.filter((t) => selectedTaskIds.has(t.id))}
+        projects={projects}
+        onBulkElaborate={bulkElaborateTasks}
+        onApply={handleApplyBulkElaboration}
+        onClose={closeBulkElaborateDialog}
+      />
     </Card>
   );
 }

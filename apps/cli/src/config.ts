@@ -56,6 +56,10 @@ export interface AdasConfig {
     fetchIntervalMinutes: number; // 取得間隔(分)
     parallelWorkers: number; // 並列ワーカー数
   };
+  projects: {
+    gitScanPaths: string[]; // 探索対象ディレクトリ: ["~/projects"]
+    excludePatterns: string[]; // 除外パターン: ["node_modules", ".cache", ...]
+  };
   summarizer: {
     provider: "claude" | "lmstudio";
     lmstudio: {
@@ -63,6 +67,9 @@ export interface AdasConfig {
       model: string;
       timeout: number;
     };
+  };
+  taskElaboration: {
+    defaultLevel: "light" | "standard" | "detailed";
   };
 }
 
@@ -123,6 +130,26 @@ const defaultConfig: AdasConfig = {
     fetchIntervalMinutes: 10,
     parallelWorkers: 2,
   },
+  projects: {
+    gitScanPaths: [],
+    excludePatterns: [
+      "node_modules",
+      ".cache",
+      ".vscode",
+      ".idea",
+      "vendor",
+      "dist",
+      "build",
+      "target",
+      ".git",
+      ".npm",
+      ".pnpm",
+      ".yarn",
+      "__pycache__",
+      ".venv",
+      "venv",
+    ],
+  },
   summarizer: {
     provider: "claude",
     lmstudio: {
@@ -130,6 +157,9 @@ const defaultConfig: AdasConfig = {
       model: "",
       timeout: 300000,
     },
+  },
+  taskElaboration: {
+    defaultLevel: "standard",
   },
 };
 
@@ -167,11 +197,13 @@ export function loadConfig(): AdasConfig {
     slack: { ...defaultConfig.slack, ...userConfig.slack },
     claudeCode: { ...defaultConfig.claudeCode, ...userConfig.claudeCode },
     github: { ...defaultConfig.github, ...userConfig.github },
+    projects: { ...defaultConfig.projects, ...userConfig.projects },
     summarizer: {
       ...defaultConfig.summarizer,
       ...userConfig.summarizer,
       lmstudio: { ...defaultConfig.summarizer.lmstudio, ...userConfig.summarizer?.lmstudio },
     },
+    taskElaboration: { ...defaultConfig.taskElaboration, ...userConfig.taskElaboration },
   };
 }
 

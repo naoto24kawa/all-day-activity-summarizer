@@ -2,6 +2,7 @@ import type { Memo, MemoTag, Project } from "@repo/types";
 import { MEMO_TAGS } from "@repo/types";
 import {
   Check,
+  ChevronUp,
   FolderGit2,
   ListTodo,
   Loader2,
@@ -100,7 +101,19 @@ interface MemoPanelProps {
 }
 
 export function MemoPanel({ date, className }: MemoPanelProps) {
-  const { memos, loading, error, postMemo, updateMemo, deleteMemo, refetch } = useMemos(date);
+  const {
+    memos,
+    loading,
+    loadingMore,
+    hasMore,
+    total,
+    error,
+    postMemo,
+    updateMemo,
+    deleteMemo,
+    refetch,
+    fetchMore,
+  } = useMemos(date);
   const { projects } = useProjects();
   const { extractMemoTasks } = useTasks();
   const [refreshing, setRefreshing] = useState(false);
@@ -112,6 +125,7 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
   const isNearBottomRef = useRef(true);
 
@@ -121,6 +135,38 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
     const threshold = 100;
     isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
   }, []);
+
+  // IntersectionObserver でスクロール上部を検知して古いメモを読み込む
+  useEffect(() => {
+    const trigger = loadMoreTriggerRef.current;
+    const scrollContainer = scrollRef.current;
+    if (!trigger || !scrollContainer) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting && hasMore && !loadingMore) {
+          // 現在のスクロール位置を保存
+          const prevScrollHeight = scrollContainer.scrollHeight;
+          fetchMore().then(() => {
+            // 古いメモが上に追加された後、スクロール位置を維持
+            requestAnimationFrame(() => {
+              const newScrollHeight = scrollContainer.scrollHeight;
+              scrollContainer.scrollTop += newScrollHeight - prevScrollHeight;
+            });
+          });
+        }
+      },
+      {
+        root: scrollContainer,
+        threshold: 0,
+        rootMargin: "100px 0px 0px 0px",
+      },
+    );
+
+    observer.observe(trigger);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, fetchMore]);
 
   useEffect(() => {
     if (memos.length > prevCountRef.current && isNearBottomRef.current) {
@@ -287,6 +333,24 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
             <p className="text-sm text-muted-foreground">メモはまだありません。</p>
           ) : (
             <div className="space-y-3">
+              {/* 古いメモ読み込みトリガー (上部) */}
+              <div ref={loadMoreTriggerRef} className="h-1" />
+              {loadingMore && (
+                <div className="flex items-center justify-center py-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-xs text-muted-foreground">読み込み中...</span>
+                </div>
+              )}
+              {hasMore && !loadingMore && (
+                <button
+                  type="button"
+                  onClick={fetchMore}
+                  className="flex w-full items-center justify-center gap-1 py-2 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <ChevronUp className="h-3 w-3" />
+                  さらに読み込む ({memos.length} / {total})
+                </button>
+              )}
               {memos.map((memo) => (
                 <MemoItem
                   key={memo.id}

@@ -20,6 +20,12 @@ export interface SummarizerConfig {
   };
 }
 
+export type ElaborationLevel = "light" | "standard" | "detailed";
+
+export interface TaskElaborationConfig {
+  defaultLevel: ElaborationLevel;
+}
+
 export interface IntegrationsConfig {
   whisper: IntegrationStatus & {
     engine: "whisperx" | "whisper-cpp";
@@ -47,6 +53,7 @@ export interface IntegrationsConfig {
     badFeedbackThreshold: number;
   };
   summarizer: SummarizerConfig;
+  taskElaboration: TaskElaborationConfig;
 }
 
 interface ConfigResponse {
@@ -64,6 +71,7 @@ interface UpdateIntegrationsResponse {
     evaluator: IntegrationStatus;
     promptImprovement: IntegrationStatus;
     summarizer: SummarizerConfig;
+    taskElaboration: TaskElaborationConfig;
   };
 }
 

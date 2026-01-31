@@ -3,23 +3,36 @@
  *
  * タスクを AI で詳細化するダイアログ
  * - 入力フェーズ: 追加指示の入力 (音声入力対応)
- * - 処理中フェーズ: AI 処理中の表示
- * - プレビューフェーズ: 結果のプレビュー、編集、修正依頼
+ * - ポーリングフェーズ: 非同期処理の完了を待つ
+ * - プレビューフェーズ: 結果のプレビュー、編集、子タスクの確認
+ *
+ * リロード耐性: elaboration_status を確認して適切なフェーズから再開
  */
 
-import type { ElaborateTaskResponse, Project, Task } from "@repo/types";
+import type {
+  ApplyElaborationRequest,
+  ApplyElaborationResponse,
+  ElaborationChildTask,
+  ElaborationResult,
+  ElaborationStatusResponse,
+  Project,
+  StartElaborationResponse,
+  Task,
+} from "@repo/types";
 import {
   AlertCircle,
+  Check,
   ChevronDown,
   ChevronRight,
   Loader2,
   Mic,
   MicOff,
-  RefreshCw,
-  Wand2,
+  X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
@@ -29,26 +42,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 
-type DialogPhase = "input" | "processing" | "preview";
+type DialogPhase = "input" | "polling" | "preview";
 
 interface TaskElaborateDialogProps {
   open: boolean;
   task: Task;
   project: Project | null;
-  onElaborate: (
+  onStartElaborate: (
     taskId: number,
-    request?: {
-      userInstruction?: string;
-      currentElaboration?: string;
-      revisionInstruction?: string;
-    },
-  ) => Promise<ElaborateTaskResponse>;
-  onApply: (taskId: number, description: string) => Promise<void>;
+    request?: { userInstruction?: string },
+  ) => Promise<StartElaborationResponse>;
+  onGetElaborationStatus: (taskId: number) => Promise<ElaborationStatusResponse>;
+  onApplyElaboration: (
+    taskId: number,
+    request?: ApplyElaborationRequest,
+  ) => Promise<ApplyElaborationResponse>;
+  onDiscardElaboration: (taskId: number) => Promise<{ discarded: boolean }>;
   onClose: () => void;
+}
+
+interface ChildTaskEdit {
+  stepNumber: number;
+  title: string;
+  description: string;
+  include: boolean;
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complex dialog component
@@ -56,18 +78,21 @@ export function TaskElaborateDialog({
   open,
   task,
   project,
-  onElaborate,
-  onApply,
+  onStartElaborate,
+  onGetElaborationStatus,
+  onApplyElaboration,
+  onDiscardElaboration,
   onClose,
 }: TaskElaborateDialogProps) {
   const [phase, setPhase] = useState<DialogPhase>("input");
   const [userInstruction, setUserInstruction] = useState("");
-  const [elaboration, setElaboration] = useState("");
-  const [referencedFiles, setReferencedFiles] = useState<string[]>([]);
-  const [revisionInstruction, setRevisionInstruction] = useState("");
+  const [elaborationResult, setElaborationResult] = useState<ElaborationResult | null>(null);
+  const [childTaskEdits, setChildTaskEdits] = useState<ChildTaskEdit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [originalExpanded, setOriginalExpanded] = useState(false);
+  const [childTasksExpanded, setChildTasksExpanded] = useState(true);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 音声認識 (入力フェーズ用)
   const {
@@ -79,99 +104,168 @@ export function TaskElaborateDialog({
     onTranscriptChange: (transcript) => setUserInstruction(transcript),
   });
 
-  // 音声認識 (修正依頼用)
-  const {
-    listening: revisionListening,
-    startListening: startRevisionListening,
-    stopListening: stopRevisionListening,
-  } = useSpeechRecognition({
-    onTranscriptChange: (transcript) => setRevisionInstruction(transcript),
-  });
+  // ポーリングを停止
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, []);
+
+  // 子タスクの編集状態を初期化
+  const initializeChildTaskEdits = useCallback((childTasks: ElaborationChildTask[]) => {
+    setChildTaskEdits(
+      childTasks.map((ct) => ({
+        stepNumber: ct.stepNumber,
+        title: ct.title,
+        description: ct.description ?? "",
+        include: true,
+      })),
+    );
+  }, []);
+
+  // ポーリングを開始
+  const startPolling = useCallback(() => {
+    stopPolling();
+
+    const poll = async () => {
+      try {
+        const status = await onGetElaborationStatus(task.id);
+
+        if (status.status === "completed" && status.result) {
+          stopPolling();
+          setElaborationResult(status.result);
+          initializeChildTaskEdits(status.result.childTasks);
+          setPhase("preview");
+        } else if (status.status === "failed") {
+          stopPolling();
+          setError(status.errorMessage ?? "詳細化に失敗しました");
+          setPhase("input");
+        }
+        // pending/processing の場合は継続
+      } catch (err) {
+        stopPolling();
+        setError(err instanceof Error ? err.message : "ステータス取得に失敗しました");
+        setPhase("input");
+      }
+    };
+
+    // 即座に1回実行
+    poll();
+
+    // 3秒間隔でポーリング
+    pollingRef.current = setInterval(poll, 3000);
+  }, [task.id, onGetElaborationStatus, stopPolling, initializeChildTaskEdits]);
+
+  // ダイアログが開かれた時に elaboration_status を確認
+  useEffect(() => {
+    if (!open) return;
+
+    // タスクの elaboration_status に基づいて適切なフェーズを設定
+    if (task.elaborationStatus === "pending") {
+      setPhase("polling");
+      startPolling();
+    } else if (task.elaborationStatus === "completed" && task.pendingElaboration) {
+      try {
+        const result = JSON.parse(task.pendingElaboration) as ElaborationResult;
+        setElaborationResult(result);
+        initializeChildTaskEdits(result.childTasks);
+        setPhase("preview");
+      } catch {
+        setPhase("input");
+      }
+    } else {
+      setPhase("input");
+    }
+  }, [
+    open,
+    task.elaborationStatus,
+    task.pendingElaboration,
+    startPolling,
+    initializeChildTaskEdits,
+  ]);
 
   // ダイアログが閉じられたらリセット
   useEffect(() => {
     if (!open) {
+      stopPolling();
       setPhase("input");
       setUserInstruction("");
-      setElaboration("");
-      setReferencedFiles([]);
-      setRevisionInstruction("");
+      setElaborationResult(null);
+      setChildTaskEdits([]);
       setError(null);
       setOriginalExpanded(false);
+      setChildTasksExpanded(true);
     }
-  }, [open]);
+  }, [open, stopPolling]);
 
-  // 詳細化を実行
-  const handleElaborate = useCallback(async () => {
-    // 音声入力中なら停止
+  // 詳細化を開始
+  const handleStartElaborate = useCallback(async () => {
     if (inputListening) {
       stopInputListening();
     }
 
-    setPhase("processing");
     setError(null);
 
     try {
-      const result = await onElaborate(task.id, {
+      await onStartElaborate(task.id, {
         userInstruction: userInstruction.trim() || undefined,
       });
 
-      setElaboration(result.elaboration);
-      setReferencedFiles(result.referencedFiles ?? []);
-      setPhase("preview");
+      setPhase("polling");
+      startPolling();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "詳細化に失敗しました");
-      setPhase("input");
-    }
-  }, [task.id, userInstruction, inputListening, stopInputListening, onElaborate]);
-
-  // 修正を依頼
-  const handleRevision = useCallback(async () => {
-    if (!revisionInstruction.trim()) return;
-
-    // 音声入力中なら停止
-    if (revisionListening) {
-      stopRevisionListening();
-    }
-
-    setPhase("processing");
-    setError(null);
-
-    try {
-      const result = await onElaborate(task.id, {
-        currentElaboration: elaboration,
-        revisionInstruction: revisionInstruction.trim(),
-      });
-
-      setElaboration(result.elaboration);
-      setReferencedFiles(result.referencedFiles ?? []);
-      setRevisionInstruction("");
-      setPhase("preview");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "修正に失敗しました");
-      setPhase("preview");
+      setError(err instanceof Error ? err.message : "詳細化の開始に失敗しました");
     }
   }, [
     task.id,
-    elaboration,
-    revisionInstruction,
-    revisionListening,
-    stopRevisionListening,
-    onElaborate,
+    userInstruction,
+    inputListening,
+    stopInputListening,
+    onStartElaborate,
+    startPolling,
   ]);
+
+  // 子タスクの編集を更新
+  const updateChildTaskEdit = (stepNumber: number, updates: Partial<ChildTaskEdit>) => {
+    setChildTaskEdits((prev) =>
+      prev.map((edit) => (edit.stepNumber === stepNumber ? { ...edit, ...updates } : edit)),
+    );
+  };
 
   // 適用
   const handleApply = useCallback(async () => {
     setApplying(true);
     try {
-      await onApply(task.id, elaboration);
+      const request: ApplyElaborationRequest = {
+        updateParentDescription: true,
+        createChildTasks: childTaskEdits.some((e) => e.include),
+        childTaskEdits: childTaskEdits.map((e) => ({
+          stepNumber: e.stepNumber,
+          title: e.title,
+          description: e.description || undefined,
+          include: e.include,
+        })),
+      };
+
+      await onApplyElaboration(task.id, request);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "適用に失敗しました");
     } finally {
       setApplying(false);
     }
-  }, [task.id, elaboration, onApply, onClose]);
+  }, [task.id, childTaskEdits, onApplyElaboration, onClose]);
+
+  // 破棄
+  const handleDiscard = useCallback(async () => {
+    try {
+      await onDiscardElaboration(task.id);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "破棄に失敗しました");
+    }
+  }, [task.id, onDiscardElaboration, onClose]);
 
   // Cmd+Enter で実行
   useEffect(() => {
@@ -181,7 +275,7 @@ export function TaskElaborateDialog({
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
         if (phase === "input") {
-          handleElaborate();
+          handleStartElaborate();
         } else if (phase === "preview" && !applying) {
           handleApply();
         }
@@ -190,12 +284,11 @@ export function TaskElaborateDialog({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, phase, applying, handleElaborate, handleApply]);
+  }, [open, phase, applying, handleStartElaborate, handleApply]);
 
   const handleClose = () => {
-    // 音声入力中なら停止
     if (inputListening) stopInputListening();
-    if (revisionListening) stopRevisionListening();
+    stopPolling();
     onClose();
   };
 
@@ -205,11 +298,10 @@ export function TaskElaborateDialog({
       <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Wand2 className="h-5 w-5 text-purple-500" />
-              タスクを詳細化
-            </DialogTitle>
-            <DialogDescription>AI がコードベースを確認してタスクを詳細化します</DialogDescription>
+            <DialogTitle className="flex items-center gap-2">タスクを詳細化</DialogTitle>
+            <DialogDescription>
+              AI がコードベースを確認してタスクを詳細化し、実装ステップを提案します
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
@@ -276,8 +368,7 @@ export function TaskElaborateDialog({
             <Button variant="outline" onClick={handleClose}>
               キャンセル
             </Button>
-            <Button onClick={handleElaborate}>
-              <Wand2 className="mr-2 h-4 w-4" />
+            <Button onClick={handleStartElaborate}>
               詳細化を実行
               <span className="ml-2 text-xs text-muted-foreground">(Cmd+Enter)</span>
             </Button>
@@ -287,8 +378,8 @@ export function TaskElaborateDialog({
     );
   }
 
-  // 処理中フェーズ
-  if (phase === "processing") {
+  // ポーリングフェーズ
+  if (phase === "polling") {
     return (
       <Dialog open={open} onOpenChange={() => {}}>
         <DialogContent className="sm:max-w-lg">
@@ -308,6 +399,9 @@ export function TaskElaborateDialog({
             <p className="mt-1 text-xs text-muted-foreground">
               この処理には 10-30 秒程度かかる場合があります
             </p>
+            <p className="mt-4 text-xs text-muted-foreground">
+              ページをリロードしても処理は継続されます
+            </p>
           </div>
         </DialogContent>
       </Dialog>
@@ -315,6 +409,8 @@ export function TaskElaborateDialog({
   }
 
   // プレビューフェーズ
+  const includedChildTasks = childTaskEdits.filter((e) => e.include).length;
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
       <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
@@ -351,65 +447,101 @@ export function TaskElaborateDialog({
             </Collapsible>
           )}
 
+          {/* 詳細化された説明 */}
           <div className="space-y-2">
-            <Label htmlFor="elaboration">詳細化された説明</Label>
-            <Textarea
-              id="elaboration"
-              value={elaboration}
-              onChange={(e) => setElaboration(e.target.value)}
-              rows={12}
-              className="font-mono text-sm"
-            />
+            <Label>詳細化された説明</Label>
+            <div className="rounded-md border bg-muted/30 p-3 max-h-48 overflow-y-auto">
+              <p className="whitespace-pre-wrap text-sm">{elaborationResult?.elaboration ?? ""}</p>
+            </div>
           </div>
 
-          {referencedFiles.length > 0 && (
+          {/* 参照ファイル */}
+          {elaborationResult?.referencedFiles && elaborationResult.referencedFiles.length > 0 && (
             <div>
               <Label className="text-sm font-medium">参照ファイル</Label>
               <p className="mt-1 text-xs text-muted-foreground">
-                {referencedFiles.slice(0, 5).join(", ")}
-                {referencedFiles.length > 5 && ` 他 ${referencedFiles.length - 5} 件`}
+                {elaborationResult.referencedFiles.slice(0, 5).join(", ")}
+                {elaborationResult.referencedFiles.length > 5 &&
+                  ` 他 ${elaborationResult.referencedFiles.length - 5} 件`}
               </p>
             </div>
           )}
 
-          <div className="space-y-2 border-t pt-4">
-            <Label htmlFor="revision-instruction">修正を依頼 (任意)</Label>
-            <div className="relative">
-              <Textarea
-                id="revision-instruction"
-                placeholder="例: 実装手順をもっと詳しく"
-                value={revisionInstruction}
-                onChange={(e) => setRevisionInstruction(e.target.value)}
-                rows={2}
-                className="pr-10"
-              />
-              {speechSupported && (
+          {/* 子タスク (実装ステップ) */}
+          {childTaskEdits.length > 0 && (
+            <Collapsible open={childTasksExpanded} onOpenChange={setChildTasksExpanded}>
+              <CollapsibleTrigger asChild>
                 <Button
-                  type="button"
-                  variant={revisionListening ? "destructive" : "ghost"}
-                  size="icon"
-                  className="absolute right-2 bottom-2 h-8 w-8"
-                  onClick={() =>
-                    revisionListening
-                      ? stopRevisionListening()
-                      : startRevisionListening(revisionInstruction)
-                  }
-                  title={revisionListening ? "音声入力を停止" : "音声入力"}
+                  variant="ghost"
+                  size="sm"
+                  className="flex w-full items-center justify-start gap-2 px-2"
                 >
-                  {revisionListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  {childTasksExpanded ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                  <span className="text-sm font-medium">
+                    実装ステップ ({includedChildTasks}/{childTaskEdits.length})
+                  </span>
+                  <Badge variant="secondary" className="ml-auto">
+                    子タスクとして作成
+                  </Badge>
                 </Button>
-              )}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRevision}
-              disabled={!revisionInstruction.trim()}
-            >
-              <RefreshCw className="mr-2 h-3 w-3" />
-              再生成
-            </Button>
-          </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="mt-2 space-y-3">
+                  {childTaskEdits.map((edit) => (
+                    <div
+                      key={edit.stepNumber}
+                      className={`rounded-md border p-3 ${edit.include ? "" : "opacity-50"}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={edit.include}
+                          onCheckedChange={(checked) =>
+                            updateChildTaskEdit(edit.stepNumber, {
+                              include: checked as boolean,
+                            })
+                          }
+                          className="mt-1"
+                        />
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs">
+                              Step {edit.stepNumber}
+                            </Badge>
+                            <Input
+                              value={edit.title}
+                              onChange={(e) =>
+                                updateChildTaskEdit(edit.stepNumber, {
+                                  title: e.target.value,
+                                })
+                              }
+                              disabled={!edit.include}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <Textarea
+                            value={edit.description}
+                            onChange={(e) =>
+                              updateChildTaskEdit(edit.stepNumber, {
+                                description: e.target.value,
+                              })
+                            }
+                            disabled={!edit.include}
+                            rows={2}
+                            className="text-sm"
+                            placeholder="説明 (任意)"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
 
           {error && (
             <div className="flex items-center gap-2 text-sm text-destructive">
@@ -420,11 +552,16 @@ export function TaskElaborateDialog({
         </div>
 
         <DialogFooter className="shrink-0 gap-2 sm:gap-0">
-          <Button variant="outline" onClick={handleClose}>
-            キャンセル
+          <Button variant="ghost" onClick={handleDiscard} className="mr-auto">
+            <X className="mr-2 h-4 w-4" />
+            破棄
           </Button>
-          <Button onClick={handleApply} disabled={applying || !elaboration.trim()}>
+          <Button variant="outline" onClick={handleClose}>
+            閉じる
+          </Button>
+          <Button onClick={handleApply} disabled={applying}>
             {applying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Check className="mr-2 h-4 w-4" />
             適用する
             <span className="ml-2 text-xs text-muted-foreground">(Cmd+Enter)</span>
           </Button>

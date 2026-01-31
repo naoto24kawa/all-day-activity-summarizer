@@ -8,7 +8,9 @@ import type {
   AutoDetectProjectsResponse,
   CreateProjectRequest,
   Project,
+  ProjectsConfig,
   ProjectStats,
+  ScanGitReposResponse,
   UpdateProjectRequest,
 } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
@@ -117,6 +119,63 @@ export function useProjects(activeOnly = true) {
     }
   }, [fetchProjects]);
 
+  const [scanning, setScanning] = useState(false);
+
+  /** Git リポジトリをスキャン */
+  const scanGitRepos = useCallback(async (): Promise<ScanGitReposResponse | null> => {
+    setScanning(true);
+    try {
+      const response = await postAdasApi<ScanGitReposResponse>("/api/projects/scan", {});
+      await fetchProjects();
+      return response;
+    } catch (err) {
+      console.error("Failed to scan git repos:", err);
+      return null;
+    } finally {
+      setScanning(false);
+    }
+  }, [fetchProjects]);
+
+  /** プロジェクトを除外 */
+  const excludeProject = useCallback(
+    async (id: number): Promise<boolean> => {
+      try {
+        await postAdasApi<Project>(`/api/projects/${id}/exclude`, {});
+        await fetchProjects();
+        return true;
+      } catch (err) {
+        console.error("Failed to exclude project:", err);
+        return false;
+      }
+    },
+    [fetchProjects],
+  );
+
+  /** 除外済みプロジェクトを復活 */
+  const restoreProject = useCallback(
+    async (id: number): Promise<boolean> => {
+      try {
+        await postAdasApi<Project>(`/api/projects/${id}/restore`, {});
+        await fetchProjects();
+        return true;
+      } catch (err) {
+        console.error("Failed to restore project:", err);
+        return false;
+      }
+    },
+    [fetchProjects],
+  );
+
+  /** 除外済みプロジェクト一覧を取得 */
+  const fetchExcludedProjects = useCallback(async (): Promise<Project[]> => {
+    try {
+      return await fetchAdasApi<Project[]>("/api/projects/excluded");
+    } catch (err) {
+      console.error("Failed to fetch excluded projects:", err);
+      return [];
+    }
+  }, []);
+
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
@@ -126,12 +185,65 @@ export function useProjects(activeOnly = true) {
     loading: state.loading,
     error: state.error,
     autoDetecting,
+    scanning,
     refetch: fetchProjects,
     createProject,
     updateProject,
     deleteProject,
     fetchProjectStats,
     autoDetect,
+    scanGitRepos,
+    excludeProject,
+    restoreProject,
+    fetchExcludedProjects,
+  };
+}
+
+/** プロジェクト設定 Hook */
+export function useProjectsConfig() {
+  const [config, setConfig] = useState<ProjectsConfig>({
+    gitScanPaths: [],
+    excludePatterns: [],
+  });
+  const [loading, setLoading] = useState(true);
+
+  const fetchConfig = useCallback(async () => {
+    try {
+      const response = await fetchAdasApi<ProjectsConfig>("/api/config/projects");
+      setConfig(response);
+    } catch (err) {
+      console.error("Failed to fetch projects config:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const updateConfig = useCallback(async (updates: Partial<ProjectsConfig>): Promise<boolean> => {
+    try {
+      const response = await patchAdasApi<ProjectsConfig & { message: string }>(
+        "/api/config/projects",
+        updates,
+      );
+      setConfig({
+        gitScanPaths: response.gitScanPaths,
+        excludePatterns: response.excludePatterns,
+      });
+      return true;
+    } catch (err) {
+      console.error("Failed to update projects config:", err);
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchConfig();
+  }, [fetchConfig]);
+
+  return {
+    config,
+    loading,
+    refetch: fetchConfig,
+    updateConfig,
   };
 }
 

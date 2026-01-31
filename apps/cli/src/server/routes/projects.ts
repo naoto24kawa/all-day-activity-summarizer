@@ -6,9 +6,11 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import type { CreateProjectRequest, UpdateProjectRequest } from "@repo/types";
-import { and, desc, eq, sql } from "drizzle-orm";
+import type { CreateProjectRequest, GitRepoScanResult, UpdateProjectRequest } from "@repo/types";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
+import { loadConfig } from "../../config.js";
+import { scanGitRepositories } from "../../utils/git-scanner.js";
 
 export function createProjectsRouter(db: AdasDatabase) {
   const router = new Hono();
@@ -18,14 +20,25 @@ export function createProjectsRouter(db: AdasDatabase) {
    *
    * Query params:
    * - active: boolean (optional, filters by isActive)
+   * - excluded: boolean (optional, filters by excludedAt)
    */
   router.get("/", (c) => {
     const activeOnly = c.req.query("active") === "true";
+    const excludedOnly = c.req.query("excluded") === "true";
 
     let query = db.select().from(schema.projects).orderBy(desc(schema.projects.updatedAt));
 
-    if (activeOnly) {
-      query = query.where(eq(schema.projects.isActive, true)) as typeof query;
+    if (excludedOnly) {
+      // 除外済みプロジェクトのみ
+      query = query.where(isNotNull(schema.projects.excludedAt)) as typeof query;
+    } else if (activeOnly) {
+      // アクティブかつ除外されていないプロジェクト
+      query = query.where(
+        and(eq(schema.projects.isActive, true), isNull(schema.projects.excludedAt)),
+      ) as typeof query;
+    } else {
+      // デフォルト: 除外されていないプロジェクト
+      query = query.where(isNull(schema.projects.excludedAt)) as typeof query;
     }
 
     const projects = query.all();
@@ -100,7 +113,14 @@ export function createProjectsRouter(db: AdasDatabase) {
       return c.json({ error: "Project not found" }, 404);
     }
 
-    const updates: Record<string, unknown> = {
+    const updates: {
+      updatedAt: string;
+      name?: string;
+      path?: string | null;
+      githubOwner?: string | null;
+      githubRepo?: string | null;
+      isActive?: boolean;
+    } = {
       updatedAt: new Date().toISOString(),
     };
 
@@ -148,6 +168,189 @@ export function createProjectsRouter(db: AdasDatabase) {
     db.delete(schema.projects).where(eq(schema.projects.id, id)).run();
 
     return c.json({ deleted: true });
+  });
+
+  /**
+   * POST /api/projects/scan
+   *
+   * 設定されたパスから Git リポジトリをスキャンしてプロジェクト登録
+   */
+  router.post("/scan", async (c) => {
+    const config = loadConfig();
+    const scanPaths = config.projects?.gitScanPaths ?? [];
+    const excludePatterns = config.projects?.excludePatterns ?? [];
+
+    if (scanPaths.length === 0) {
+      return c.json(
+        {
+          error: "gitScanPaths が設定されていません",
+          message: "設定画面で探索対象ディレクトリを追加してください",
+        },
+        400,
+      );
+    }
+
+    // Git リポジトリをスキャン
+    const repos = scanGitRepositories(scanPaths, excludePatterns, 3);
+
+    const now = new Date().toISOString();
+    let created = 0;
+    let skipped = 0;
+
+    for (const repo of repos) {
+      // 既存プロジェクトを検索 (パスまたは GitHub owner/repo で)
+      let existing = db
+        .select()
+        .from(schema.projects)
+        .where(eq(schema.projects.path, repo.path))
+        .get();
+
+      if (!existing && repo.githubOwner && repo.githubRepo) {
+        existing = db
+          .select()
+          .from(schema.projects)
+          .where(
+            and(
+              eq(schema.projects.githubOwner, repo.githubOwner),
+              eq(schema.projects.githubRepo, repo.githubRepo),
+            ),
+          )
+          .get();
+      }
+
+      if (existing) {
+        // excludedAt が設定されている場合はスキップ (復活させない)
+        if (existing.excludedAt) {
+          skipped++;
+          continue;
+        }
+
+        // パスまたは GitHub 情報を更新
+        const updates: {
+          updatedAt: string;
+          path?: string;
+          githubOwner?: string;
+          githubRepo?: string;
+        } = { updatedAt: now };
+        let hasUpdates = false;
+
+        if (!existing.path && repo.path) {
+          updates.path = repo.path;
+          hasUpdates = true;
+        }
+        if (!existing.githubOwner && repo.githubOwner) {
+          updates.githubOwner = repo.githubOwner;
+          hasUpdates = true;
+        }
+        if (!existing.githubRepo && repo.githubRepo) {
+          updates.githubRepo = repo.githubRepo;
+          hasUpdates = true;
+        }
+
+        if (hasUpdates) {
+          db.update(schema.projects).set(updates).where(eq(schema.projects.id, existing.id)).run();
+        }
+        continue;
+      }
+
+      // 新規作成
+      db.insert(schema.projects)
+        .values({
+          name: repo.name,
+          path: repo.path,
+          githubOwner: repo.githubOwner,
+          githubRepo: repo.githubRepo,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      created++;
+    }
+
+    return c.json({
+      scanned: repos.length,
+      created,
+      skipped,
+      repos: repos as GitRepoScanResult[],
+    });
+  });
+
+  /**
+   * POST /api/projects/:id/exclude
+   *
+   * プロジェクトを除外 (ソフトデリート)
+   */
+  router.post("/:id/exclude", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const existing = db.select().from(schema.projects).where(eq(schema.projects.id, id)).get();
+
+    if (!existing) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const now = new Date().toISOString();
+    const result = db
+      .update(schema.projects)
+      .set({
+        excludedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(schema.projects.id, id))
+      .returning()
+      .get();
+
+    return c.json(result);
+  });
+
+  /**
+   * POST /api/projects/:id/restore
+   *
+   * 除外済みプロジェクトを復活
+   */
+  router.post("/:id/restore", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const existing = db.select().from(schema.projects).where(eq(schema.projects.id, id)).get();
+
+    if (!existing) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const now = new Date().toISOString();
+    const result = db
+      .update(schema.projects)
+      .set({
+        excludedAt: null,
+        updatedAt: now,
+      })
+      .where(eq(schema.projects.id, id))
+      .returning()
+      .get();
+
+    return c.json(result);
+  });
+
+  /**
+   * GET /api/projects/excluded
+   *
+   * 除外済みプロジェクト一覧
+   */
+  router.get("/excluded", (c) => {
+    const projects = db
+      .select()
+      .from(schema.projects)
+      .where(isNotNull(schema.projects.excludedAt))
+      .orderBy(desc(schema.projects.excludedAt))
+      .all();
+
+    return c.json(projects);
   });
 
   /**
