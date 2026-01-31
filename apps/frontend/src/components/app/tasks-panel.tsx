@@ -86,6 +86,7 @@ import {
 import { useTaskStats, useTasks } from "@/hooks/use-tasks";
 import { ADAS_API_URL, postAdasApi } from "@/lib/adas-api";
 import { DuplicateSuggestionsPanel } from "./duplicate-suggestions-panel";
+import { TaskElaborateDialog } from "./task-elaborate-dialog";
 
 interface TasksPanelProps {
   date: string;
@@ -138,7 +139,8 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     extractMemoTasks,
     detectDuplicates,
     createMergeTask,
-  } = useTasks(date);
+    elaborateTask,
+  } = useTasks();
   const { stats } = useTaskStats(date);
   const { projects } = useProjects();
   const { permission, requestPermission, notifyHighPriorityTask } = useNotifications();
@@ -165,6 +167,24 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   // 重複検出
   const [detectingDuplicates, setDetectingDuplicates] = useState(false);
   const [duplicateSuggestions, setDuplicateSuggestions] = useState<DuplicateTaskPair[]>([]);
+
+  // タスク詳細化
+  const [elaborateDialogOpen, setElaborateDialogOpen] = useState(false);
+  const [elaborateTargetTask, setElaborateTargetTask] = useState<Task | null>(null);
+
+  const openElaborateDialog = (task: Task) => {
+    setElaborateTargetTask(task);
+    setElaborateDialogOpen(true);
+  };
+
+  const closeElaborateDialog = () => {
+    setElaborateDialogOpen(false);
+    setElaborateTargetTask(null);
+  };
+
+  const handleApplyElaboration = async (taskId: number, description: string) => {
+    await updateTask(taskId, { description });
+  };
 
   const getSourceLabel = (sourceType: TaskSourceType) => SOURCE_LABELS[sourceType] ?? "Slack";
 
@@ -969,6 +989,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
+                onElaborate={openElaborateDialog}
                 groupByProject={groupByProject}
                 selectionMode={selectionMode}
                 selectedTaskIds={selectedTaskIds}
@@ -1007,6 +1028,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
+                onElaborate={openElaborateDialog}
                 suggestionTaskIds={suggestionTaskIds}
                 groupByProject={groupByProject}
                 selectionMode={selectionMode}
@@ -1021,6 +1043,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
+                onElaborate={openElaborateDialog}
                 groupByProject={groupByProject}
                 selectionMode={selectionMode}
                 selectedTaskIds={selectedTaskIds}
@@ -1034,6 +1057,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
+                onElaborate={openElaborateDialog}
                 groupByProject={groupByProject}
                 selectionMode={selectionMode}
                 selectedTaskIds={selectedTaskIds}
@@ -1070,6 +1094,18 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
           </Tabs>
         )}
       </CardContent>
+
+      {/* タスク詳細化ダイアログ */}
+      {elaborateTargetTask && (
+        <TaskElaborateDialog
+          open={elaborateDialogOpen}
+          task={elaborateTargetTask}
+          project={projects.find((p) => p.id === elaborateTargetTask.projectId) ?? null}
+          onElaborate={elaborateTask}
+          onApply={handleApplyElaboration}
+          onClose={closeElaborateDialog}
+        />
+      )}
     </Card>
   );
 }
@@ -1142,6 +1178,7 @@ function TaskList({
   projects,
   onUpdateTask,
   onDeleteTask,
+  onElaborate,
   suggestionTaskIds,
   groupByProject = false,
   selectionMode = false,
@@ -1163,6 +1200,7 @@ function TaskList({
     },
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
+  onElaborate?: (task: Task) => void;
   suggestionTaskIds?: Set<number>;
   groupByProject?: boolean;
   selectionMode?: boolean;
@@ -1260,6 +1298,7 @@ function TaskList({
                         projects={projects}
                         onUpdateTask={onUpdateTask}
                         onDeleteTask={onDeleteTask}
+                        onElaborate={onElaborate}
                         isSuggested={suggestionTaskIds?.has(task.id)}
                         selectionMode={selectionMode}
                         isSelected={selectedTaskIds?.has(task.id) ?? false}
@@ -1296,6 +1335,7 @@ function TaskList({
             projects={projects}
             onUpdateTask={onUpdateTask}
             onDeleteTask={onDeleteTask}
+            onElaborate={onElaborate}
             isSuggested={suggestionTaskIds?.has(task.id)}
             selectionMode={selectionMode}
             isSelected={selectedTaskIds?.has(task.id) ?? false}
@@ -1312,6 +1352,7 @@ function TaskItem({
   projects,
   onUpdateTask,
   onDeleteTask,
+  onElaborate,
   isSuggested,
   selectionMode = false,
   isSelected = false,
@@ -1331,6 +1372,7 @@ function TaskItem({
     },
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
+  onElaborate?: (task: Task) => void;
   isSuggested?: boolean;
   selectionMode?: boolean;
   isSelected?: boolean;
@@ -1741,6 +1783,18 @@ function TaskItem({
               )}
 
             {/* 補助アクション */}
+            {/* 詳細化ボタン (承認のみタスク以外で表示) */}
+            {onElaborate && !isApprovalOnlyTask(task.sourceType) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onElaborate(task)}
+                title="AI でタスクを詳細化"
+              >
+                <Wand2 className="mr-1 h-3 w-3" />
+                詳細化
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={copyToClipboard}>
               {copied ? (
                 <>

@@ -14,7 +14,6 @@ export function createGitHubCommentsRouter(db: AdasDatabase) {
    * GET /api/github-comments
    *
    * Query params:
-   * - date: YYYY-MM-DD (optional, filters by date)
    * - type: issue_comment | review_comment | review (optional, filters by type)
    * - repoOwner: string (optional, filters by repo owner)
    * - repoName: string (optional, filters by repo name)
@@ -23,7 +22,6 @@ export function createGitHubCommentsRouter(db: AdasDatabase) {
    * - limit: number (optional, defaults to 100)
    */
   router.get("/", (c) => {
-    const date = c.req.query("date");
     const type = c.req.query("type") as "issue_comment" | "review_comment" | "review" | undefined;
     const repoOwner = c.req.query("repoOwner");
     const repoName = c.req.query("repoName");
@@ -35,10 +33,6 @@ export function createGitHubCommentsRouter(db: AdasDatabase) {
 
     // Build conditions
     const conditions = [];
-
-    if (date) {
-      conditions.push(eq(schema.githubComments.date, date));
-    }
 
     if (type) {
       conditions.push(eq(schema.githubComments.commentType, type));

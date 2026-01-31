@@ -42,7 +42,7 @@ interface ClaudeCodeFeedProps {
 
 export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
-  const { sessions, loading, error, syncSessions, updateSession } = useClaudeCodeSessions(date);
+  const { sessions, loading, error, syncSessions, updateSession } = useClaudeCodeSessions();
   const { stats } = useClaudeCodeStats(date);
   const { projects } = useProjects();
   const [selectedSession, setSelectedSession] = useState<ClaudeCodeSession | null>(null);

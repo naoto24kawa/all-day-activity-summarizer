@@ -11,6 +11,15 @@ export interface IntegrationStatus {
   enabled: boolean;
 }
 
+export interface SummarizerConfig {
+  provider: "claude" | "lmstudio";
+  lmstudio: {
+    url: string;
+    model: string;
+    timeout?: number;
+  };
+}
+
 export interface IntegrationsConfig {
   whisper: IntegrationStatus & {
     engine: "whisperx" | "whisper-cpp";
@@ -37,6 +46,7 @@ export interface IntegrationsConfig {
   promptImprovement: IntegrationStatus & {
     badFeedbackThreshold: number;
   };
+  summarizer: SummarizerConfig;
 }
 
 interface ConfigResponse {
@@ -53,6 +63,7 @@ interface UpdateIntegrationsResponse {
     claudeCode: IntegrationStatus;
     evaluator: IntegrationStatus;
     promptImprovement: IntegrationStatus;
+    summarizer: SummarizerConfig;
   };
 }
 
@@ -122,6 +133,41 @@ export function useConfig() {
     [],
   );
 
+  const updateSummarizerConfig = useCallback(
+    async (config: {
+      provider?: "claude" | "lmstudio";
+      lmstudio?: { url?: string; model?: string };
+    }) => {
+      try {
+        setUpdating(true);
+        setError(null);
+        const body = { summarizer: config };
+        const data = await patchAdasApi<UpdateIntegrationsResponse>(
+          "/api/config/integrations",
+          body,
+        );
+
+        // ローカル状態を更新
+        setIntegrations((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            summarizer: data.integrations.summarizer,
+          };
+        });
+
+        return data;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "設定の更新に失敗しました";
+        setError(message);
+        throw err;
+      } finally {
+        setUpdating(false);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     fetchConfig();
   }, [fetchConfig]);
@@ -133,5 +179,6 @@ export function useConfig() {
     updating,
     fetchConfig,
     updateIntegration,
+    updateSummarizerConfig,
   };
 }

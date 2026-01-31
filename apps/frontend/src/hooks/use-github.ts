@@ -11,29 +11,23 @@ import type {
 import { useCallback, useEffect, useState } from "react";
 import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
-export function useGitHubItems(date?: string) {
+export function useGitHubItems() {
   const [items, setItems] = useState<GitHubItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchItems = useCallback(
-    async (silent = false) => {
-      try {
-        if (!silent) setLoading(true);
-        const params = new URLSearchParams();
-        if (date) params.set("date", date);
-
-        const data = await fetchAdasApi<GitHubItem[]>(`/api/github-items?${params}`);
-        setItems(data);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch GitHub items");
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
-    [date],
-  );
+  const fetchItems = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      const data = await fetchAdasApi<GitHubItem[]>("/api/github-items");
+      setItems(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch GitHub items");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchItems();
@@ -64,29 +58,23 @@ export function useGitHubItems(date?: string) {
   return { items, error, loading, refetch: fetchItems, markAsRead, markAllAsRead };
 }
 
-export function useGitHubComments(date?: string) {
+export function useGitHubComments() {
   const [comments, setComments] = useState<GitHubComment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchComments = useCallback(
-    async (silent = false) => {
-      try {
-        if (!silent) setLoading(true);
-        const params = new URLSearchParams();
-        if (date) params.set("date", date);
-
-        const data = await fetchAdasApi<GitHubComment[]>(`/api/github-comments?${params}`);
-        setComments(data);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch GitHub comments");
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
-    [date],
-  );
+  const fetchComments = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      const data = await fetchAdasApi<GitHubComment[]>("/api/github-comments");
+      setComments(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch GitHub comments");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchComments();

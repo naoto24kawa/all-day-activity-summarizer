@@ -1,5 +1,12 @@
 {
   "schema": "",
   "files.exclude": {
-  }
+  },
+  "remote.SSH.defaultForwardedPorts": [
+    {
+      "localPort": 1234,
+      "remotePort": 1234,
+      "name": "LM Studio"
+    }
+  ]
 }

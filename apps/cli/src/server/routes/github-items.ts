@@ -14,7 +14,6 @@ export function createGitHubItemsRouter(db: AdasDatabase) {
    * GET /api/github-items
    *
    * Query params:
-   * - date: YYYY-MM-DD (optional, filters by date)
    * - type: issue | pull_request (optional, filters by type)
    * - state: open | closed | merged (optional, filters by state)
    * - unread: true | false (optional, filters by read status)
@@ -22,7 +21,6 @@ export function createGitHubItemsRouter(db: AdasDatabase) {
    * - limit: number (optional, defaults to 100)
    */
   router.get("/", (c) => {
-    const date = c.req.query("date");
     const type = c.req.query("type") as "issue" | "pull_request" | undefined;
     const state = c.req.query("state");
     const unreadStr = c.req.query("unread");
@@ -33,10 +31,6 @@ export function createGitHubItemsRouter(db: AdasDatabase) {
 
     // Build conditions
     const conditions = [];
-
-    if (date) {
-      conditions.push(eq(schema.githubItems.date, date));
-    }
 
     if (type) {
       conditions.push(eq(schema.githubItems.itemType, type));

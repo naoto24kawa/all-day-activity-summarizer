@@ -7,21 +7,18 @@ export function useMemos(date: string) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchMemos = useCallback(
-    async (silent = false) => {
-      try {
-        if (!silent) setLoading(true);
-        const data = await fetchAdasApi<Memo[]>(`/api/memos?date=${date}`);
-        setMemos(data);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch memos");
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
-    [date],
-  );
+  const fetchMemos = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      const data = await fetchAdasApi<Memo[]>("/api/memos");
+      setMemos(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch memos");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchMemos();
@@ -29,6 +26,7 @@ export function useMemos(date: string) {
     return () => clearInterval(interval);
   }, [fetchMemos]);
 
+  // POST時はdateを渡して当日のメモとして登録
   const postMemo = useCallback(
     async (content: string, tags?: string[], projectId?: number | null) => {
       await postAdasApi<Memo>("/api/memos", { content, date, tags, projectId });

@@ -56,6 +56,14 @@ export interface AdasConfig {
     fetchIntervalMinutes: number; // 取得間隔(分)
     parallelWorkers: number; // 並列ワーカー数
   };
+  summarizer: {
+    provider: "claude" | "lmstudio";
+    lmstudio: {
+      url: string;
+      model: string;
+      timeout: number;
+    };
+  };
 }
 
 const ADAS_HOME = join(homedir(), ".adas");
@@ -115,6 +123,14 @@ const defaultConfig: AdasConfig = {
     fetchIntervalMinutes: 10,
     parallelWorkers: 2,
   },
+  summarizer: {
+    provider: "claude",
+    lmstudio: {
+      url: "http://192.168.1.17:1234",
+      model: "",
+      timeout: 300000,
+    },
+  },
 };
 
 export function getAdasHome(): string {
@@ -151,6 +167,11 @@ export function loadConfig(): AdasConfig {
     slack: { ...defaultConfig.slack, ...userConfig.slack },
     claudeCode: { ...defaultConfig.claudeCode, ...userConfig.claudeCode },
     github: { ...defaultConfig.github, ...userConfig.github },
+    summarizer: {
+      ...defaultConfig.summarizer,
+      ...userConfig.summarizer,
+      lmstudio: { ...defaultConfig.summarizer.lmstudio, ...userConfig.summarizer?.lmstudio },
+    },
   };
 }
 

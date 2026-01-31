@@ -1,12 +1,126 @@
-import { Github, MessageSquare, Mic, Plug, Sparkles, Terminal, Wand2 } from "lucide-react";
+import {
+  Bot,
+  Check,
+  Github,
+  Loader2,
+  MessageSquare,
+  Mic,
+  Plug,
+  Sparkles,
+  Terminal,
+  Wand2,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useConfig } from "@/hooks/use-config";
+import { fetchAdasApi } from "@/lib/adas-api";
 
 export function IntegrationsPanel() {
-  const { integrations, loading, error, updating, updateIntegration } = useConfig();
+  const { integrations, loading, error, updating, updateIntegration, updateSummarizerConfig } =
+    useConfig();
+
+  // LM Studio 関連の状態
+  const [lmStudioUrl, setLmStudioUrl] = useState("");
+  const [lmStudioModels, setLmStudioModels] = useState<string[]>([]);
+  const [lmStudioModel, setLmStudioModel] = useState("");
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<"idle" | "success" | "error">("idle");
+  const [loadingModels, setLoadingModels] = useState(false);
+
+  // 初期値を設定
+  useEffect(() => {
+    if (integrations?.summarizer) {
+      setLmStudioUrl(integrations.summarizer.lmstudio.url);
+      setLmStudioModel(integrations.summarizer.lmstudio.model);
+    }
+  }, [integrations?.summarizer]);
+
+  const fetchLmStudioModels = useCallback(async (url: string) => {
+    if (!url) return;
+    setLoadingModels(true);
+    try {
+      const data = await fetchAdasApi<{ models: string[] }>(
+        `/api/config/lmstudio/models?url=${encodeURIComponent(url)}`,
+      );
+      setLmStudioModels(data.models);
+      setConnectionStatus("success");
+    } catch {
+      setLmStudioModels([]);
+      setConnectionStatus("error");
+    } finally {
+      setLoadingModels(false);
+    }
+  }, []);
+
+  const testLmStudioConnection = useCallback(async () => {
+    setTestingConnection(true);
+    setConnectionStatus("idle");
+    try {
+      const response = await fetch("/api/config/lmstudio/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: lmStudioUrl }),
+      });
+      const data = (await response.json()) as { success: boolean };
+      if (data.success) {
+        setConnectionStatus("success");
+        await fetchLmStudioModels(lmStudioUrl);
+      } else {
+        setConnectionStatus("error");
+      }
+    } catch {
+      setConnectionStatus("error");
+    } finally {
+      setTestingConnection(false);
+    }
+  }, [lmStudioUrl, fetchLmStudioModels]);
+
+  const handleProviderChange = useCallback(
+    async (provider: "claude" | "lmstudio") => {
+      try {
+        await updateSummarizerConfig({ provider });
+      } catch {
+        // エラーはhook内で処理済み
+      }
+    },
+    [updateSummarizerConfig],
+  );
+
+  const handleLmStudioUrlBlur = useCallback(async () => {
+    if (lmStudioUrl !== integrations?.summarizer.lmstudio.url) {
+      try {
+        await updateSummarizerConfig({ lmstudio: { url: lmStudioUrl } });
+      } catch {
+        // エラーはhook内で処理済み
+      }
+    }
+  }, [lmStudioUrl, integrations?.summarizer.lmstudio.url, updateSummarizerConfig]);
+
+  const handleLmStudioModelChange = useCallback(
+    async (model: string) => {
+      setLmStudioModel(model);
+      try {
+        await updateSummarizerConfig({ lmstudio: { model } });
+      } catch {
+        // エラーはhook内で処理済み
+      }
+    },
+    [updateSummarizerConfig],
+  );
 
   if (loading) {
     return (
@@ -183,6 +297,101 @@ export function IntegrationsPanel() {
             onCheckedChange={(checked) => handleToggle("promptImprovement", checked)}
             disabled={updating}
           />
+        </div>
+
+        {/* Summarizer */}
+        <div className="border-t pt-4 mt-4">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Bot className="h-4 w-4" />
+              <Label className="text-base">Summarizer</Label>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              サマリー生成に使用するプロバイダーを選択します
+            </p>
+
+            <RadioGroup
+              value={integrations.summarizer.provider}
+              onValueChange={handleProviderChange}
+              className="flex gap-4"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="claude" id="provider-claude" disabled={updating} />
+                <Label htmlFor="provider-claude" className="cursor-pointer">
+                  Claude (Worker経由)
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="lmstudio" id="provider-lmstudio" disabled={updating} />
+                <Label htmlFor="provider-lmstudio" className="cursor-pointer">
+                  LM Studio
+                </Label>
+              </div>
+            </RadioGroup>
+
+            {integrations.summarizer.provider === "lmstudio" && (
+              <div className="space-y-3 pl-4 border-l-2 border-muted">
+                <div className="space-y-1.5">
+                  <Label htmlFor="lmstudio-url" className="text-sm">
+                    URL
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="lmstudio-url"
+                      value={lmStudioUrl}
+                      onChange={(e) => setLmStudioUrl(e.target.value)}
+                      onBlur={handleLmStudioUrlBlur}
+                      placeholder="http://192.168.1.17:1234"
+                      className="flex-1"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={testLmStudioConnection}
+                      disabled={testingConnection || !lmStudioUrl}
+                    >
+                      {testingConnection ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : connectionStatus === "success" ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : connectionStatus === "error" ? (
+                        <X className="h-4 w-4 text-destructive" />
+                      ) : (
+                        "Test"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="lmstudio-model" className="text-sm">
+                    Model
+                  </Label>
+                  <Select
+                    value={lmStudioModel}
+                    onValueChange={handleLmStudioModelChange}
+                    disabled={loadingModels || lmStudioModels.length === 0}
+                  >
+                    <SelectTrigger id="lmstudio-model">
+                      <SelectValue placeholder={loadingModels ? "Loading..." : "Select a model"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {lmStudioModels.map((model) => (
+                        <SelectItem key={model} value={model}>
+                          {model}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {lmStudioModels.length === 0 && !loadingModels && (
+                    <p className="text-xs text-muted-foreground">
+                      接続テストを実行してモデル一覧を取得してください
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>

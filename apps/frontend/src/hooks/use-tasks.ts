@@ -5,6 +5,8 @@
 import type {
   CreateMergeTaskResponse,
   DetectDuplicatesResponse,
+  ElaborateTaskRequest,
+  ElaborateTaskResponse,
   Task,
   TaskStats,
   TaskStatus,
@@ -12,29 +14,23 @@ import type {
 import { useCallback, useEffect, useState } from "react";
 import { deleteAdasApi, fetchAdasApi, patchAdasApi, postAdasApi } from "@/lib/adas-api";
 
-export function useTasks(date?: string) {
+export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchTasks = useCallback(
-    async (silent = false) => {
-      try {
-        if (!silent) setLoading(true);
-        const params = new URLSearchParams();
-        if (date) params.set("date", date);
-
-        const data = await fetchAdasApi<Task[]>(`/api/tasks?${params}`);
-        setTasks(data);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch tasks");
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
-    [date],
-  );
+  const fetchTasks = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      const data = await fetchAdasApi<Task[]>("/api/tasks");
+      setTasks(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch tasks");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchTasks();
@@ -150,6 +146,17 @@ export function useTasks(date?: string) {
     [fetchTasks],
   );
 
+  const elaborateTask = useCallback(
+    async (taskId: number, request?: ElaborateTaskRequest): Promise<ElaborateTaskResponse> => {
+      const result = await postAdasApi<ElaborateTaskResponse>(
+        `/api/tasks/${taskId}/elaborate`,
+        request ?? {},
+      );
+      return result;
+    },
+    [],
+  );
+
   return {
     tasks,
     error,
@@ -164,6 +171,7 @@ export function useTasks(date?: string) {
     extractMemoTasks,
     detectDuplicates,
     createMergeTask,
+    elaborateTask,
   };
 }
 

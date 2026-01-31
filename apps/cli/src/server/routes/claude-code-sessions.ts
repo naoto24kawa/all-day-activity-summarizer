@@ -18,14 +18,12 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
    * GET /api/claude-code-sessions
    *
    * Query params:
-   * - date: YYYY-MM-DD (optional, filters by date)
    * - project: string (optional, filters by project path/name)
    * - projectId: number (optional, filters by ADAS project)
    * - noProject: true (optional, filters sessions without ADAS project)
    * - limit: number (optional, defaults to 100)
    */
   router.get("/", (c) => {
-    const date = c.req.query("date");
     const project = c.req.query("project");
     const projectIdStr = c.req.query("projectId");
     const noProject = c.req.query("noProject") === "true";
@@ -35,10 +33,6 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
 
     // Build conditions
     const conditions = [];
-
-    if (date) {
-      conditions.push(eq(schema.claudeCodeSessions.date, date));
-    }
 
     if (project) {
       conditions.push(

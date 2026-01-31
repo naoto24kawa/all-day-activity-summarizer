@@ -14,6 +14,8 @@ import {
   type CheckDuplicatesResponse,
   type CreateMergeTaskResponse,
   type DetectDuplicatesResponse,
+  type ElaborateTaskRequest,
+  type ElaborateTaskResponse,
   isApprovalOnlyTask,
   type PromptTarget,
   type SuggestCompletionsResponse,
@@ -125,14 +127,12 @@ export function createTasksRouter(db: AdasDatabase) {
    * GET /api/tasks
    *
    * Query params:
-   * - date: YYYY-MM-DD (optional)
    * - status: pending | accepted | rejected | completed (optional)
    * - projectId: number (optional, filters by project)
    * - noProject: boolean (optional, filters tasks without project)
    * - limit: number (optional, defaults to 100)
    */
   router.get("/", (c) => {
-    const date = c.req.query("date");
     const status = c.req.query("status") as TaskStatus | undefined;
     const projectIdStr = c.req.query("projectId");
     const noProject = c.req.query("noProject") === "true";
@@ -141,10 +141,6 @@ export function createTasksRouter(db: AdasDatabase) {
     const limit = limitStr ? Number.parseInt(limitStr, 10) : 100;
 
     const conditions = [];
-
-    if (date) {
-      conditions.push(eq(schema.tasks.date, date));
-    }
 
     if (status) {
       conditions.push(eq(schema.tasks.status, status));
@@ -1524,6 +1520,126 @@ export function createTasksRouter(db: AdasDatabase) {
     db.delete(schema.tasks).where(eq(schema.tasks.id, id)).run();
 
     return c.json({ deleted: true });
+  });
+
+  /**
+   * POST /api/tasks/:id/elaborate
+   *
+   * タスクを AI で詳細化
+   * コードベースを参照しながら実装手順や対象ファイルを含む詳細を生成
+   * Body: ElaborateTaskRequest
+   */
+  router.post("/:id/elaborate", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    const body = await c.req.json<ElaborateTaskRequest>().catch(() => ({}));
+
+    // プロジェクト情報を取得
+    let project = null;
+    if (task.projectId) {
+      project = db
+        .select()
+        .from(schema.projects)
+        .where(eq(schema.projects.id, task.projectId))
+        .get();
+    }
+
+    // プロンプトを構築
+    const systemPrompt = readFileSync(getPromptFilePath("task-elaborate"), "utf-8");
+
+    let userPrompt = `# タスク情報\n\n`;
+    userPrompt += `**タイトル**: ${task.title}\n\n`;
+
+    if (task.description) {
+      userPrompt += `**現在の説明**:\n${task.description}\n\n`;
+    }
+
+    if (project) {
+      userPrompt += `**プロジェクト**: ${project.name}\n`;
+      if (project.path) {
+        userPrompt += `**プロジェクトパス**: ${project.path}\n`;
+      }
+      userPrompt += "\n";
+    }
+
+    // 修正依頼の場合
+    if (body.currentElaboration && body.revisionInstruction) {
+      userPrompt += `## 修正依頼\n\n`;
+      userPrompt += `**現在の詳細化結果**:\n${body.currentElaboration}\n\n`;
+      userPrompt += `**修正指示**: ${body.revisionInstruction}\n\n`;
+      userPrompt += `上記の修正指示に従って、詳細化結果を改善してください。\n`;
+    } else if (body.userInstruction) {
+      // 初回詳細化で追加指示がある場合
+      userPrompt += `## ユーザー指示\n${body.userInstruction}\n\n`;
+      userPrompt += `上記の指示を考慮してタスクを詳細化してください。\n`;
+    } else {
+      userPrompt += `このタスクを詳細化してください。\n`;
+    }
+
+    // vocabulary セクションを追加
+    const vocabularySection = buildVocabularySection(db);
+    if (vocabularySection) {
+      userPrompt += `\n${vocabularySection}\n`;
+    }
+
+    try {
+      const cwd = project?.path ?? undefined;
+      const allowedTools = cwd ? "Glob,Grep,Read" : undefined;
+      const disableTools = !cwd;
+
+      consola.info(`[tasks/elaborate] Starting elaboration for task ${id} (cwd: ${cwd ?? "none"})`);
+
+      const response = await runClaude(userPrompt, {
+        model: "sonnet",
+        systemPrompt,
+        allowedTools,
+        disableTools,
+        cwd,
+        dangerouslySkipPermissions: true,
+      });
+
+      // レスポンスからファイルパスを抽出 (パターンマッチング)
+      const filePatterns = [
+        /`([^`]+\.[a-z]{1,4})`/g, // バッククォートで囲まれたファイルパス
+        /- `([^`]+\.[a-z]{1,4})`/g, // リスト項目のファイルパス
+      ];
+
+      const referencedFiles = new Set<string>();
+      for (const pattern of filePatterns) {
+        for (const match of response.matchAll(pattern)) {
+          const filePath = match[1];
+          if (filePath && !filePath.includes(" ") && filePath.includes("/")) {
+            referencedFiles.add(filePath);
+          }
+        }
+      }
+
+      const result: ElaborateTaskResponse = {
+        elaboration: response,
+        codebaseReferenced: !!cwd,
+        referencedFiles: referencedFiles.size > 0 ? Array.from(referencedFiles) : undefined,
+      };
+
+      consola.success(
+        `[tasks/elaborate] Done (${response.length} chars, ${referencedFiles.size} files referenced)`,
+      );
+
+      return c.json(result);
+    } catch (error) {
+      consola.error(`[tasks/elaborate] Failed:`, error);
+      return c.json(
+        { error: error instanceof Error ? error.message : "Failed to elaborate task" },
+        500,
+      );
+    }
   });
 
   /**

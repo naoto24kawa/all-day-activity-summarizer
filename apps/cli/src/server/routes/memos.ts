@@ -1,6 +1,6 @@
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { suggestMemoTags } from "../../memo/tag-suggester.js";
 import { getTodayDateString } from "../../utils/date.js";
@@ -9,15 +9,23 @@ import { findProjectFromContent } from "../../utils/project-lookup.js";
 export function createMemosRouter(db: AdasDatabase) {
   const router = new Hono();
 
+  /**
+   * GET /api/memos
+   *
+   * Returns all memos ordered by createdAt descending (newest first).
+   * Query params:
+   * - limit: number (optional, defaults to 100)
+   */
   router.get("/", (c) => {
-    const date = c.req.query("date");
+    const limitStr = c.req.query("limit");
+    const limit = limitStr ? Number.parseInt(limitStr, 10) : 100;
 
-    if (!date) {
-      const all = db.select().from(schema.memos).all();
-      return c.json(all);
-    }
-
-    const memos = db.select().from(schema.memos).where(eq(schema.memos.date, date)).all();
+    const memos = db
+      .select()
+      .from(schema.memos)
+      .orderBy(desc(schema.memos.createdAt))
+      .limit(limit)
+      .all();
 
     return c.json(memos);
   });

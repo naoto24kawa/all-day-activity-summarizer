@@ -40,13 +40,9 @@ interface GitHubFeedProps {
 
 export function GitHubFeed({ date, className }: GitHubFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
-  const { items, loading, error, refetch, markAsRead, markAllAsRead } = useGitHubItems(date);
+  const { items, loading, error, refetch, markAsRead, markAllAsRead } = useGitHubItems();
   const { counts } = useGitHubUnreadCounts(date);
-  const {
-    comments,
-    loading: commentsLoading,
-    markAsRead: markCommentAsRead,
-  } = useGitHubComments(date);
+  const { comments, loading: commentsLoading, markAsRead: markCommentAsRead } = useGitHubComments();
   const { counts: commentCounts } = useGitHubCommentsUnreadCounts(date);
 
   // 連携が無効な場合

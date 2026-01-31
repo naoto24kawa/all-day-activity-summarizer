@@ -19,29 +19,23 @@ export interface ClaudeCodeStats {
   }>;
 }
 
-export function useClaudeCodeSessions(date?: string) {
+export function useClaudeCodeSessions() {
   const [sessions, setSessions] = useState<ClaudeCodeSession[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchSessions = useCallback(
-    async (silent = false) => {
-      try {
-        if (!silent) setLoading(true);
-        const params = new URLSearchParams();
-        if (date) params.set("date", date);
-
-        const data = await fetchAdasApi<ClaudeCodeSession[]>(`/api/claude-code-sessions?${params}`);
-        setSessions(data);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch Claude Code sessions");
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
-    [date],
-  );
+  const fetchSessions = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      const data = await fetchAdasApi<ClaudeCodeSession[]>("/api/claude-code-sessions");
+      setSessions(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch Claude Code sessions");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchSessions();

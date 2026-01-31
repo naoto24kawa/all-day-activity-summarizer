@@ -14,29 +14,23 @@ export interface SlackUnreadCounts {
   keyword: number;
 }
 
-export function useSlackMessages(date?: string) {
+export function useSlackMessages() {
   const [messages, setMessages] = useState<SlackMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchMessages = useCallback(
-    async (silent = false) => {
-      try {
-        if (!silent) setLoading(true);
-        const params = new URLSearchParams();
-        if (date) params.set("date", date);
-
-        const data = await fetchAdasApi<SlackMessage[]>(`/api/slack-messages?${params}`);
-        setMessages(data);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch Slack messages");
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
-    [date],
-  );
+  const fetchMessages = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      const data = await fetchAdasApi<SlackMessage[]>("/api/slack-messages");
+      setMessages(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch Slack messages");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchMessages();

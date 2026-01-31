@@ -46,7 +46,7 @@ interface SlackFeedProps {
 export function SlackFeed({ date, className }: SlackFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
   const { messages, loading, error, refetch, markAsRead, markAllAsRead, updateMessage } =
-    useSlackMessages(date);
+    useSlackMessages();
   const { counts } = useSlackUnreadCounts(date);
   const { projects } = useProjects();
   const { updateChannelProject, getChannelProjectId } = useSlackChannels();

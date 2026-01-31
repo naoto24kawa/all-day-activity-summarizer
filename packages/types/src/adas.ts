@@ -991,3 +991,25 @@ export interface CreateAiProcessingLogRequest {
   errorMessage?: string;
   metadata?: Record<string, unknown>;
 }
+
+// ========== Task Elaboration 型定義 ==========
+
+/** タスク詳細化リクエスト */
+export interface ElaborateTaskRequest {
+  /** ユーザーからの追加指示 (初回詳細化時) */
+  userInstruction?: string;
+  /** 修正依頼時: 現在の詳細化結果 */
+  currentElaboration?: string;
+  /** 修正依頼時: 修正指示 */
+  revisionInstruction?: string;
+}
+
+/** タスク詳細化レスポンス */
+export interface ElaborateTaskResponse {
+  /** 詳細化された説明 */
+  elaboration: string;
+  /** コードベースを参照したか */
+  codebaseReferenced: boolean;
+  /** 参照したファイルパス */
+  referencedFiles?: string[];
+}

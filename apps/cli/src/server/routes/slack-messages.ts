@@ -40,7 +40,6 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
    * GET /api/slack-messages
    *
    * Query params:
-   * - date: YYYY-MM-DD (optional, defaults to today)
    * - type: mention | channel | dm (optional, filters by type)
    * - unread: true | false (optional, filters by read status)
    * - projectId: number (optional, filters by project)
@@ -48,7 +47,6 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
    * - limit: number (optional, defaults to 100)
    */
   router.get("/", (c) => {
-    const date = c.req.query("date");
     const type = c.req.query("type") as "mention" | "channel" | "dm" | undefined;
     const unreadStr = c.req.query("unread");
     const projectIdStr = c.req.query("projectId");
@@ -59,10 +57,6 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
 
     // Build conditions
     const conditions = [];
-
-    if (date) {
-      conditions.push(eq(schema.slackMessages.date, date));
-    }
 
     if (type) {
       conditions.push(eq(schema.slackMessages.messageType, type));
