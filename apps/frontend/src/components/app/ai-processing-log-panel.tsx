@@ -22,6 +22,8 @@ const PROCESS_TYPE_LABELS: Record<AiProcessType, string> = {
   "check-completion": "Completion",
   "extract-terms": "Terms",
   "analyze-profile": "Profile",
+  "suggest-tags": "Tags",
+  "match-channels": "Channels",
 };
 
 const PROCESS_TYPE_COLORS: Record<AiProcessType, string> = {
@@ -34,6 +36,8 @@ const PROCESS_TYPE_COLORS: Record<AiProcessType, string> = {
   "check-completion": "text-pink-500",
   "extract-terms": "text-yellow-500",
   "analyze-profile": "text-indigo-500",
+  "suggest-tags": "text-amber-500",
+  "match-channels": "text-teal-500",
 };
 
 export function AiProcessingLogPanel({ date }: AiProcessingLogPanelProps) {

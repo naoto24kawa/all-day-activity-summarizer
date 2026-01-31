@@ -15,12 +15,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,7 +58,21 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
   const [selectedSession, setSelectedSession] = useState<ClaudeCodeSession | null>(null);
   const [showAllProjects, setShowAllProjects] = useState(false);
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
+  const [openProjects, setOpenProjects] = useState<Set<string>>(new Set());
   const activeProjects = projects.filter((p) => p.isActive);
+
+  // プロジェクトの折りたたみを切り替え
+  const toggleProjectOpen = (projectPath: string) => {
+    setOpenProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectPath)) {
+        next.delete(projectPath);
+      } else {
+        next.add(projectPath);
+      }
+      return next;
+    });
+  };
 
   // セッション表示を展開する
   const toggleSessionExpand = (projectPath: string) => {
@@ -186,7 +195,7 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
         {sessions.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Claude Code sessions for this date.</p>
         ) : (
-          <Accordion type="multiple" className="w-full">
+          <div className="space-y-2">
             {(() => {
               const allEntries = Array.from(sessionsByProject.entries());
               const displayEntries = showAllProjects
@@ -210,21 +219,29 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
                       ? projectSessions
                       : projectSessions.slice(0, DEFAULT_SESSION_LIMIT);
                     const hasMoreSessions = projectSessions.length > DEFAULT_SESSION_LIMIT;
+                    const isProjectOpen = openProjects.has(projectPath);
 
                     return (
-                      <AccordionItem key={projectPath} value={projectPath}>
-                        <div className="flex items-center justify-between pr-4">
-                          <AccordionTrigger className="flex-1 hover:no-underline">
+                      <Collapsible
+                        key={projectPath}
+                        open={isProjectOpen}
+                        onOpenChange={() => toggleProjectOpen(projectPath)}
+                      >
+                        <div className="flex items-center gap-2 rounded-md border p-3 hover:bg-muted/50">
+                          <CollapsibleTrigger className="flex flex-1 items-center justify-between">
                             <div className="flex items-center gap-2">
                               <FolderGit2 className="h-4 w-4 text-muted-foreground" />
                               <span className="font-medium">
                                 {projectSessions[0]?.projectName || projectPath.split("/").pop()}
                               </span>
-                              <Badge variant="outline" className="ml-2">
+                              <Badge variant="secondary" className="text-xs">
                                 {projectSessions.length} sessions
                               </Badge>
                             </div>
-                          </AccordionTrigger>
+                            <ChevronDown
+                              className={`h-4 w-4 text-muted-foreground transition-transform ${isProjectOpen ? "rotate-180" : ""}`}
+                            />
+                          </CollapsibleTrigger>
                           {activeProjects.length > 0 && (
                             <Select
                               value={pathProjectId?.toString() ?? "none"}
@@ -248,36 +265,34 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
                             </Select>
                           )}
                         </div>
-                        <AccordionContent>
-                          <div className="space-y-3 pl-6">
-                            {displaySessions.map((session) => (
-                              <SessionItem
-                                key={session.sessionId}
-                                session={session}
-                                onClick={() => setSelectedSession(session)}
-                                onUpdateProject={updateSession}
-                                projects={projects}
-                                inheritedProjectId={pathProjectId}
+                        <CollapsibleContent className="mt-2 space-y-3 pl-4">
+                          {displaySessions.map((session) => (
+                            <SessionItem
+                              key={session.sessionId}
+                              session={session}
+                              onClick={() => setSelectedSession(session)}
+                              onUpdateProject={updateSession}
+                              projects={projects}
+                              inheritedProjectId={pathProjectId}
+                            />
+                          ))}
+                          {hasMoreSessions && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full text-muted-foreground"
+                              onClick={() => toggleSessionExpand(projectPath)}
+                            >
+                              <ChevronDown
+                                className={`mr-1 h-4 w-4 transition-transform ${isSessionExpanded ? "rotate-180" : ""}`}
                               />
-                            ))}
-                            {hasMoreSessions && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="w-full text-muted-foreground"
-                                onClick={() => toggleSessionExpand(projectPath)}
-                              >
-                                <ChevronDown
-                                  className={`mr-1 h-4 w-4 transition-transform ${isSessionExpanded ? "rotate-180" : ""}`}
-                                />
-                                {isSessionExpanded
-                                  ? "閉じる"
-                                  : `他 ${projectSessions.length - DEFAULT_SESSION_LIMIT} セッションを表示`}
-                              </Button>
-                            )}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
+                              {isSessionExpanded
+                                ? "閉じる"
+                                : `他 ${projectSessions.length - DEFAULT_SESSION_LIMIT} セッションを表示`}
+                            </Button>
+                          )}
+                        </CollapsibleContent>
+                      </Collapsible>
                     );
                   })}
                   {hasMoreProjects && (
@@ -300,7 +315,7 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
                 </>
               );
             })()}
-          </Accordion>
+          </div>
         )}
       </CardContent>
 

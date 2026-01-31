@@ -30,6 +30,7 @@ export type {
   CheckDuplicatesResponse,
   ChildTasksResponse,
   ClaudeCodeMessage,
+  ClaudeCodePath,
   ClaudeCodeSession,
   CompletionSource,
   CreateAIJobRequest,

@@ -51,7 +51,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Badge } from "@/components/ui/badge";
@@ -109,20 +109,6 @@ const TASK_STATUS_STYLES: Record<TaskStatus | "selected" | "suggested", string> 
   accepted: "",
 };
 
-/** ソースタイプのラベルマップ */
-const SOURCE_LABELS: Record<TaskSourceType, string> = {
-  slack: "Slack",
-  github: "GitHub",
-  "github-comment": "GitHub Comment",
-  memo: "Memo",
-  manual: "手動",
-  "prompt-improvement": "改善",
-  vocabulary: "用語",
-  merge: "統合",
-  "profile-suggestion": "プロフィール",
-  "project-suggestion": "プロジェクト",
-};
-
 /** 用語提案ソースタイプのラベルマップ */
 const VOCABULARY_SOURCE_LABELS: Record<VocabularySuggestionSourceType, string> = {
   interpret: "音声",
@@ -173,7 +159,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     deleteProject,
     autoDetect,
   } = useProjects(false);
-  const { permission, requestPermission, notifyHighPriorityTask } = useNotifications();
+  const { permission, requestPermission } = useNotifications();
   const [extracting, setExtracting] = useState(false);
 
   // プロンプト改善
@@ -231,8 +217,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     await updateTask(taskId, { description });
     await refetch(true);
   };
-
-  const getSourceLabel = (sourceType: TaskSourceType) => SOURCE_LABELS[sourceType] ?? "Slack";
 
   // Projects Popover handlers
   const handleStartProjectEdit = (project: Project) => {
@@ -320,13 +304,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     return [...taskList].sort((a, b) => {
       return new Date(b.extractedAt).getTime() - new Date(a.extractedAt).getTime();
     });
-  };
-
-  const _notifyHighPriorityTasks = (extractedTasks: Task[]) => {
-    const highPriorityTasks = extractedTasks.filter((t) => t.priority === "high");
-    for (const task of highPriorityTasks) {
-      notifyHighPriorityTask(task.title, getSourceLabel(task.sourceType));
-    }
   };
 
   // 非同期版: ジョブをキューに登録 (結果はSSE通知で受け取る)
@@ -1574,6 +1551,21 @@ function TaskItem({
     setRejectDialogOpen(false);
     setRejectReason("");
   };
+
+  // Cmd+Enter (Mac) / Ctrl+Enter (Windows) で却下を実行
+  useEffect(() => {
+    if (!rejectDialogOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        handleReject();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
 
   const handleEditSave = async () => {
     const updates: { status?: TaskStatus; title?: string; description?: string } = {
