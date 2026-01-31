@@ -3,8 +3,10 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AudioCapture } from "../audio/capture.js";
 import type { AdasConfig } from "../config.js";
+import { createAIJobsRouter } from "./routes/ai-jobs.js";
 import { createAiProcessingLogsRouter } from "./routes/ai-processing-logs.js";
 import { createBrowserRecordingRouter } from "./routes/browser-recording.js";
+import { createClaudeChatRouter } from "./routes/claude-chat.js";
 import { createClaudeCodeSessionsRouter } from "./routes/claude-code-sessions.js";
 import { createConfigRouter } from "./routes/config.js";
 import { createEvaluatorLogsRouter } from "./routes/evaluator-logs.js";
@@ -65,6 +67,8 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/profile", createProfileRouter(db, options?.config));
   app.route("/api/projects", createProjectsRouter(db));
   app.route("/api/config", createConfigRouter());
+  app.route("/api/ai-jobs", createAIJobsRouter(db));
+  app.route("/api/claude-chat", createClaudeChatRouter());
 
   if (options?.micCapture || options?.speakerCapture) {
     app.route(

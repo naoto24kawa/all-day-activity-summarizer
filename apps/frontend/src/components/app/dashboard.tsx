@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useJobNotifications } from "@/hooks/use-job-notifications";
 import { useTabBadges } from "@/hooks/use-tab-badges";
 import { formatTimeJST, getTodayDateString } from "@/lib/date";
 import { TAB_GROUPS, type TabGroupId, type TabId } from "@/lib/tab-groups";
 import { ActivityFeed } from "./activity-feed";
 import { AiProcessingLogPanel } from "./ai-processing-log-panel";
 import { BrowserRecordingPanel } from "./browser-recording-panel";
+import { ClaudeChatPanel } from "./claude-chat-panel";
 import { ClaudeCodeFeed } from "./claude-code-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
 import { GitHubFeed } from "./github-feed";
@@ -16,10 +18,8 @@ import { LearningsFeed } from "./learnings-feed";
 import { MemoFloatingChat } from "./memo-floating-chat";
 import { MonitoringPanel } from "./monitoring-panel";
 import { ProfilePanel } from "./profile-panel";
-import { ProjectsPanel } from "./projects-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
-import { SlackUsersPanel } from "./slack-users-panel";
 import { StatusPanel } from "./status-panel";
 import { SummaryView } from "./summary-view";
 import { TasksPanel } from "./tasks-panel";
@@ -39,6 +39,10 @@ export function Dashboard() {
   const [date, setDate] = useState(getTodayDateString());
   const [now, setNow] = useState(new Date());
   const [isMemoSidebar, setIsMemoSidebar] = useState(false);
+  const [isClaudeChatSidebar, setIsClaudeChatSidebar] = useState(false);
+  // フローティングパネルの開閉状態 (アイコン位置調整用)
+  const [isMemoOpen, setIsMemoOpen] = useState(true);
+  const [memoHeight, setMemoHeight] = useState(500); // デフォルト高さ
   const [activeGroup, setActiveGroup] = useState<TabGroupId>("overview");
   const [activeTabs, setActiveTabs] = useState<Record<TabGroupId, TabId>>({
     overview: "activity",
@@ -46,7 +50,17 @@ export function Dashboard() {
     tools: "learnings",
     system: "logs",
   });
-  const { badges, groupBadges } = useTabBadges(date);
+  const { badges, groupBadges, refetch: refetchBadges } = useTabBadges(date);
+
+  // AI Job通知フック (トースト通知 + リアルタイム統計)
+  const { stats: jobStats } = useJobNotifications({
+    enableToast: true,
+    enableWebNotification: true,
+    enableSound: true,
+    onTasksUpdated: useCallback(() => {
+      refetchBadges();
+    }, [refetchBadges]),
+  });
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000);
@@ -88,7 +102,7 @@ export function Dashboard() {
         </div>
 
         <div className="mt-4 grid shrink-0 gap-4 lg:grid-cols-2">
-          <StatusPanel />
+          <StatusPanel jobStats={jobStats} />
           <BrowserRecordingPanel />
         </div>
 
@@ -146,10 +160,7 @@ export function Dashboard() {
                 <SummaryView date={date} className="h-full" />
               </TabsContent>
               <TabsContent value="tasks" className="min-h-0 flex-1">
-                <div className="grid h-full gap-4 lg:grid-cols-[3fr_2fr]">
-                  <TasksPanel date={date} className="h-full" />
-                  <ProjectsPanel />
-                </div>
+                <TasksPanel date={date} className="h-full" />
               </TabsContent>
               <TabsContent value="audio" className="min-h-0 flex-1">
                 <div className="grid h-full gap-4 lg:grid-cols-2">
@@ -158,10 +169,7 @@ export function Dashboard() {
                 </div>
               </TabsContent>
               <TabsContent value="slack" className="min-h-0 flex-1">
-                <div className="grid h-full gap-4 lg:grid-cols-[1fr_320px]">
-                  <SlackFeed date={date} className="h-full" />
-                  <SlackUsersPanel />
-                </div>
+                <SlackFeed date={date} className="h-full" />
               </TabsContent>
               <TabsContent value="github" className="min-h-0 flex-1">
                 <GitHubFeed date={date} className="h-full" />
@@ -197,13 +205,30 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* フローティングモード時のメモチャット */}
-        {!isMemoSidebar && <MemoFloatingChat date={date} onSidebarChange={setIsMemoSidebar} />}
+        {/* フローティングモード時のパネル */}
+        {!isMemoSidebar && (
+          <MemoFloatingChat
+            date={date}
+            onSidebarChange={setIsMemoSidebar}
+            onOpenChange={setIsMemoOpen}
+            onHeightChange={setMemoHeight}
+          />
+        )}
+        {!isClaudeChatSidebar && (
+          <ClaudeChatPanel
+            onSidebarChange={setIsClaudeChatSidebar}
+            memoOpen={!isMemoSidebar && isMemoOpen}
+            memoHeight={memoHeight}
+          />
+        )}
       </div>
 
-      {/* サイドバーモード時のメモチャット */}
+      {/* サイドバーモード時のパネル */}
       {isMemoSidebar && (
         <MemoFloatingChat date={date} initialSidebar onSidebarChange={setIsMemoSidebar} />
+      )}
+      {isClaudeChatSidebar && (
+        <ClaudeChatPanel initialSidebar onSidebarChange={setIsClaudeChatSidebar} />
       )}
     </div>
   );

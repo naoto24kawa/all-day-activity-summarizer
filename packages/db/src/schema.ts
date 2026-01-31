@@ -673,6 +673,8 @@ export const aiProcessingLogs = sqliteTable("ai_processing_logs", {
       "check-completion",
       "extract-terms",
       "analyze-profile",
+      "suggest-tags",
+      "match-channels",
     ],
   }).notNull(),
   status: text("status", { enum: ["success", "error"] }).notNull(),
@@ -709,6 +711,45 @@ export const slackChannels = sqliteTable("slack_channels", {
 
 export type SlackChannel = typeof slackChannels.$inferSelect;
 export type NewSlackChannel = typeof slackChannels.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// AI Job Queue (AI処理キュー)
+// ---------------------------------------------------------------------------
+
+export const aiJobQueue = sqliteTable("ai_job_queue", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobType: text("job_type", {
+    enum: [
+      "task-extract-slack",
+      "task-extract-github",
+      "task-extract-github-comment",
+      "task-extract-memo",
+      "learning-extract",
+      "profile-analyze",
+    ],
+  }).notNull(),
+  params: text("params"), // JSON: 入力パラメータ
+  status: text("status", { enum: ["pending", "processing", "completed", "failed"] })
+    .notNull()
+    .default("pending"),
+  result: text("result"), // JSON: 結果
+  resultSummary: text("result_summary"), // 通知用メッセージ
+  retryCount: integer("retry_count").notNull().default(0),
+  maxRetries: integer("max_retries").notNull().default(3),
+  errorMessage: text("error_message"),
+  lockedAt: text("locked_at"),
+  runAfter: text("run_after").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  completedAt: text("completed_at"),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type AIJobQueueJob = typeof aiJobQueue.$inferSelect;
+export type NewAIJobQueueJob = typeof aiJobQueue.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // Task Dependencies (タスク間依存関係)

@@ -36,7 +36,7 @@ export async function buildHourlySummaryPrompt(
   let result = `${template}\n\n---\n文字起こしデータ:\n${transcription}`;
 
   if (actionableTasks) {
-    result += `\n\n---\n着手すべきタスク:\n${actionableTasks}`;
+    result += `\n\n---\nタスク一覧:\n${actionableTasks}`;
   }
 
   return result;
@@ -70,7 +70,7 @@ export async function buildDailySummaryPrompt(
   let result = `${template}\n\n---\n時間帯別要約:\n${summaries}`;
 
   if (actionableTasks) {
-    result += `\n\n---\n着手すべきタスク:\n${actionableTasks}`;
+    result += `\n\n---\nタスク一覧:\n${actionableTasks}`;
   }
 
   return result;

@@ -11,6 +11,8 @@ import {
   Timer,
 } from "lucide-react";
 import { useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { SummaryFeedbackDialog } from "@/components/app/summary-feedback-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -271,7 +273,9 @@ function SummaryItem({
           </Button>
         </div>
       </div>
-      <pre className="whitespace-pre-wrap text-sm">{summary.content}</pre>
+      <div className="prose prose-sm max-w-none text-foreground dark:prose-invert">
+        <Markdown remarkPlugins={[remarkGfm]}>{summary.content}</Markdown>
+      </div>
     </div>
   );
 }

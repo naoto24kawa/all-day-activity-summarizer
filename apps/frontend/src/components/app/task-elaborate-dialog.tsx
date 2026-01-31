@@ -8,9 +8,19 @@
  */
 
 import type { ElaborateTaskResponse, Project, Task } from "@repo/types";
-import { AlertCircle, Loader2, Mic, MicOff, RefreshCw, Wand2 } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Mic,
+  MicOff,
+  RefreshCw,
+  Wand2,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +51,7 @@ interface TaskElaborateDialogProps {
   onClose: () => void;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complex dialog component
 export function TaskElaborateDialog({
   open,
   task,
@@ -56,6 +67,7 @@ export function TaskElaborateDialog({
   const [revisionInstruction, setRevisionInstruction] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
+  const [originalExpanded, setOriginalExpanded] = useState(false);
 
   // 音声認識 (入力フェーズ用)
   const {
@@ -85,6 +97,7 @@ export function TaskElaborateDialog({
       setReferencedFiles([]);
       setRevisionInstruction("");
       setError(null);
+      setOriginalExpanded(false);
     }
   }, [open]);
 
@@ -311,6 +324,33 @@ export function TaskElaborateDialog({
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto space-y-4 py-2">
+          {/* 元の説明 (折りたたみ可能) */}
+          {task.description && (
+            <Collapsible open={originalExpanded} onOpenChange={setOriginalExpanded}>
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex w-full items-center justify-start gap-2 px-2 text-muted-foreground hover:text-foreground"
+                >
+                  {originalExpanded ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                  <span className="text-sm font-medium">元の説明</span>
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="mt-2 rounded-md border bg-muted/50 p-3">
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                    {task.description}
+                  </p>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="elaboration">詳細化された説明</Label>
             <Textarea

@@ -258,17 +258,25 @@ interface ActionableTask {
   blockedBy: { id: number; title: string; status: string }[];
 }
 
+interface ActionableTasksResult {
+  tasks: ActionableTask[];
+  totalCount: number;
+}
+
 /**
- * 着手すべきタスク (承認済み・未完了) を優先度順・ブロック状態付きで取得
+ * 着手すべきタスク (承認済み・進行中) を優先度順・ブロック状態付きで取得
  */
-function fetchActionableTasks(db: AdasDatabase, limit = 10): ActionableTask[] {
-  const tasks = db
+function fetchActionableTasks(db: AdasDatabase, limit = 5): ActionableTasksResult {
+  // 全件カウント (accepted + in_progress)
+  const allTasks = db
     .select()
     .from(schema.tasks)
-    .where(eq(schema.tasks.status, "accepted"))
+    .where(inArray(schema.tasks.status, ["accepted", "in_progress"]))
     .orderBy(desc(schema.tasks.priority), desc(schema.tasks.acceptedAt))
-    .limit(limit)
     .all();
+
+  const totalCount = allTasks.length;
+  const tasks = allTasks.slice(0, limit);
 
   const result: ActionableTask[] = [];
 
@@ -305,7 +313,7 @@ function fetchActionableTasks(db: AdasDatabase, limit = 10): ActionableTask[] {
   }
 
   // ブロックされていないタスクを先に、次に優先度順
-  return result.sort((a, b) => {
+  const sortedTasks = result.sort((a, b) => {
     if (a.isBlocked !== b.isBlocked) {
       return a.isBlocked ? 1 : -1;
     }
@@ -314,32 +322,62 @@ function fetchActionableTasks(db: AdasDatabase, limit = 10): ActionableTask[] {
     const bPriority = priorityOrder[b.task.priority as keyof typeof priorityOrder] ?? 1;
     return aPriority - bPriority;
   });
+
+  return { tasks: sortedTasks, totalCount };
 }
 
 /**
- * 着手すべきタスクをテキスト形式に変換
+ * 着手すべきタスクをテキスト形式に変換 (プロジェクト毎にグループ化)
  */
-function formatActionableTasks(actionableTasks: ActionableTask[]): string {
+function formatActionableTasks(
+  result: ActionableTasksResult,
+  projectNameMap: Map<number | null, string>,
+): string {
+  const { tasks: actionableTasks, totalCount } = result;
+
   if (actionableTasks.length === 0) {
     return "";
   }
 
   const lines: string[] = [];
-  const blockedCount = actionableTasks.filter((t) => t.isBlocked).length;
-  const availableCount = actionableTasks.length - blockedCount;
+  const displayCount = actionableTasks.length;
 
-  lines.push(`${actionableTasks.length}件のタスクがあります。`);
-  if (blockedCount > 0) {
-    lines.push(`(${availableCount}件が着手可能、${blockedCount}件がブロック中)`);
+  // 5件以上の場合は全体件数も表示
+  if (totalCount > displayCount) {
+    lines.push(`全${totalCount}件中${displayCount}件を表示`);
+    lines.push("");
   }
-  lines.push("");
 
-  for (const { task, isBlocked, blockedBy } of actionableTasks) {
-    const blockedStatus = isBlocked ? " [BLOCKED]" : "";
-    const priorityLabel = task.priority ? `[${task.priority}]` : "";
-    lines.push(`- ${priorityLabel}${blockedStatus} ${task.title}`);
-    if (isBlocked && blockedBy.length > 0) {
-      lines.push(`  ブロッカー: ${blockedBy.map((b) => `#${b.id} ${b.title}`).join(", ")}`);
+  // プロジェクト毎にグループ化
+  const tasksByProject = new Map<number | null, ActionableTask[]>();
+  for (const actionableTask of actionableTasks) {
+    const projectId = actionableTask.task.projectId;
+    if (!tasksByProject.has(projectId)) {
+      tasksByProject.set(projectId, []);
+    }
+    tasksByProject.get(projectId)!.push(actionableTask);
+  }
+
+  // プロジェクトIDでソート (nullは最後)
+  const sortedProjectIds = Array.from(tasksByProject.keys()).sort((a, b) => {
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return a - b;
+  });
+
+  for (const projectId of sortedProjectIds) {
+    const projectTasks = tasksByProject.get(projectId)!;
+    const projectName = projectNameMap.get(projectId) ?? "その他";
+    lines.push(`### ${projectName}`);
+
+    for (const { task, isBlocked, blockedBy } of projectTasks) {
+      const blockedStatus = isBlocked ? " [BLOCKED]" : "";
+      const statusLabel = task.status === "in_progress" ? "[進行中]" : "";
+      const priorityLabel = task.priority ? `[${task.priority}]` : "";
+      lines.push(`- ${priorityLabel}${statusLabel}${blockedStatus} ${task.title}`);
+      if (isBlocked && blockedBy.length > 0) {
+        lines.push(`  ブロッカー: ${blockedBy.map((b) => `#${b.id} ${b.title}`).join(", ")}`);
+      }
     }
   }
 
@@ -787,7 +825,7 @@ export async function generatePomodoroSummary(
 
   // 着手すべきタスクを取得してプロンプトに追加
   const actionableTasks = fetchActionableTasks(db, 5);
-  const actionableTasksText = formatActionableTasks(actionableTasks);
+  const actionableTasksText = formatActionableTasks(actionableTasks, projectNameMap);
 
   const prompt = await buildHourlySummaryPrompt(activityText, db, actionableTasksText || undefined);
   const content = await generateSummary(prompt);
@@ -843,6 +881,10 @@ export async function generateHourlySummary(
   const startTime = `${date}T${hh}:00:00`;
   const endTime = `${date}T${hh}:59:59`;
 
+  // プロジェクト名マップを取得
+  const projects = fetchActiveProjects(db);
+  const projectNameMap = buildProjectNameMap(projects);
+
   // Prefer aggregating pomodoro summaries if they exist
   const pomodoroSummaries = db
     .select()
@@ -863,7 +905,7 @@ export async function generateHourlySummary(
 
     // 着手すべきタスクを取得してプロンプトに追加
     const actionableTasks = fetchActionableTasks(db, 5);
-    const actionableTasksText = formatActionableTasks(actionableTasks);
+    const actionableTasksText = formatActionableTasks(actionableTasks, projectNameMap);
 
     const prompt = await buildHourlySummaryPrompt(
       summariesText,
@@ -910,7 +952,6 @@ export async function generateHourlySummary(
     learnings,
     githubItems,
     githubComments,
-    projectNameMap,
   } = fetchActivityData(db, date, startTime, endTime);
 
   const hasData =
@@ -942,7 +983,7 @@ export async function generateHourlySummary(
 
   // 着手すべきタスクを取得してプロンプトに追加
   const hourlyActionableTasks = fetchActionableTasks(db, 5);
-  const hourlyActionableTasksText = formatActionableTasks(hourlyActionableTasks);
+  const hourlyActionableTasksText = formatActionableTasks(hourlyActionableTasks, projectNameMap);
 
   const prompt = await buildHourlySummaryPrompt(
     activityText,
@@ -1002,13 +1043,17 @@ export async function generateDailySummary(db: AdasDatabase, date: string): Prom
     return null;
   }
 
+  // プロジェクト名マップを取得
+  const projects = fetchActiveProjects(db);
+  const projectNameMap = buildProjectNameMap(projects);
+
   const summariesText = hourlySummaries
     .map((s) => `### ${s.periodStart} - ${s.periodEnd}\n${s.content}`)
     .join("\n\n");
 
   // 着手すべきタスクを取得してプロンプトに追加
-  const actionableTasks = fetchActionableTasks(db, 10);
-  const actionableTasksText = formatActionableTasks(actionableTasks);
+  const actionableTasks = fetchActionableTasks(db, 5);
+  const actionableTasksText = formatActionableTasks(actionableTasks, projectNameMap);
 
   const prompt = await buildDailySummaryPrompt(summariesText, db, actionableTasksText || undefined);
   const content = await generateSummary(prompt);

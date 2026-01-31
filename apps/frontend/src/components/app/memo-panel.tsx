@@ -158,7 +158,8 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // IME変換中は送信しない
     if (e.nativeEvent.isComposing) return;
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Cmd+Enter (Mac) / Ctrl+Enter (Windows) で送信
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
       handleSend();
     }
@@ -329,7 +330,7 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="メモを入力... (Enter で送信, Shift+Enter で改行)"
+              placeholder="メモを入力... (Cmd+Enter で送信)"
               className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               rows={2}
               disabled={sending}
@@ -417,7 +418,8 @@ function MemoItem({ memo, projects, onUpdate, onDelete }: MemoItemProps) {
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Cmd+Enter (Mac) / Ctrl+Enter (Windows) で保存
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
       handleSave();
     }

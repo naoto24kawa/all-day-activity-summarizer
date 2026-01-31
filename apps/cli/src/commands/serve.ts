@@ -3,6 +3,7 @@ import { setupFileLogger } from "@repo/core";
 import { createDatabase } from "@repo/db";
 import type { Command } from "commander";
 import consola from "consola";
+import { startAIJobScheduler } from "../ai-job/scheduler.js";
 import { startClaudeCodeSystem } from "../claude-code/scheduler.js";
 import type { AdasConfig } from "../config.js";
 import { loadConfig } from "../config.js";
@@ -104,5 +105,8 @@ export function registerServeCommand(program: Command): void {
 
       // Start Prompt Improvement scheduler
       startPromptImprovementScheduler(db);
+
+      // Start AI Job scheduler
+      startAIJobScheduler(db, config);
     });
 }

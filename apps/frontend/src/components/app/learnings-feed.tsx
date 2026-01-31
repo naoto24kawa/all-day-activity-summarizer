@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -608,7 +609,7 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
         {/* 展開時: Markdown コンテンツ + タグ詳細 + AI説明 */}
         <CollapsibleContent className="mt-3 space-y-3">
           <div className="prose prose-sm max-w-none text-muted-foreground dark:prose-invert">
-            <Markdown>{learning.content}</Markdown>
+            <Markdown remarkPlugins={[remarkGfm]}>{learning.content}</Markdown>
           </div>
 
           {tags.length > 0 && (
@@ -634,7 +635,7 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
 
               {/* 詳細説明 */}
               <div className="prose prose-sm max-w-none text-yellow-900 dark:text-yellow-100 dark:prose-invert mb-4">
-                <Markdown>{explanation.explanation}</Markdown>
+                <Markdown remarkPlugins={[remarkGfm]}>{explanation.explanation}</Markdown>
               </div>
 
               {/* 重要ポイント */}
@@ -683,7 +684,7 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
                         key={`example-${idx}`}
                         className="prose prose-sm max-w-none text-yellow-900 dark:text-yellow-100 dark:prose-invert bg-yellow-100/50 dark:bg-yellow-800/30 p-2 rounded"
                       >
-                        <Markdown>{example}</Markdown>
+                        <Markdown remarkPlugins={[remarkGfm]}>{example}</Markdown>
                       </div>
                     ))}
                   </div>

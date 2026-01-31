@@ -11,6 +11,7 @@ import { createExtractTermsRouter } from "./routes/extract-terms.js";
 import { createHealthRouter } from "./routes/health.js";
 import { createInterpretRouter } from "./routes/interpret.js";
 import { createLogsRouter } from "./routes/logs.js";
+import { createMatchSlackChannelsRouter } from "./routes/match-slack-channels.js";
 import { createSuggestMemoTagsRouter } from "./routes/suggest-memo-tags.js";
 import { createSummarizeRouter } from "./routes/summarize.js";
 import { createTranscribeRouter } from "./routes/transcribe.js";
@@ -32,6 +33,7 @@ export function createWorkerApp() {
   app.route("/rpc/check-completion", createCheckCompletionRouter());
   app.route("/rpc/check-duplicates", createCheckDuplicatesRouter());
   app.route("/rpc/suggest-memo-tags", createSuggestMemoTagsRouter());
+  app.route("/rpc/match-slack-channels", createMatchSlackChannelsRouter());
   app.route("/rpc/logs", createLogsRouter());
   app.route("/rpc/health", createHealthRouter());
 

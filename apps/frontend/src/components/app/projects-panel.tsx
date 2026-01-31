@@ -5,11 +5,20 @@
  */
 
 import type { Project, ProjectStats } from "@repo/types";
-import { FolderKanban, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FolderKanban,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +46,7 @@ export function ProjectsPanel() {
     autoDetect,
   } = useProjects(false); // 全プロジェクトを取得
 
+  const [isOpen, setIsOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [autoDetectResult, setAutoDetectResult] = useState<{
@@ -100,73 +110,91 @@ export function ProjectsPanel() {
 
   return (
     <>
-      <Card className="flex min-h-0 flex-col overflow-hidden">
-        <CardHeader className="shrink-0">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <FolderKanban className="h-5 w-5 text-indigo-500" />
-              Projects
-              {projects.length > 0 && (
-                <Badge variant="secondary" className="ml-1">
-                  {projects.length}
-                </Badge>
-              )}
-            </CardTitle>
-            <div className="flex gap-1">
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={handleAutoDetect}
-                disabled={autoDetecting}
-                title="自動検出"
-                className="h-8 w-8"
-              >
-                <Search className={`h-4 w-4 ${autoDetecting ? "animate-pulse" : ""}`} />
-              </Button>
-              <Button
-                size="icon"
-                onClick={() => setCreateDialogOpen(true)}
-                title="新規作成"
-                className="h-8 w-8"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          <CardDescription>
-            プロジェクトを管理します。タスクや学びをプロジェクトに紐付けできます。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex min-h-0 flex-1 flex-col">
-          {error && <p className="mb-4 shrink-0 text-sm text-destructive">{error}</p>}
-
-          {autoDetectResult && (
-            <p className="mb-4 shrink-0 text-sm text-muted-foreground">
-              {autoDetectResult.detected} 件検出、{autoDetectResult.created} 件作成しました
-            </p>
-          )}
-
-          {projects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              プロジェクトがありません。「新規作成」または「自動検出」でプロジェクトを追加してください。
-            </p>
-          ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <div className="space-y-3">
-                {projects.map((project) => (
-                  <ProjectItem
-                    key={project.id}
-                    project={project}
-                    stats={projectStats[project.id]}
-                    onEdit={() => setEditingProject(project)}
-                    onDelete={() => handleDelete(project)}
-                  />
-                ))}
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <Card className="flex min-h-0 flex-col overflow-hidden">
+          <CollapsibleTrigger asChild>
+            <CardHeader className="shrink-0 cursor-pointer select-none hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  {isOpen ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  <FolderKanban className="h-5 w-5 text-indigo-500" />
+                  Projects
+                  {projects.length > 0 && (
+                    <Badge variant="secondary" className="ml-1">
+                      {projects.length}
+                    </Badge>
+                  )}
+                </CardTitle>
+                <div
+                  className="flex gap-1"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={handleAutoDetect}
+                    disabled={autoDetecting}
+                    title="自動検出"
+                    className="h-8 w-8"
+                  >
+                    <Search className={`h-4 w-4 ${autoDetecting ? "animate-pulse" : ""}`} />
+                  </Button>
+                  <Button
+                    size="icon"
+                    onClick={() => setCreateDialogOpen(true)}
+                    title="新規作成"
+                    className="h-8 w-8"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              {!isOpen && (
+                <CardDescription className="mt-1 text-xs">クリックして展開</CardDescription>
+              )}
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="flex min-h-0 flex-1 flex-col">
+              <CardDescription className="mb-3">
+                プロジェクトを管理します。タスクや学びをプロジェクトに紐付けできます。
+              </CardDescription>
+              {error && <p className="mb-4 shrink-0 text-sm text-destructive">{error}</p>}
+
+              {autoDetectResult && (
+                <p className="mb-4 shrink-0 text-sm text-muted-foreground">
+                  {autoDetectResult.detected} 件検出、{autoDetectResult.created} 件作成しました
+                </p>
+              )}
+
+              {projects.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  プロジェクトがありません。「新規作成」または「自動検出」でプロジェクトを追加してください。
+                </p>
+              ) : (
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <div className="space-y-3">
+                    {projects.map((project) => (
+                      <ProjectItem
+                        key={project.id}
+                        project={project}
+                        stats={projectStats[project.id]}
+                        onEdit={() => setEditingProject(project)}
+                        onDelete={() => handleDelete(project)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* 新規作成ダイアログ */}
       <ProjectDialog

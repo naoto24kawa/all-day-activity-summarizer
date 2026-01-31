@@ -65,6 +65,7 @@ export function useTasks() {
 
   // 抽出関数のファクトリー (重複コード削減)
   type ExtractResult = { extracted: number; tasks: Task[] };
+  type AsyncExtractResult = { jobId: number; status: string };
 
   const createExtractFn = useCallback(
     <T extends object>(endpoint: string) =>
@@ -74,6 +75,15 @@ export function useTasks() {
         return result;
       },
     [fetchTasks],
+  );
+
+  const createAsyncExtractFn = useCallback(
+    <T extends object>(endpoint: string) =>
+      async (options?: T): Promise<AsyncExtractResult> => {
+        const result = await postAdasApi<AsyncExtractResult>(endpoint, options ?? {});
+        return result;
+      },
+    [],
   );
 
   const extractTasks = useCallback(
@@ -98,6 +108,33 @@ export function useTasks() {
     (options?: { date?: string }) =>
       createExtractFn<{ date?: string }>("/api/tasks/extract-memos")(options),
     [createExtractFn],
+  );
+
+  // 非同期版: ジョブをキューに登録して即座にレスポンスを返す
+  const extractTasksAsync = useCallback(
+    (options?: { date?: string; messageIds?: number[] }) =>
+      createAsyncExtractFn<{ date?: string; messageIds?: number[] }>("/api/tasks/extract/async")(
+        options,
+      ),
+    [createAsyncExtractFn],
+  );
+
+  const extractGitHubTasksAsync = useCallback(
+    (options?: { date?: string }) =>
+      createAsyncExtractFn<{ date?: string }>("/api/tasks/extract-github/async")(options),
+    [createAsyncExtractFn],
+  );
+
+  const extractGitHubCommentTasksAsync = useCallback(
+    (options?: { date?: string }) =>
+      createAsyncExtractFn<{ date?: string }>("/api/tasks/extract-github-comments/async")(options),
+    [createAsyncExtractFn],
+  );
+
+  const extractMemoTasksAsync = useCallback(
+    (options?: { date?: string }) =>
+      createAsyncExtractFn<{ date?: string }>("/api/tasks/extract-memos/async")(options),
+    [createAsyncExtractFn],
   );
 
   const updateBatchTasks = useCallback(
@@ -169,6 +206,10 @@ export function useTasks() {
     extractGitHubTasks,
     extractGitHubCommentTasks,
     extractMemoTasks,
+    extractTasksAsync,
+    extractGitHubTasksAsync,
+    extractGitHubCommentTasksAsync,
+    extractMemoTasksAsync,
     detectDuplicates,
     createMergeTask,
     elaborateTask,

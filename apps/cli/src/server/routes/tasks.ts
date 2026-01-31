@@ -26,6 +26,7 @@ import {
 import consola from "consola";
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
+import { enqueueJob } from "../../ai-job/queue.js";
 import { loadConfig } from "../../config";
 import { getItemState } from "../../github/client";
 import { getTodayDateString } from "../../utils/date";
@@ -935,6 +936,27 @@ export function createTasksRouter(db: AdasDatabase) {
   });
 
   /**
+   * POST /api/tasks/extract/async
+   *
+   * Slack メッセージからタスクを抽出 (非同期版)
+   * ジョブをキューに登録して即座にレスポンスを返す
+   * Body: { date?: string, messageIds?: number[] }
+   */
+  router.post("/extract/async", async (c) => {
+    const body = await c.req.json<{
+      date?: string;
+      messageIds?: number[];
+    }>();
+
+    const jobId = enqueueJob(db, "task-extract-slack", {
+      date: body.date,
+      messageIds: body.messageIds,
+    });
+
+    return c.json({ jobId, status: "pending" }, 202);
+  });
+
+  /**
    * POST /api/tasks/extract-github
    *
    * GitHub Items (Issues/PRs) からタスクを抽出
@@ -1057,6 +1079,22 @@ export function createTasksRouter(db: AdasDatabase) {
       extracted: createdTasks.length,
       tasks: createdTasks,
     });
+  });
+
+  /**
+   * POST /api/tasks/extract-github/async
+   *
+   * GitHub Items からタスクを抽出 (非同期版)
+   * Body: { date?: string }
+   */
+  router.post("/extract-github/async", async (c) => {
+    const body = await c.req.json<{ date?: string }>();
+
+    const jobId = enqueueJob(db, "task-extract-github", {
+      date: body.date,
+    });
+
+    return c.json({ jobId, status: "pending" }, 202);
   });
 
   /**
@@ -1201,6 +1239,22 @@ export function createTasksRouter(db: AdasDatabase) {
   });
 
   /**
+   * POST /api/tasks/extract-github-comments/async
+   *
+   * GitHub Comments からタスクを抽出 (非同期版)
+   * Body: { date?: string }
+   */
+  router.post("/extract-github-comments/async", async (c) => {
+    const body = await c.req.json<{ date?: string }>();
+
+    const jobId = enqueueJob(db, "task-extract-github-comment", {
+      date: body.date,
+    });
+
+    return c.json({ jobId, status: "pending" }, 202);
+  });
+
+  /**
    * POST /api/tasks/extract-memos
    *
    * メモからタスクを抽出
@@ -1307,6 +1361,22 @@ export function createTasksRouter(db: AdasDatabase) {
       extracted: createdTasks.length,
       tasks: createdTasks,
     });
+  });
+
+  /**
+   * POST /api/tasks/extract-memos/async
+   *
+   * メモからタスクを抽出 (非同期版)
+   * Body: { date?: string }
+   */
+  router.post("/extract-memos/async", async (c) => {
+    const body = await c.req.json<{ date?: string }>();
+
+    const jobId = enqueueJob(db, "task-extract-memo", {
+      date: body.date,
+    });
+
+    return c.json({ jobId, status: "pending" }, 202);
   });
 
   /**

@@ -1,4 +1,4 @@
-import { ChevronDown, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, Users } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ export function SlackUsersPanel() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState("");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
 
   const handleStartEdit = (userId: string, currentName: string | null) => {
     setEditingId(userId);
@@ -87,14 +87,16 @@ export function SlackUsersPanel() {
         <CollapsibleTrigger asChild>
           <CardHeader className="cursor-pointer select-none hover:bg-muted/50 transition-colors">
             <CardTitle className="flex items-center gap-2">
+              {isOpen ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              )}
               <Users className="h-5 w-5 text-[#4A154B]" />
               Slack Users
               <Badge variant="secondary" className="ml-1">
                 {users.length}
               </Badge>
-              <ChevronDown
-                className={`ml-auto h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
-              />
             </CardTitle>
           </CardHeader>
         </CollapsibleTrigger>

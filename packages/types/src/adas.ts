@@ -959,7 +959,8 @@ export type AiProcessType =
   | "check-completion"
   | "extract-terms"
   | "analyze-profile"
-  | "suggest-tags";
+  | "suggest-tags"
+  | "match-channels";
 
 /** AI処理ログのステータス */
 export type AiProcessStatus = "success" | "error";
@@ -1012,4 +1013,102 @@ export interface ElaborateTaskResponse {
   codebaseReferenced: boolean;
   /** 参照したファイルパス */
   referencedFiles?: string[];
+}
+
+// ========== AI Job Queue 型定義 ==========
+
+/** AIジョブタイプ */
+export type AIJobType =
+  | "task-extract-slack"
+  | "task-extract-github"
+  | "task-extract-github-comment"
+  | "task-extract-memo"
+  | "learning-extract"
+  | "profile-analyze";
+
+/** AIジョブステータス */
+export type AIJobStatus = "pending" | "processing" | "completed" | "failed";
+
+/** AIジョブ */
+export interface AIJob {
+  id: number;
+  jobType: AIJobType;
+  params: string | null; // JSON
+  status: AIJobStatus;
+  result: string | null; // JSON
+  resultSummary: string | null;
+  retryCount: number;
+  maxRetries: number;
+  errorMessage: string | null;
+  lockedAt: string | null;
+  runAfter: string;
+  createdAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+}
+
+/** AIジョブ登録リクエスト */
+export interface CreateAIJobRequest {
+  jobType: AIJobType;
+  params?: Record<string, unknown>;
+  runAfter?: string; // ISO8601, 省略時は即時実行
+}
+
+/** AIジョブ登録レスポンス */
+export interface CreateAIJobResponse {
+  jobId: number;
+  status: AIJobStatus;
+}
+
+/** AIジョブ統計 */
+export interface AIJobStats {
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+}
+
+/** SSEイベント: ジョブ完了 */
+export interface AIJobCompletedEvent {
+  jobId: number;
+  jobType: AIJobType;
+  status: AIJobStatus;
+  resultSummary: string | null;
+}
+
+// ========== Slack Channel Matching 型定義 ==========
+
+/** Slack チャンネル情報 (マッチング用) */
+export interface SlackChannelInfo {
+  channelId: string;
+  channelName: string;
+}
+
+/** プロジェクト情報 (マッチング用) */
+export interface ProjectInfo {
+  id: number;
+  name: string;
+  githubOwner: string | null;
+  githubRepo: string | null;
+}
+
+/** チャンネルとプロジェクトのマッチング結果 */
+export interface ChannelProjectMatch {
+  channelId: string;
+  channelName: string;
+  projectId: number;
+  projectName: string;
+  confidence: number;
+  reason: string;
+}
+
+/** RPC Match Slack Channels リクエスト */
+export interface RpcMatchSlackChannelsRequest {
+  channels: SlackChannelInfo[];
+  projects: ProjectInfo[];
+}
+
+/** RPC Match Slack Channels レスポンス */
+export interface RpcMatchSlackChannelsResponse {
+  matches: ChannelProjectMatch[];
 }

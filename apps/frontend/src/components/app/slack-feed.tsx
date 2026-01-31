@@ -17,12 +17,16 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Users,
 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -36,6 +40,7 @@ import { useConfig } from "@/hooks/use-config";
 import { useProjects } from "@/hooks/use-projects";
 import { useSlackChannels } from "@/hooks/use-slack-channels";
 import { useSlackMessages, useSlackUnreadCounts } from "@/hooks/use-slack-messages";
+import { useSlackUsers } from "@/hooks/use-slack-users";
 import { formatSlackTsJST } from "@/lib/date";
 
 interface SlackFeedProps {
@@ -50,6 +55,43 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
   const { counts } = useSlackUnreadCounts(date);
   const { projects } = useProjects();
   const { updateChannelProject, getChannelProjectId } = useSlackChannels();
+  const { users, loading: usersLoading, updateDisplayName, resetDisplayName } = useSlackUsers();
+
+  // Slack Users Popover state
+  const [usersPopoverOpen, setUsersPopoverOpen] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [userNameInput, setUserNameInput] = useState("");
+  const [pendingUserAction, setPendingUserAction] = useState<string | null>(null);
+
+  const handleStartUserEdit = (userId: string, currentName: string | null) => {
+    setEditingUserId(userId);
+    setUserNameInput(currentName ?? "");
+  };
+
+  const handleCancelUserEdit = () => {
+    setEditingUserId(null);
+    setUserNameInput("");
+  };
+
+  const handleSaveUserName = async (userId: string) => {
+    const newName = userNameInput.trim() || null;
+    setPendingUserAction(userId);
+    try {
+      await updateDisplayName(userId, newName);
+      handleCancelUserEdit();
+    } finally {
+      setPendingUserAction(null);
+    }
+  };
+
+  const handleResetUserName = async (userId: string) => {
+    setPendingUserAction(userId);
+    try {
+      await resetDisplayName(userId);
+    } finally {
+      setPendingUserAction(null);
+    }
+  };
 
   // 連携が無効な場合
   if (!configLoading && integrations && !integrations.slack.enabled) {
@@ -130,6 +172,126 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
               Mark all read
             </Button>
           )}
+          {/* Slack Users Popover */}
+          <Popover open={usersPopoverOpen} onOpenChange={setUsersPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" title="Slack Users">
+                <Users className="mr-1 h-3 w-3" />
+                Users
+                {users.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
+                    {users.length}
+                  </Badge>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-96 p-0" align="end">
+              <div className="border-b px-3 py-2">
+                <h4 className="font-medium text-sm">Slack Users</h4>
+                <p className="text-xs text-muted-foreground">
+                  表示名を編集してサマリの可読性を向上
+                </p>
+              </div>
+              {usersLoading ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">読み込み中...</div>
+              ) : users.length === 0 ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">
+                  ユーザーがいません
+                </div>
+              ) : (
+                <ScrollArea className="h-[300px]">
+                  <div className="space-y-2 p-2">
+                    {users.map((user) => (
+                      <div
+                        key={user.userId}
+                        className={`rounded-md border p-2 text-sm ${user.displayName ? "border-green-500/30 bg-green-50/50 dark:bg-green-950/10" : ""}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {editingUserId === user.userId ? (
+                            <Input
+                              value={userNameInput}
+                              onChange={(e) => setUserNameInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleSaveUserName(user.userId);
+                                if (e.key === "Escape") handleCancelUserEdit();
+                              }}
+                              placeholder={user.slackName ?? "表示名"}
+                              className="h-7 text-xs"
+                              disabled={pendingUserAction === user.userId}
+                              autoFocus
+                            />
+                          ) : (
+                            <>
+                              <span className="font-medium truncate">
+                                {user.displayName ?? user.slackName ?? user.userId}
+                              </span>
+                              {user.displayName && user.slackName && (
+                                <span className="text-xs text-muted-foreground">
+                                  ({user.slackName})
+                                </span>
+                              )}
+                            </>
+                          )}
+                          <Badge variant="outline" className="ml-auto shrink-0 text-xs">
+                            {user.messageCount}
+                          </Badge>
+                        </div>
+                        <div className="mt-1 flex items-center gap-1">
+                          {editingUserId === user.userId ? (
+                            <>
+                              <Button
+                                size="sm"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => handleSaveUserName(user.userId)}
+                                disabled={pendingUserAction === user.userId}
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-2 text-xs"
+                                onClick={handleCancelUserEdit}
+                                disabled={pendingUserAction === user.userId}
+                              >
+                                Cancel
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => handleStartUserEdit(user.userId, user.displayName)}
+                                disabled={pendingUserAction === user.userId}
+                              >
+                                Edit
+                              </Button>
+                              {user.displayName && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => handleResetUserName(user.userId)}
+                                  disabled={pendingUserAction === user.userId}
+                                >
+                                  Reset
+                                </Button>
+                              )}
+                            </>
+                          )}
+                          <span className="ml-auto text-xs font-mono text-muted-foreground truncate max-w-24">
+                            {user.userId}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </PopoverContent>
+          </Popover>
           <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
             <RefreshCw className="h-4 w-4" />
           </Button>

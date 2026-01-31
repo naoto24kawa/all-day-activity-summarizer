@@ -1,4 +1,5 @@
-import { Activity, Mic, MicOff, RefreshCw, Volume2, VolumeX } from "lucide-react";
+import type { AIJobStats } from "@repo/types";
+import { Activity, Bot, Mic, MicOff, RefreshCw, Volume2, VolumeX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +12,12 @@ import { useStatus } from "@/hooks/use-status";
 import { formatTimeJST } from "@/lib/date";
 import { LevelMeter } from "./level-meter";
 
-export function StatusPanel() {
+interface StatusPanelProps {
+  /** AI Job統計 (リアルタイム更新用) */
+  jobStats?: AIJobStats | null;
+}
+
+export function StatusPanel({ jobStats }: StatusPanelProps) {
   const { status, error, loading, refetch } = useStatus();
   const { micRecording, speakerRecording, togglingMic, togglingSpeaker, toggleMic, toggleSpeaker } =
     useRecording();
@@ -78,6 +84,50 @@ export function StatusPanel() {
               : "N/A"}
           </dd>
         </dl>
+
+        {/* AI Job Queue */}
+        {jobStats && (
+          <div className="space-y-2 border-t pt-3">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Bot className="size-3" />
+              AI Job Queue
+            </div>
+            <dl className="grid grid-cols-2 gap-2 text-sm">
+              <dt className="text-muted-foreground">Processing</dt>
+              <dd>
+                {jobStats.processing > 0 ? (
+                  <Badge variant="secondary" className="text-xs">
+                    {jobStats.processing}
+                  </Badge>
+                ) : (
+                  "0"
+                )}
+              </dd>
+              <dt className="text-muted-foreground">Pending</dt>
+              <dd>
+                {jobStats.pending > 0 ? (
+                  <Badge variant="outline" className="text-xs">
+                    {jobStats.pending}
+                  </Badge>
+                ) : (
+                  "0"
+                )}
+              </dd>
+              <dt className="text-muted-foreground">Completed</dt>
+              <dd>{jobStats.completed}</dd>
+              <dt className="text-muted-foreground">Failed</dt>
+              <dd>
+                {jobStats.failed > 0 ? (
+                  <Badge variant="destructive" className="text-xs">
+                    {jobStats.failed}
+                  </Badge>
+                ) : (
+                  "0"
+                )}
+              </dd>
+            </dl>
+          </div>
+        )}
 
         {hasNativeRecording && (
           <div className="space-y-3 border-t pt-3">

@@ -11,14 +11,14 @@
     "start": "bun run src/index.ts"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.6",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@repo/core": "workspace:*",
+    "@repo/db": "workspace:*",
+    "@repo/types": "workspace:*",
     "commander": "^14.0.0",
     "consola": "^3.4.2",
-    "@repo/core": "workspace:*",
-    "@repo/types": "workspace:*",
-    "@repo/db": "workspace:*",
-    "hono": "^4.10.6",
-    "@hono/node-server": "^1.19.6",
-    "drizzle-orm": "^0.44.2"
+    "drizzle-orm": "^0.44.2",
+    "hono": "^4.10.6"
   }
 }

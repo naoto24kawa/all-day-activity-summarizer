@@ -29,10 +29,9 @@ import {
   FileText,
   Filter,
   FolderGit2,
+  FolderKanban,
   Github,
   GitMerge,
-  Layers,
-  List,
   MessageSquare,
   MessageSquareMore,
   Mic,
@@ -40,6 +39,7 @@ import {
   Pause,
   Pencil,
   Play,
+  Plus,
   RefreshCw,
   Search,
   Signal,
@@ -53,6 +53,7 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,7 +72,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -124,6 +127,7 @@ function getTaskStyle(task: Task, isSelected: boolean, isSuggested?: boolean): s
   return TASK_STATUS_STYLES[task.status] ?? "";
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complex UI component with many states
 export function TasksPanel({ date, className }: TasksPanelProps) {
   const {
     tasks,
@@ -133,16 +137,24 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     updateTask,
     updateBatchTasks,
     deleteTask,
-    extractTasks,
-    extractGitHubTasks,
-    extractGitHubCommentTasks,
-    extractMemoTasks,
+    extractTasksAsync,
+    extractGitHubTasksAsync,
+    extractGitHubCommentTasksAsync,
+    extractMemoTasksAsync,
     detectDuplicates,
     createMergeTask,
     elaborateTask,
   } = useTasks();
   const { stats } = useTaskStats(date);
-  const { projects } = useProjects();
+  const {
+    projects,
+    loading: projectsLoading,
+    autoDetecting,
+    createProject,
+    updateProject,
+    deleteProject,
+    autoDetect,
+  } = useProjects(false);
   const { permission, requestPermission, notifyHighPriorityTask } = useNotifications();
   const [extracting, setExtracting] = useState(false);
 
@@ -153,8 +165,16 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
 
   const [sourceFilter, setSourceFilter] = useState<TaskSourceType | "all">("all");
   const [projectFilter, setProjectFilter] = useState<number | "all" | "none">("all");
-  const [groupByProject, setGroupByProject] = useState(false);
   const [checkingCompletion, setCheckingCompletion] = useState(false);
+
+  // Projects Popover state
+  const [projectsPopoverOpen, setProjectsPopoverOpen] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<number | null>(null);
+  const [projectNameInput, setProjectNameInput] = useState("");
+  const [projectPathInput, setProjectPathInput] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectPath, setNewProjectPath] = useState("");
 
   // 一括操作モード
   const [selectionMode, setSelectionMode] = useState(false);
@@ -187,6 +207,48 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   };
 
   const getSourceLabel = (sourceType: TaskSourceType) => SOURCE_LABELS[sourceType] ?? "Slack";
+
+  // Projects Popover handlers
+  const handleStartProjectEdit = (project: Project) => {
+    setEditingProjectId(project.id);
+    setProjectNameInput(project.name);
+    setProjectPathInput(project.path ?? "");
+  };
+
+  const handleCancelProjectEdit = () => {
+    setEditingProjectId(null);
+    setProjectNameInput("");
+    setProjectPathInput("");
+  };
+
+  const handleSaveProject = async (projectId: number) => {
+    if (!projectNameInput.trim()) return;
+    await updateProject(projectId, {
+      name: projectNameInput.trim(),
+      path: projectPathInput.trim() || undefined,
+    });
+    handleCancelProjectEdit();
+  };
+
+  const handleDeleteProject = async (project: Project) => {
+    if (!window.confirm(`「${project.name}」を削除しますか?`)) return;
+    await deleteProject(project.id);
+  };
+
+  const handleCreateProject = async () => {
+    if (!newProjectName.trim()) return;
+    await createProject({
+      name: newProjectName.trim(),
+      path: newProjectPath.trim() || undefined,
+    });
+    setCreatingProject(false);
+    setNewProjectName("");
+    setNewProjectPath("");
+  };
+
+  const handleAutoDetect = async () => {
+    await autoDetect();
+  };
 
   // Filter tasks by source type and project
   const filterTasks = (taskList: Task[]) => {
@@ -241,13 +303,12 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     }
   };
 
+  // 非同期版: ジョブをキューに登録 (結果はSSE通知で受け取る)
   const handleExtractSlack = async () => {
     setExtracting(true);
     try {
-      const result = await extractTasks({ date });
-      if (result.tasks.length > 0) {
-        notifyHighPriorityTasks(result.tasks);
-      }
+      await extractTasksAsync({ date });
+      // ジョブ登録完了 - 実際の結果はSSE通知で受け取る
     } finally {
       setExtracting(false);
     }
@@ -256,10 +317,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const handleExtractGitHub = async () => {
     setExtracting(true);
     try {
-      const result = await extractGitHubTasks({ date });
-      if (result.tasks.length > 0) {
-        notifyHighPriorityTasks(result.tasks);
-      }
+      await extractGitHubTasksAsync({ date });
     } finally {
       setExtracting(false);
     }
@@ -268,10 +326,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const handleExtractGitHubComments = async () => {
     setExtracting(true);
     try {
-      const result = await extractGitHubCommentTasks({ date });
-      if (result.tasks.length > 0) {
-        notifyHighPriorityTasks(result.tasks);
-      }
+      await extractGitHubCommentTasksAsync({ date });
     } finally {
       setExtracting(false);
     }
@@ -280,10 +335,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const handleExtractMemos = async () => {
     setExtracting(true);
     try {
-      const result = await extractMemoTasks({ date });
-      if (result.tasks.length > 0) {
-        notifyHighPriorityTasks(result.tasks);
-      }
+      await extractMemoTasksAsync({ date });
     } finally {
       setExtracting(false);
     }
@@ -292,21 +344,14 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const handleExtractAll = async () => {
     setExtracting(true);
     try {
-      const [slackResult, githubResult, githubCommentResult, memoResult] = await Promise.all([
-        extractTasks({ date }),
-        extractGitHubTasks({ date }),
-        extractGitHubCommentTasks({ date }),
-        extractMemoTasks({ date }),
+      // 全ての抽出ジョブを並列でキューに登録
+      await Promise.all([
+        extractTasksAsync({ date }),
+        extractGitHubTasksAsync({ date }),
+        extractGitHubCommentTasksAsync({ date }),
+        extractMemoTasksAsync({ date }),
       ]);
-      const allTasks = [
-        ...slackResult.tasks,
-        ...githubResult.tasks,
-        ...githubCommentResult.tasks,
-        ...memoResult.tasks,
-      ];
-      if (allTasks.length > 0) {
-        notifyHighPriorityTasks(allTasks);
-      }
+      // ジョブ登録完了 - 実際の結果はSSE通知で受け取る
     } finally {
       setExtracting(false);
     }
@@ -601,6 +646,207 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 <Bell className="h-4 w-4 text-green-500" />
               </Button>
             )}
+            {/* Projects Popover */}
+            <Popover open={projectsPopoverOpen} onOpenChange={setProjectsPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" title="Projects">
+                  <FolderKanban className="mr-1 h-3 w-3" />
+                  Projects
+                  {projects.length > 0 && (
+                    <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
+                      {projects.length}
+                    </Badge>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-96 p-0" align="end">
+                <div className="flex items-center justify-between border-b px-3 py-2">
+                  <div>
+                    <h4 className="font-medium text-sm">Projects</h4>
+                    <p className="text-xs text-muted-foreground">
+                      タスクや学びをプロジェクトに紐付け
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      onClick={handleAutoDetect}
+                      disabled={autoDetecting}
+                      title="自動検出"
+                      className="h-7 w-7"
+                    >
+                      <Search className={`h-3 w-3 ${autoDetecting ? "animate-pulse" : ""}`} />
+                    </Button>
+                    <Button
+                      size="icon"
+                      onClick={() => setCreatingProject(true)}
+                      title="新規作成"
+                      className="h-7 w-7"
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+                {projectsLoading ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">読み込み中...</div>
+                ) : (
+                  <ScrollArea className="h-[300px]">
+                    <div className="space-y-2 p-2">
+                      {/* 新規作成フォーム */}
+                      {creatingProject && (
+                        <div className="rounded-md border border-primary p-2 space-y-2">
+                          <Input
+                            value={newProjectName}
+                            onChange={(e) => setNewProjectName(e.target.value)}
+                            placeholder="プロジェクト名"
+                            className="h-7 text-xs"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleCreateProject();
+                              if (e.key === "Escape") {
+                                setCreatingProject(false);
+                                setNewProjectName("");
+                                setNewProjectPath("");
+                              }
+                            }}
+                          />
+                          <Input
+                            value={newProjectPath}
+                            onChange={(e) => setNewProjectPath(e.target.value)}
+                            placeholder="パス (オプション)"
+                            className="h-7 text-xs"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleCreateProject();
+                              if (e.key === "Escape") {
+                                setCreatingProject(false);
+                                setNewProjectName("");
+                                setNewProjectPath("");
+                              }
+                            }}
+                          />
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={handleCreateProject}
+                              disabled={!newProjectName.trim()}
+                            >
+                              作成
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => {
+                                setCreatingProject(false);
+                                setNewProjectName("");
+                                setNewProjectPath("");
+                              }}
+                            >
+                              キャンセル
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      {projects.length === 0 && !creatingProject ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          プロジェクトがありません
+                        </div>
+                      ) : (
+                        projects.map((project) => (
+                          <div
+                            key={project.id}
+                            className={`rounded-md border p-2 text-sm ${!project.isActive ? "opacity-50" : ""}`}
+                          >
+                            {editingProjectId === project.id ? (
+                              <div className="space-y-2">
+                                <Input
+                                  value={projectNameInput}
+                                  onChange={(e) => setProjectNameInput(e.target.value)}
+                                  placeholder="プロジェクト名"
+                                  className="h-7 text-xs"
+                                  autoFocus
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleSaveProject(project.id);
+                                    if (e.key === "Escape") handleCancelProjectEdit();
+                                  }}
+                                />
+                                <Input
+                                  value={projectPathInput}
+                                  onChange={(e) => setProjectPathInput(e.target.value)}
+                                  placeholder="パス (オプション)"
+                                  className="h-7 text-xs"
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleSaveProject(project.id);
+                                    if (e.key === "Escape") handleCancelProjectEdit();
+                                  }}
+                                />
+                                <div className="flex gap-1">
+                                  <Button
+                                    size="sm"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => handleSaveProject(project.id)}
+                                    disabled={!projectNameInput.trim()}
+                                  >
+                                    保存
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={handleCancelProjectEdit}
+                                  >
+                                    キャンセル
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium truncate">{project.name}</span>
+                                  {!project.isActive && (
+                                    <Badge variant="outline" className="text-xs">
+                                      非アクティブ
+                                    </Badge>
+                                  )}
+                                </div>
+                                {project.path && (
+                                  <p
+                                    className="text-xs text-muted-foreground truncate"
+                                    title={project.path}
+                                  >
+                                    {project.path}
+                                  </p>
+                                )}
+                                <div className="mt-1 flex items-center gap-1">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => handleStartProjectEdit(project)}
+                                  >
+                                    編集
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                                    onClick={() => handleDeleteProject(project)}
+                                  >
+                                    削除
+                                  </Button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </ScrollArea>
+                )}
+              </PopoverContent>
+            </Popover>
             <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -718,28 +964,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 未分類 ({projectCount.get("none")})
               </Button>
             )}
-            {/* プロジェクト別表示トグル */}
-            <div className="ml-auto">
-              <Button
-                variant={groupByProject ? "default" : "outline"}
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => setGroupByProject(!groupByProject)}
-                title={groupByProject ? "リスト表示に切り替え" : "プロジェクト別表示に切り替え"}
-              >
-                {groupByProject ? (
-                  <>
-                    <Layers className="mr-1 h-3 w-3" />
-                    グループ表示
-                  </>
-                ) : (
-                  <>
-                    <List className="mr-1 h-3 w-3" />
-                    リスト表示
-                  </>
-                )}
-              </Button>
-            </div>
           </div>
         )}
 
@@ -990,7 +1214,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 onElaborate={openElaborateDialog}
-                groupByProject={groupByProject}
                 selectionMode={selectionMode}
                 selectedTaskIds={selectedTaskIds}
                 onToggleSelection={toggleTaskSelection}
@@ -1030,7 +1253,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 onDeleteTask={deleteTask}
                 onElaborate={openElaborateDialog}
                 suggestionTaskIds={suggestionTaskIds}
-                groupByProject={groupByProject}
                 selectionMode={selectionMode}
                 selectedTaskIds={selectedTaskIds}
                 onToggleSelection={toggleTaskSelection}
@@ -1044,7 +1266,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 onElaborate={openElaborateDialog}
-                groupByProject={groupByProject}
                 selectionMode={selectionMode}
                 selectedTaskIds={selectedTaskIds}
                 onToggleSelection={toggleTaskSelection}
@@ -1058,7 +1279,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 onElaborate={openElaborateDialog}
-                groupByProject={groupByProject}
                 selectionMode={selectionMode}
                 selectedTaskIds={selectedTaskIds}
                 onToggleSelection={toggleTaskSelection}
@@ -1071,7 +1291,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
-                groupByProject={groupByProject}
                 selectionMode={selectionMode}
                 selectedTaskIds={selectedTaskIds}
                 onToggleSelection={toggleTaskSelection}
@@ -1084,7 +1303,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
-                groupByProject={groupByProject}
                 selectionMode={selectionMode}
                 selectedTaskIds={selectedTaskIds}
                 onToggleSelection={toggleTaskSelection}
@@ -1180,7 +1398,6 @@ function TaskList({
   onDeleteTask,
   onElaborate,
   suggestionTaskIds,
-  groupByProject = false,
   selectionMode = false,
   selectedTaskIds,
   onToggleSelection,
@@ -1202,120 +1419,15 @@ function TaskList({
   onDeleteTask: (id: number) => Promise<void>;
   onElaborate?: (task: Task) => void;
   suggestionTaskIds?: Set<number>;
-  groupByProject?: boolean;
   selectionMode?: boolean;
   selectedTaskIds?: Set<number>;
   onToggleSelection?: (taskId: number) => void;
   onSelectAll?: () => void;
 }) {
-  // プロジェクト別折りたたみ状態を管理
-  const [collapsedProjects, setCollapsedProjects] = useState<Set<number | "none">>(new Set());
-
-  const toggleProjectCollapse = (projectId: number | "none") => {
-    setCollapsedProjects((prev) => {
-      const next = new Set(prev);
-      if (next.has(projectId)) {
-        next.delete(projectId);
-      } else {
-        next.add(projectId);
-      }
-      return next;
-    });
-  };
-
   if (tasks.length === 0) {
     return <p className="py-4 text-center text-sm text-muted-foreground">タスクはありません</p>;
   }
 
-  // グループ表示モードの場合
-  if (groupByProject) {
-    // タスクをプロジェクト別にグループ化
-    const tasksByProject = new Map<number | "none", Task[]>();
-    for (const task of tasks) {
-      const key = task.projectId ?? "none";
-      const existing = tasksByProject.get(key);
-      if (existing) {
-        existing.push(task);
-      } else {
-        tasksByProject.set(key, [task]);
-      }
-    }
-
-    // プロジェクトの順序を決定 (プロジェクト名順、未分類は最後)
-    const sortedProjectIds = Array.from(tasksByProject.keys()).sort((a, b) => {
-      if (a === "none") return 1;
-      if (b === "none") return -1;
-      const projectA = projects.find((p) => p.id === a);
-      const projectB = projects.find((p) => p.id === b);
-      return (projectA?.name ?? "").localeCompare(projectB?.name ?? "");
-    });
-
-    return (
-      <div className="h-full overflow-y-auto">
-        {/* 選択モード時の全選択ボタン */}
-        {selectionMode && onSelectAll && (
-          <div className="mb-2 flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-6 text-xs" onClick={onSelectAll}>
-              <CheckSquare className="mr-1 h-3 w-3" />
-              このタブを全選択 ({tasks.length})
-            </Button>
-          </div>
-        )}
-        <div className="space-y-3">
-          {sortedProjectIds.map((projectId) => {
-            const projectTasks = tasksByProject.get(projectId) ?? [];
-            const project = projectId !== "none" ? projects.find((p) => p.id === projectId) : null;
-            const projectName = project?.name ?? "未分類";
-            const isCollapsed = collapsedProjects.has(projectId);
-
-            return (
-              <div key={projectId} className="rounded-lg border">
-                {/* プロジェクトヘッダー (折りたたみトリガー) */}
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/50 transition-colors rounded-t-lg"
-                  onClick={() => toggleProjectCollapse(projectId)}
-                >
-                  {isCollapsed ? (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  )}
-                  <FolderGit2 className="h-4 w-4 text-blue-500" />
-                  <span className="font-medium text-sm">{projectName}</span>
-                  <Badge variant="secondary" className="ml-auto h-5 px-1.5 text-xs">
-                    {projectTasks.length}
-                  </Badge>
-                </button>
-
-                {/* タスクリスト (折りたたみ可能) */}
-                {!isCollapsed && (
-                  <div className="border-t px-2 py-2 space-y-2">
-                    {projectTasks.map((task) => (
-                      <TaskItem
-                        key={task.id}
-                        task={task}
-                        projects={projects}
-                        onUpdateTask={onUpdateTask}
-                        onDeleteTask={onDeleteTask}
-                        onElaborate={onElaborate}
-                        isSuggested={suggestionTaskIds?.has(task.id)}
-                        selectionMode={selectionMode}
-                        isSelected={selectedTaskIds?.has(task.id) ?? false}
-                        onToggleSelection={onToggleSelection}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  // リスト表示モード (従来の表示)
   return (
     <div className="h-full overflow-y-auto">
       {/* 選択モード時の全選択ボタン */}
@@ -1347,6 +1459,7 @@ function TaskList({
   );
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complex task item UI
 function TaskItem({
   task,
   projects,
@@ -1865,7 +1978,7 @@ function TaskItem({
               >
                 {task.description ? (
                   <div className="prose prose-sm max-w-none text-muted-foreground dark:prose-invert">
-                    <Markdown>{task.description}</Markdown>
+                    <Markdown remarkPlugins={[remarkGfm]}>{task.description}</Markdown>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground/50 italic">
