@@ -5,7 +5,7 @@ import type {
   SegmentFeedbackResponse,
 } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
-import { fetchAdasApi, postAdasApi } from "./use-adas-api";
+import { fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
 export function useSegmentFeedbacks(date: string) {
   const [feedbacks, setFeedbacks] = useState<SegmentFeedback[]>([]);

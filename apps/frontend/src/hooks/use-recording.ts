@@ -1,6 +1,6 @@
 import type { RecordingSourceResponse, RecordingStatusResponse } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
-import { fetchAdasApi, postAdasApi } from "./use-adas-api";
+import { fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
 export function useRecording(pollInterval = 5_000) {
   const [micRecording, setMicRecording] = useState<boolean | null>(null);

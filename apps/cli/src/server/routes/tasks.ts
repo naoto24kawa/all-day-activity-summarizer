@@ -96,6 +96,28 @@ interface ExtractResult {
   tasks: ExtractedTask[];
 }
 
+/**
+ * タスク更新用の型定義
+ */
+interface TaskUpdates {
+  updatedAt: string;
+  projectId?: number | null;
+  priority?: "high" | "medium" | "low" | null;
+  status?: TaskStatus;
+  acceptedAt?: string;
+  rejectedAt?: string;
+  rejectReason?: string;
+  startedAt?: string;
+  pausedAt?: string;
+  pauseReason?: string;
+  completedAt?: string;
+  dueDate?: string | null;
+  title?: string;
+  description?: string;
+  originalTitle?: string | null;
+  originalDescription?: string | null;
+}
+
 export function createTasksRouter(db: AdasDatabase) {
   const router = new Hono();
 
@@ -578,14 +600,15 @@ export function createTasksRouter(db: AdasDatabase) {
   /**
    * PATCH /api/tasks/batch
    *
-   * 一括更新 (ステータス、プロジェクト等)
-   * Body: { ids: number[], status?: TaskStatus, projectId?: number | null, reason?: string }
+   * 一括更新 (ステータス、プロジェクト、優先度等)
+   * Body: { ids: number[], status?: TaskStatus, projectId?: number | null, priority?: "high" | "medium" | "low" | null, reason?: string }
    */
   router.patch("/batch", async (c) => {
     const body = await c.req.json<{
       ids: number[];
       status?: TaskStatus;
       projectId?: number | null;
+      priority?: "high" | "medium" | "low" | null;
       reason?: string;
     }>();
 
@@ -593,19 +616,24 @@ export function createTasksRouter(db: AdasDatabase) {
       return c.json({ error: "ids is required" }, 400);
     }
 
-    // status も projectId もない場合はエラー
-    if (body.status === undefined && body.projectId === undefined) {
-      return c.json({ error: "status or projectId is required" }, 400);
+    // いずれも指定がない場合はエラー
+    if (body.status === undefined && body.projectId === undefined && body.priority === undefined) {
+      return c.json({ error: "status, projectId, or priority is required" }, 400);
     }
 
     const now = new Date().toISOString();
-    const updates: Record<string, unknown> = {
+    const updates: TaskUpdates = {
       updatedAt: now,
     };
 
     // projectId の更新
     if (body.projectId !== undefined) {
       updates.projectId = body.projectId;
+    }
+
+    // priority の更新
+    if (body.priority !== undefined) {
+      updates.priority = body.priority;
     }
 
     // status の更新
@@ -680,7 +708,7 @@ export function createTasksRouter(db: AdasDatabase) {
     }
 
     const now = new Date().toISOString();
-    const updates: Record<string, unknown> = {
+    const updates: TaskUpdates = {
       updatedAt: now,
     };
 

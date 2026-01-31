@@ -67,69 +67,57 @@ export function useTasks(date?: string) {
     [fetchTasks],
   );
 
-  const extractTasks = useCallback(
-    async (options?: { date?: string; messageIds?: number[] }) => {
-      const result = await postAdasApi<{ extracted: number; tasks: Task[] }>(
-        "/api/tasks/extract",
-        options ?? {},
-      );
-      await fetchTasks(true);
-      return result;
-    },
+  // 抽出関数のファクトリー (重複コード削減)
+  type ExtractResult = { extracted: number; tasks: Task[] };
+
+  const createExtractFn = useCallback(
+    <T extends object>(endpoint: string) =>
+      async (options?: T): Promise<ExtractResult> => {
+        const result = await postAdasApi<ExtractResult>(endpoint, options ?? {});
+        await fetchTasks(true);
+        return result;
+      },
     [fetchTasks],
+  );
+
+  const extractTasks = useCallback(
+    (options?: { date?: string; messageIds?: number[] }) =>
+      createExtractFn<{ date?: string; messageIds?: number[] }>("/api/tasks/extract")(options),
+    [createExtractFn],
   );
 
   const extractGitHubTasks = useCallback(
-    async (options?: { date?: string }) => {
-      const result = await postAdasApi<{ extracted: number; tasks: Task[] }>(
-        "/api/tasks/extract-github",
-        options ?? {},
-      );
-      await fetchTasks(true);
-      return result;
-    },
-    [fetchTasks],
+    (options?: { date?: string }) =>
+      createExtractFn<{ date?: string }>("/api/tasks/extract-github")(options),
+    [createExtractFn],
   );
 
   const extractGitHubCommentTasks = useCallback(
-    async (options?: { date?: string }) => {
-      const result = await postAdasApi<{ extracted: number; tasks: Task[] }>(
-        "/api/tasks/extract-github-comments",
-        options ?? {},
-      );
-      await fetchTasks(true);
-      return result;
-    },
-    [fetchTasks],
+    (options?: { date?: string }) =>
+      createExtractFn<{ date?: string }>("/api/tasks/extract-github-comments")(options),
+    [createExtractFn],
   );
 
   const extractMemoTasks = useCallback(
-    async (options?: { date?: string }) => {
-      const result = await postAdasApi<{ extracted: number; tasks: Task[] }>(
-        "/api/tasks/extract-memos",
-        options ?? {},
-      );
-      await fetchTasks(true);
-      return result;
-    },
-    [fetchTasks],
+    (options?: { date?: string }) =>
+      createExtractFn<{ date?: string }>("/api/tasks/extract-memos")(options),
+    [createExtractFn],
   );
 
-  const extractVocabularyTerms = useCallback(
-    async (options?: {
-      date?: string;
-      source?: "slack" | "github" | "claude-code" | "memo" | "all";
-    }) => {
-      const source = options?.source ?? "all";
-      const endpoint =
-        source === "all" ? "/api/vocabulary/extract/all" : `/api/vocabulary/extract/${source}`;
-      const result = await postAdasApi<{
-        extracted?: number;
-        totalExtracted?: number;
-        skippedDuplicate?: number;
-        tasksCreated?: number;
-        results?: Record<string, { extracted: number; message?: string }>;
-      }>(endpoint, { date: options?.date });
+  const updateBatchTasks = useCallback(
+    async (
+      ids: number[],
+      updates: {
+        status?: TaskStatus;
+        projectId?: number | null;
+        priority?: "high" | "medium" | "low" | null;
+        reason?: string;
+      },
+    ) => {
+      const result = await patchAdasApi<{ updated: number; tasks: Task[] }>("/api/tasks/batch", {
+        ids,
+        ...updates,
+      });
       await fetchTasks(true);
       return result;
     },
@@ -168,12 +156,12 @@ export function useTasks(date?: string) {
     loading,
     refetch: fetchTasks,
     updateTask,
+    updateBatchTasks,
     deleteTask,
     extractTasks,
     extractGitHubTasks,
     extractGitHubCommentTasks,
     extractMemoTasks,
-    extractVocabularyTerms,
     detectDuplicates,
     createMergeTask,
   };

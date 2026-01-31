@@ -1,6 +1,6 @@
 import type { EvaluatorLog } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
-import { fetchAdasApi } from "./use-adas-api";
+import { fetchAdasApi } from "@/lib/adas-api";
 
 export function useEvaluatorLogs(date: string) {
   const [logs, setLogs] = useState<EvaluatorLog[]>([]);

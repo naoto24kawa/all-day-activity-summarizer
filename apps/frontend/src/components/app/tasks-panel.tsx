@@ -21,7 +21,9 @@ import {
   BookOpen,
   Check,
   CheckCircle2,
+  CheckSquare,
   ChevronDown,
+  ChevronRight,
   Circle,
   ClipboardCopy,
   FileText,
@@ -29,6 +31,8 @@ import {
   FolderGit2,
   Github,
   GitMerge,
+  Layers,
+  List,
   MessageSquare,
   MessageSquareMore,
   Mic,
@@ -40,6 +44,7 @@ import {
   Search,
   Signal,
   Sparkles,
+  Square,
   Terminal,
   Trash2,
   Wand2,
@@ -79,12 +84,43 @@ import {
   usePromptImprovementStats,
 } from "@/hooks/use-prompt-improvements";
 import { useTaskStats, useTasks } from "@/hooks/use-tasks";
-import { ADAS_API_URL } from "@/lib/adas-api";
+import { ADAS_API_URL, postAdasApi } from "@/lib/adas-api";
 import { DuplicateSuggestionsPanel } from "./duplicate-suggestions-panel";
 
 interface TasksPanelProps {
   date: string;
   className?: string;
+}
+
+/** タスクのスタイルマップ */
+const TASK_STATUS_STYLES: Record<TaskStatus | "selected" | "suggested", string> = {
+  selected: "border-blue-500 bg-blue-50 ring-1 ring-blue-500 dark:bg-blue-950",
+  completed: "opacity-60",
+  rejected: "opacity-50",
+  pending: "border-primary/30 bg-primary/5",
+  in_progress: "border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-950",
+  paused: "border-yellow-400 bg-yellow-50 dark:border-yellow-600 dark:bg-yellow-950",
+  suggested: "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-950",
+  accepted: "",
+};
+
+/** ソースタイプのラベルマップ */
+const SOURCE_LABELS: Record<TaskSourceType, string> = {
+  slack: "Slack",
+  github: "GitHub",
+  "github-comment": "GitHub Comment",
+  memo: "Memo",
+  "prompt-improvement": "改善",
+  vocabulary: "用語",
+  merge: "統合",
+  "profile-suggestion": "プロフィール",
+};
+
+/** タスクのスタイルを取得 */
+function getTaskStyle(task: Task, isSelected: boolean, isSuggested?: boolean): string {
+  if (isSelected) return TASK_STATUS_STYLES.selected;
+  if (isSuggested && task.status === "accepted") return TASK_STATUS_STYLES.suggested;
+  return TASK_STATUS_STYLES[task.status] ?? "";
 }
 
 export function TasksPanel({ date, className }: TasksPanelProps) {
@@ -94,6 +130,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     error,
     refetch,
     updateTask,
+    updateBatchTasks,
     deleteTask,
     extractTasks,
     extractGitHubTasks,
@@ -114,36 +151,22 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
 
   const [sourceFilter, setSourceFilter] = useState<TaskSourceType | "all">("all");
   const [projectFilter, setProjectFilter] = useState<number | "all" | "none">("all");
+  const [groupByProject, setGroupByProject] = useState(false);
   const [checkingCompletion, setCheckingCompletion] = useState(false);
+
+  // 一括操作モード
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(new Set());
+  const [batchUpdating, setBatchUpdating] = useState(false);
   const [completionSuggestions, setCompletionSuggestions] = useState<TaskCompletionSuggestion[]>(
     [],
   );
-  const [_completionStats, setCompletionStats] = useState<
-    SuggestCompletionsResponse["evaluated"] | null
-  >(null);
 
   // 重複検出
   const [detectingDuplicates, setDetectingDuplicates] = useState(false);
   const [duplicateSuggestions, setDuplicateSuggestions] = useState<DuplicateTaskPair[]>([]);
 
-  const getSourceLabel = (sourceType: string) => {
-    switch (sourceType) {
-      case "github":
-        return "GitHub";
-      case "github-comment":
-        return "GitHub Comment";
-      case "memo":
-        return "Memo";
-      case "prompt-improvement":
-        return "改善";
-      case "vocabulary":
-        return "用語";
-      case "merge":
-        return "統合";
-      default:
-        return "Slack";
-    }
-  };
+  const getSourceLabel = (sourceType: TaskSourceType) => SOURCE_LABELS[sourceType] ?? "Slack";
 
   // Filter tasks by source type and project
   const filterTasks = (taskList: Task[]) => {
@@ -174,11 +197,12 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   };
 
   // Sort by priority (for accepted tasks)
-  const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+  type TaskPriority = "high" | "medium" | "low";
+  const priorityOrder: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 };
   const sortByPriority = (taskList: Task[]) => {
     return [...taskList].sort((a, b) => {
-      const aPriority = a.priority ? (priorityOrder[a.priority] ?? 3) : 3;
-      const bPriority = b.priority ? (priorityOrder[b.priority] ?? 3) : 3;
+      const aPriority = a.priority ? priorityOrder[a.priority as TaskPriority] : 3;
+      const bPriority = b.priority ? priorityOrder[b.priority as TaskPriority] : 3;
       return aPriority - bPriority;
     });
   };
@@ -271,19 +295,11 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const handleCheckCompletions = async () => {
     setCheckingCompletion(true);
     setCompletionSuggestions([]);
-    setCompletionStats(null);
     try {
-      const response = await fetch(`${ADAS_API_URL}/api/tasks/suggest-completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date }),
+      const data = await postAdasApi<SuggestCompletionsResponse>("/api/tasks/suggest-completions", {
+        date,
       });
-      if (!response.ok) {
-        throw new Error("Failed to check completions");
-      }
-      const data = (await response.json()) as SuggestCompletionsResponse;
       setCompletionSuggestions(data.suggestions);
-      setCompletionStats(data.evaluated);
     } catch (err) {
       console.error("Failed to check completions:", err);
     } finally {
@@ -341,6 +357,48 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
           !(p.taskAId === pair.taskBId && p.taskBId === pair.taskAId),
       ),
     );
+  };
+
+  // 一括操作ハンドラー
+  const toggleTaskSelection = (taskId: number) => {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  };
+
+  const selectAllInTab = (taskList: Task[]) => {
+    setSelectedTaskIds(new Set(taskList.map((t) => t.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedTaskIds(new Set());
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedTaskIds(new Set());
+  };
+
+  const handleBatchUpdate = async (updates: {
+    status?: TaskStatus;
+    projectId?: number | null;
+    priority?: "high" | "medium" | "low" | null;
+    reason?: string;
+  }) => {
+    if (selectedTaskIds.size === 0) return;
+    setBatchUpdating(true);
+    try {
+      await updateBatchTasks(Array.from(selectedTaskIds), updates);
+      clearSelection();
+    } finally {
+      setBatchUpdating(false);
+    }
   };
 
   const suggestionTaskIds = new Set(completionSuggestions.map((s) => s.taskId));
@@ -423,6 +481,25 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
             )}
           </CardTitle>
           <div className="flex items-center gap-1">
+            {/* 一括操作モードトグル */}
+            <Button
+              variant={selectionMode ? "default" : "outline"}
+              size="sm"
+              onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
+              title={selectionMode ? "一括操作モードを終了" : "一括操作モードを開始"}
+            >
+              {selectionMode ? (
+                <>
+                  <X className="mr-1 h-3 w-3" />
+                  終了
+                </>
+              ) : (
+                <>
+                  <CheckSquare className="mr-1 h-3 w-3" />
+                  一括
+                </>
+              )}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -621,6 +698,157 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 未分類 ({projectCount.get("none")})
               </Button>
             )}
+            {/* プロジェクト別表示トグル */}
+            <div className="ml-auto">
+              <Button
+                variant={groupByProject ? "default" : "outline"}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => setGroupByProject(!groupByProject)}
+                title={groupByProject ? "リスト表示に切り替え" : "プロジェクト別表示に切り替え"}
+              >
+                {groupByProject ? (
+                  <>
+                    <Layers className="mr-1 h-3 w-3" />
+                    グループ表示
+                  </>
+                ) : (
+                  <>
+                    <List className="mr-1 h-3 w-3" />
+                    リスト表示
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* 一括操作バー */}
+        {selectionMode && (
+          <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2 rounded-md border bg-blue-50 p-2 dark:bg-blue-950">
+            <div className="flex items-center gap-2">
+              <CheckSquare className="h-4 w-4 text-blue-500" />
+              <span className="text-sm font-medium">
+                {selectedTaskIds.size > 0
+                  ? `${selectedTaskIds.size}件選択中`
+                  : "タスクを選択してください"}
+              </span>
+            </div>
+            {selectedTaskIds.size > 0 && (
+              <>
+                <div className="h-4 w-px bg-border" />
+                {/* ステータス一括変更 */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7" disabled={batchUpdating}>
+                      <Circle className="mr-1 h-3 w-3" />
+                      ステータス
+                      <ChevronDown className="ml-1 h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "accepted" })}>
+                      <Check className="mr-2 h-4 w-4 text-green-500" />
+                      承認
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "rejected" })}>
+                      <X className="mr-2 h-4 w-4 text-red-500" />
+                      却下
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "in_progress" })}>
+                      <Play className="mr-2 h-4 w-4 text-blue-500" />
+                      進行中
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "paused" })}>
+                      <Pause className="mr-2 h-4 w-4 text-yellow-500" />
+                      中断
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "completed" })}>
+                      <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
+                      完了
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {/* 優先度一括変更 */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7" disabled={batchUpdating}>
+                      <Signal className="mr-1 h-3 w-3" />
+                      優先度
+                      <ChevronDown className="ml-1 h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem
+                      onClick={() => handleBatchUpdate({ priority: "high" })}
+                      className="text-red-500"
+                    >
+                      <AlertTriangle className="mr-2 h-4 w-4" />
+                      HIGH
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleBatchUpdate({ priority: "medium" })}
+                      className="text-yellow-500"
+                    >
+                      <Signal className="mr-2 h-4 w-4" />
+                      MEDIUM
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleBatchUpdate({ priority: "low" })}
+                      className="text-green-500"
+                    >
+                      <Minus className="mr-2 h-4 w-4" />
+                      LOW
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => handleBatchUpdate({ priority: null })}
+                      className="text-muted-foreground"
+                    >
+                      <X className="mr-2 h-4 w-4" />
+                      解除
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {/* プロジェクト一括変更 */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7" disabled={batchUpdating}>
+                      <FolderGit2 className="mr-1 h-3 w-3" />
+                      プロジェクト
+                      <ChevronDown className="ml-1 h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                    {projects.map((project) => (
+                      <DropdownMenuItem
+                        key={project.id}
+                        onClick={() => handleBatchUpdate({ projectId: project.id })}
+                      >
+                        <FolderGit2 className="mr-2 h-4 w-4" />
+                        {project.name}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuItem
+                      onClick={() => handleBatchUpdate({ projectId: null })}
+                      className="text-muted-foreground"
+                    >
+                      <X className="mr-2 h-4 w-4" />
+                      プロジェクト解除
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <div className="h-4 w-px bg-border" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7"
+                  onClick={clearSelection}
+                  disabled={batchUpdating}
+                >
+                  選択解除
+                </Button>
+              </>
+            )}
           </div>
         )}
 
@@ -741,7 +969,11 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
-                showActions
+                groupByProject={groupByProject}
+                selectionMode={selectionMode}
+                selectedTaskIds={selectedTaskIds}
+                onToggleSelection={toggleTaskSelection}
+                onSelectAll={() => selectAllInTab(pendingTasks)}
               />
             </TabsContent>
             <TabsContent value="accepted" className="min-h-0 flex-1 space-y-2">
@@ -775,8 +1007,12 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
-                showAcceptedActions
                 suggestionTaskIds={suggestionTaskIds}
+                groupByProject={groupByProject}
+                selectionMode={selectionMode}
+                selectedTaskIds={selectedTaskIds}
+                onToggleSelection={toggleTaskSelection}
+                onSelectAll={() => selectAllInTab(acceptedTasks)}
               />
             </TabsContent>
             <TabsContent value="in_progress" className="min-h-0 flex-1">
@@ -785,7 +1021,11 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
-                showInProgressActions
+                groupByProject={groupByProject}
+                selectionMode={selectionMode}
+                selectedTaskIds={selectedTaskIds}
+                onToggleSelection={toggleTaskSelection}
+                onSelectAll={() => selectAllInTab(inProgressTasks)}
               />
             </TabsContent>
             <TabsContent value="paused" className="min-h-0 flex-1">
@@ -794,7 +1034,11 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
-                showPausedActions
+                groupByProject={groupByProject}
+                selectionMode={selectionMode}
+                selectedTaskIds={selectedTaskIds}
+                onToggleSelection={toggleTaskSelection}
+                onSelectAll={() => selectAllInTab(pausedTasks)}
               />
             </TabsContent>
             <TabsContent value="completed" className="min-h-0 flex-1">
@@ -803,6 +1047,11 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
+                groupByProject={groupByProject}
+                selectionMode={selectionMode}
+                selectedTaskIds={selectedTaskIds}
+                onToggleSelection={toggleTaskSelection}
+                onSelectAll={() => selectAllInTab(completedTasks)}
               />
             </TabsContent>
             <TabsContent value="rejected" className="min-h-0 flex-1">
@@ -811,6 +1060,11 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 projects={projects}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
+                groupByProject={groupByProject}
+                selectionMode={selectionMode}
+                selectedTaskIds={selectedTaskIds}
+                onToggleSelection={toggleTaskSelection}
+                onSelectAll={() => selectAllInTab(rejectedTasks)}
               />
             </TabsContent>
           </Tabs>
@@ -888,11 +1142,12 @@ function TaskList({
   projects,
   onUpdateTask,
   onDeleteTask,
-  showActions = false,
-  showAcceptedActions = false,
-  showInProgressActions = false,
-  showPausedActions = false,
   suggestionTaskIds,
+  groupByProject = false,
+  selectionMode = false,
+  selectedTaskIds,
+  onToggleSelection,
+  onSelectAll,
 }: {
   tasks: Task[];
   projects: Project[];
@@ -908,18 +1163,131 @@ function TaskList({
     },
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
-  showActions?: boolean;
-  showAcceptedActions?: boolean;
-  showInProgressActions?: boolean;
-  showPausedActions?: boolean;
   suggestionTaskIds?: Set<number>;
+  groupByProject?: boolean;
+  selectionMode?: boolean;
+  selectedTaskIds?: Set<number>;
+  onToggleSelection?: (taskId: number) => void;
+  onSelectAll?: () => void;
 }) {
+  // プロジェクト別折りたたみ状態を管理
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<number | "none">>(new Set());
+
+  const toggleProjectCollapse = (projectId: number | "none") => {
+    setCollapsedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  };
+
   if (tasks.length === 0) {
     return <p className="py-4 text-center text-sm text-muted-foreground">タスクはありません</p>;
   }
 
+  // グループ表示モードの場合
+  if (groupByProject) {
+    // タスクをプロジェクト別にグループ化
+    const tasksByProject = new Map<number | "none", Task[]>();
+    for (const task of tasks) {
+      const key = task.projectId ?? "none";
+      const existing = tasksByProject.get(key);
+      if (existing) {
+        existing.push(task);
+      } else {
+        tasksByProject.set(key, [task]);
+      }
+    }
+
+    // プロジェクトの順序を決定 (プロジェクト名順、未分類は最後)
+    const sortedProjectIds = Array.from(tasksByProject.keys()).sort((a, b) => {
+      if (a === "none") return 1;
+      if (b === "none") return -1;
+      const projectA = projects.find((p) => p.id === a);
+      const projectB = projects.find((p) => p.id === b);
+      return (projectA?.name ?? "").localeCompare(projectB?.name ?? "");
+    });
+
+    return (
+      <div className="h-full overflow-y-auto">
+        {/* 選択モード時の全選択ボタン */}
+        {selectionMode && onSelectAll && (
+          <div className="mb-2 flex items-center gap-2">
+            <Button variant="outline" size="sm" className="h-6 text-xs" onClick={onSelectAll}>
+              <CheckSquare className="mr-1 h-3 w-3" />
+              このタブを全選択 ({tasks.length})
+            </Button>
+          </div>
+        )}
+        <div className="space-y-3">
+          {sortedProjectIds.map((projectId) => {
+            const projectTasks = tasksByProject.get(projectId) ?? [];
+            const project = projectId !== "none" ? projects.find((p) => p.id === projectId) : null;
+            const projectName = project?.name ?? "未分類";
+            const isCollapsed = collapsedProjects.has(projectId);
+
+            return (
+              <div key={projectId} className="rounded-lg border">
+                {/* プロジェクトヘッダー (折りたたみトリガー) */}
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/50 transition-colors rounded-t-lg"
+                  onClick={() => toggleProjectCollapse(projectId)}
+                >
+                  {isCollapsed ? (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  <FolderGit2 className="h-4 w-4 text-blue-500" />
+                  <span className="font-medium text-sm">{projectName}</span>
+                  <Badge variant="secondary" className="ml-auto h-5 px-1.5 text-xs">
+                    {projectTasks.length}
+                  </Badge>
+                </button>
+
+                {/* タスクリスト (折りたたみ可能) */}
+                {!isCollapsed && (
+                  <div className="border-t px-2 py-2 space-y-2">
+                    {projectTasks.map((task) => (
+                      <TaskItem
+                        key={task.id}
+                        task={task}
+                        projects={projects}
+                        onUpdateTask={onUpdateTask}
+                        onDeleteTask={onDeleteTask}
+                        isSuggested={suggestionTaskIds?.has(task.id)}
+                        selectionMode={selectionMode}
+                        isSelected={selectedTaskIds?.has(task.id) ?? false}
+                        onToggleSelection={onToggleSelection}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // リスト表示モード (従来の表示)
   return (
     <div className="h-full overflow-y-auto">
+      {/* 選択モード時の全選択ボタン */}
+      {selectionMode && onSelectAll && (
+        <div className="mb-2 flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-6 text-xs" onClick={onSelectAll}>
+            <CheckSquare className="mr-1 h-3 w-3" />
+            このタブを全選択 ({tasks.length})
+          </Button>
+        </div>
+      )}
       <div className="space-y-2">
         {tasks.map((task) => (
           <TaskItem
@@ -928,11 +1296,10 @@ function TaskList({
             projects={projects}
             onUpdateTask={onUpdateTask}
             onDeleteTask={onDeleteTask}
-            showActions={showActions}
-            showAcceptedActions={showAcceptedActions}
-            showInProgressActions={showInProgressActions}
-            showPausedActions={showPausedActions}
             isSuggested={suggestionTaskIds?.has(task.id)}
+            selectionMode={selectionMode}
+            isSelected={selectedTaskIds?.has(task.id) ?? false}
+            onToggleSelection={onToggleSelection}
           />
         ))}
       </div>
@@ -945,11 +1312,10 @@ function TaskItem({
   projects,
   onUpdateTask,
   onDeleteTask,
-  showActions: _showActions,
-  showAcceptedActions: _showAcceptedActions,
-  showInProgressActions: _showInProgressActions,
-  showPausedActions: _showPausedActions,
   isSuggested,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelection,
 }: {
   task: Task;
   projects: Project[];
@@ -965,11 +1331,10 @@ function TaskItem({
     },
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
-  showActions?: boolean;
-  showAcceptedActions?: boolean;
-  showInProgressActions?: boolean;
-  showPausedActions?: boolean;
   isSuggested?: boolean;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelection?: (taskId: number) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -1097,25 +1462,26 @@ function TaskItem({
   return (
     <>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <div
-          className={`rounded-md border p-3 ${
-            task.status === "completed"
-              ? "opacity-60"
-              : task.status === "rejected"
-                ? "opacity-50"
-                : task.status === "pending"
-                  ? "border-primary/30 bg-primary/5"
-                  : task.status === "in_progress"
-                    ? "border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-950"
-                    : task.status === "paused"
-                      ? "border-yellow-400 bg-yellow-50 dark:border-yellow-600 dark:bg-yellow-950"
-                      : isSuggested
-                        ? "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-950"
-                        : ""
-          }`}
-        >
+        <div className={`rounded-md border p-3 ${getTaskStyle(task, isSelected, isSuggested)}`}>
           {/* ヘッダー: タイトル + ソースバッジ */}
           <CollapsibleTrigger className="flex w-full items-start justify-between text-left">
+            {/* 選択モード時のチェックボックス */}
+            {selectionMode && (
+              <button
+                type="button"
+                className="mr-2 flex-shrink-0 p-0.5 rounded hover:bg-muted/50 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelection?.(task.id);
+                }}
+              >
+                {isSelected ? (
+                  <CheckSquare className="h-5 w-5 text-blue-500" />
+                ) : (
+                  <Square className="h-5 w-5 text-muted-foreground" />
+                )}
+              </button>
+            )}
             <div className="flex-1">
               <div className="mb-1 flex flex-wrap items-center gap-2">
                 <span className="font-medium">{task.title}</span>

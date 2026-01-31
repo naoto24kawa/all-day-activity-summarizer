@@ -1,6 +1,6 @@
 import type { TranscriptionSegment } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
-import { fetchAdasApi } from "./use-adas-api";
+import { fetchAdasApi } from "@/lib/adas-api";
 
 export function useTranscriptions(date: string) {
   const [segments, setSegments] = useState<TranscriptionSegment[]>([]);

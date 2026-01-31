@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { deleteAdasApi, fetchAdasApi, patchAdasApi } from "./use-adas-api";
+import { deleteAdasApi, fetchAdasApi, patchAdasApi } from "@/lib/adas-api";
 
 export interface SlackUserSummary {
   userId: string;

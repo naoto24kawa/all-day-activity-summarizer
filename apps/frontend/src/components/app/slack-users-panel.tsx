@@ -1,8 +1,9 @@
-import { Users } from "lucide-react";
+import { ChevronDown, Users } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,6 +15,7 @@ export function SlackUsersPanel() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState("");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(true);
 
   const handleStartEdit = (userId: string, currentName: string | null) => {
     setEditingId(userId);
@@ -80,109 +82,120 @@ export function SlackUsersPanel() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Users className="h-5 w-5 text-[#4A154B]" />
-          Slack Users
-          <Badge variant="secondary" className="ml-1">
-            {users.length}
-          </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {users.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No Slack users found.</p>
-        ) : (
-          <ScrollArea className="h-[400px]">
-            <div className="space-y-3">
-              {users.map((user) => (
-                <div
-                  key={user.userId}
-                  className={`rounded-md border p-3 ${user.displayName ? "border-green-500/30 bg-green-50/50 dark:bg-green-950/10" : ""}`}
-                >
-                  <div className="mb-2 flex items-center gap-2">
-                    {editingId === user.userId ? (
-                      <Input
-                        value={nameInput}
-                        onChange={(e) => setNameInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleSave(user.userId);
-                          if (e.key === "Escape") handleCancelEdit();
-                        }}
-                        placeholder={user.slackName ?? "Display name"}
-                        className="h-7 text-sm font-medium"
-                        disabled={pendingAction === user.userId}
-                        autoFocus
-                      />
-                    ) : (
-                      <>
-                        <span className="text-sm font-medium">
-                          {user.displayName ?? user.slackName ?? user.userId}
-                        </span>
-                        {user.displayName && user.slackName && (
-                          <span className="text-xs text-muted-foreground">({user.slackName})</span>
-                        )}
-                      </>
-                    )}
-                    <Badge variant="outline">{user.messageCount} msgs</Badge>
-                    {user.firstSeen && user.lastSeen && (
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        {formatDateJST(user.firstSeen)} - {formatDateJST(user.lastSeen)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {editingId === user.userId ? (
-                      <>
-                        <Button
-                          size="sm"
-                          onClick={() => handleSave(user.userId)}
-                          disabled={pendingAction === user.userId}
-                        >
-                          Save
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={handleCancelEdit}
-                          disabled={pendingAction === user.userId}
-                        >
-                          Cancel
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleStartEdit(user.userId, user.displayName)}
-                          disabled={pendingAction === user.userId}
-                        >
-                          Edit Name
-                        </Button>
-                        {user.displayName && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleReset(user.userId)}
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <Card>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="cursor-pointer select-none hover:bg-muted/50 transition-colors">
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-[#4A154B]" />
+              Slack Users
+              <Badge variant="secondary" className="ml-1">
+                {users.length}
+              </Badge>
+              <ChevronDown
+                className={`ml-auto h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+              />
+            </CardTitle>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent>
+            {users.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No Slack users found.</p>
+            ) : (
+              <ScrollArea className="h-[400px]">
+                <div className="space-y-3">
+                  {users.map((user) => (
+                    <div
+                      key={user.userId}
+                      className={`rounded-md border p-3 ${user.displayName ? "border-green-500/30 bg-green-50/50 dark:bg-green-950/10" : ""}`}
+                    >
+                      <div className="mb-2 flex items-center gap-2">
+                        {editingId === user.userId ? (
+                          <Input
+                            value={nameInput}
+                            onChange={(e) => setNameInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSave(user.userId);
+                              if (e.key === "Escape") handleCancelEdit();
+                            }}
+                            placeholder={user.slackName ?? "Display name"}
+                            className="h-7 text-sm font-medium"
                             disabled={pendingAction === user.userId}
-                          >
-                            Reset
-                          </Button>
+                            autoFocus
+                          />
+                        ) : (
+                          <>
+                            <span className="text-sm font-medium">
+                              {user.displayName ?? user.slackName ?? user.userId}
+                            </span>
+                            {user.displayName && user.slackName && (
+                              <span className="text-xs text-muted-foreground">
+                                ({user.slackName})
+                              </span>
+                            )}
+                          </>
                         )}
-                      </>
-                    )}
-                    <span className="ml-auto text-xs font-mono text-muted-foreground">
-                      {user.userId}
-                    </span>
-                  </div>
+                        <Badge variant="outline">{user.messageCount} msgs</Badge>
+                        {user.firstSeen && user.lastSeen && (
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {formatDateJST(user.firstSeen)} - {formatDateJST(user.lastSeen)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {editingId === user.userId ? (
+                          <>
+                            <Button
+                              size="sm"
+                              onClick={() => handleSave(user.userId)}
+                              disabled={pendingAction === user.userId}
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={handleCancelEdit}
+                              disabled={pendingAction === user.userId}
+                            >
+                              Cancel
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleStartEdit(user.userId, user.displayName)}
+                              disabled={pendingAction === user.userId}
+                            >
+                              Edit Name
+                            </Button>
+                            {user.displayName && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleReset(user.userId)}
+                                disabled={pendingAction === user.userId}
+                              >
+                                Reset
+                              </Button>
+                            )}
+                          </>
+                        )}
+                        <span className="ml-auto text-xs font-mono text-muted-foreground">
+                          {user.userId}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </ScrollArea>
-        )}
-      </CardContent>
-    </Card>
+              </ScrollArea>
+            )}
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   );
 }

@@ -1,6 +1,6 @@
 import type { Vocabulary, VocabularySource } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
-import { deleteAdasApi, fetchAdasApi, postAdasApi, putAdasApi } from "./use-adas-api";
+import { deleteAdasApi, fetchAdasApi, postAdasApi, putAdasApi } from "@/lib/adas-api";
 
 export function useVocabulary() {
   const [terms, setTerms] = useState<Vocabulary[]>([]);

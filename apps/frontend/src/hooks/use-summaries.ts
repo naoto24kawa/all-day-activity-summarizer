@@ -1,6 +1,6 @@
 import type { GenerateSummaryResponse, Summary } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
-import { fetchAdasApi, postAdasApi } from "./use-adas-api";
+import { fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
 export function useSummaries(date: string, type?: "pomodoro" | "hourly" | "daily") {
   const [summaries, setSummaries] = useState<Summary[]>([]);
