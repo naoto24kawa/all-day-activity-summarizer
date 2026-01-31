@@ -1258,14 +1258,16 @@ export function createTasksRouter(db: AdasDatabase) {
    * POST /api/tasks/extract-memos
    *
    * メモからタスクを抽出
-   * Body: { date?: string }
+   * Body: { date?: string, memoIds?: number[] }
    */
   router.post("/extract-memos", async (c) => {
-    const body = await c.req.json<{ date?: string }>();
+    const body = await c.req.json<{ date?: string; memoIds?: number[] }>();
     const date = body.date ?? getTodayDateString();
 
-    // メモを取得
-    const memos = db.select().from(schema.memos).where(eq(schema.memos.date, date)).all();
+    // メモを取得 (memoIds が指定されていればそれを優先)
+    const memos = body.memoIds?.length
+      ? db.select().from(schema.memos).where(inArray(schema.memos.id, body.memoIds)).all()
+      : db.select().from(schema.memos).where(eq(schema.memos.date, date)).all();
 
     if (memos.length === 0) {
       return c.json({ extracted: 0, tasks: [] });

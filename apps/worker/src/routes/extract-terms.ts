@@ -85,7 +85,7 @@ ${existingTermsSection}
 
 ## 出力形式
 
-以下のJSON形式で出力してください (コードブロックなし):
+**重要**: 説明文や前置きは一切不要です。JSON のみを出力してください。
 
 {
   "extractedTerms": [
@@ -99,7 +99,7 @@ ${existingTermsSection}
   ]
 }
 
-抽出する用語がない場合は extractedTerms は空配列 [] としてください。
+抽出する用語がない場合: {"extractedTerms": []}
 
 ## テキスト
 
@@ -119,7 +119,16 @@ ${text}`;
   // JSON パース
   try {
     // コードブロックがある場合は除去
-    const jsonStr = result.replace(/```(?:json)?\s*([\s\S]*?)```/g, "$1").trim();
+    let jsonStr = result.replace(/```(?:json)?\s*([\s\S]*?)```/g, "$1").trim();
+
+    // 説明文が含まれている場合、extractedTerms を含む JSON 部分を抽出
+    const extractedJson = extractJsonWithExtractedTerms(jsonStr);
+    if (!extractedJson) {
+      consola.warn("[worker/extract-terms] No valid JSON found in response:", result.slice(0, 200));
+      return { extractedTerms: [] };
+    }
+    jsonStr = extractedJson;
+
     const parsed = JSON.parse(jsonStr) as ExtractTermsResponse;
 
     consola.info(
@@ -130,7 +139,12 @@ ${text}`;
       extractedTerms: parsed.extractedTerms ?? [],
     };
   } catch (parseErr) {
-    consola.warn("[worker/extract-terms] Failed to parse JSON:", parseErr);
+    consola.warn(
+      "[worker/extract-terms] Failed to parse JSON:",
+      parseErr,
+      "\nResponse preview:",
+      result.slice(0, 300),
+    );
     return { extractedTerms: [] };
   }
 }
@@ -147,5 +161,60 @@ function getSourceDescription(sourceType: string): string {
       return "メモ";
     default:
       return "テキスト";
+  }
+}
+
+/**
+ * extractedTerms キーを含む有効な JSON オブジェクトを抽出
+ * ブレースのバランスを見て正しい JSON 境界を特定
+ */
+function extractJsonWithExtractedTerms(text: string): string | null {
+  // "extractedTerms" を含む位置を探す
+  const extractedTermsIndex = text.indexOf('"extractedTerms"');
+  if (extractedTermsIndex === -1) {
+    return null;
+  }
+
+  // その前の最初の { を探す
+  let startIndex = -1;
+  for (let i = extractedTermsIndex - 1; i >= 0; i--) {
+    if (text[i] === "{") {
+      startIndex = i;
+      break;
+    }
+  }
+
+  if (startIndex === -1) {
+    return null;
+  }
+
+  // ブレースのバランスを取りながら終了位置を探す
+  let braceCount = 0;
+  let endIndex = -1;
+
+  for (let i = startIndex; i < text.length; i++) {
+    if (text[i] === "{") {
+      braceCount++;
+    } else if (text[i] === "}") {
+      braceCount--;
+      if (braceCount === 0) {
+        endIndex = i;
+        break;
+      }
+    }
+  }
+
+  if (endIndex === -1) {
+    return null;
+  }
+
+  const jsonCandidate = text.slice(startIndex, endIndex + 1);
+
+  // 有効な JSON かどうか試しにパース
+  try {
+    JSON.parse(jsonCandidate);
+    return jsonCandidate;
+  } catch {
+    return null;
   }
 }

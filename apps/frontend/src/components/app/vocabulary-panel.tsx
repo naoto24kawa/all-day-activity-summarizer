@@ -22,22 +22,13 @@ export function VocabularyPanel({ date }: VocabularyPanelProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [extracting, setExtracting] = useState(false);
-  const [extractResult, setExtractResult] = useState<{
-    totalExtracted?: number;
-    results?: Record<string, { extracted: number; message?: string }>;
-  } | null>(null);
 
   const targetDate = date ?? getTodayDateString();
 
   const handleExtractAll = async () => {
     setExtracting(true);
-    setExtractResult(null);
     try {
-      const result = await postAdasApi<{
-        totalExtracted: number;
-        results: Record<string, { extracted: number; message?: string }>;
-      }>("/api/vocabulary/extract/all", { date: targetDate });
-      setExtractResult(result);
+      await postAdasApi("/api/vocabulary/extract/all", { date: targetDate });
       await refresh();
     } catch (err) {
       console.error("Failed to extract vocabulary:", err);
@@ -48,14 +39,8 @@ export function VocabularyPanel({ date }: VocabularyPanelProps) {
 
   const handleExtractSource = async (source: "slack" | "github" | "claude-code" | "memo") => {
     setExtracting(true);
-    setExtractResult(null);
     try {
-      const result = await postAdasApi<{
-        extracted: number;
-        skippedDuplicate: number;
-        tasksCreated: number;
-      }>(`/api/vocabulary/extract/${source}`, { date: targetDate });
-      setExtractResult({ totalExtracted: result.extracted });
+      await postAdasApi(`/api/vocabulary/extract/${source}`, { date: targetDate });
       await refresh();
     } catch (err) {
       console.error(`Failed to extract vocabulary from ${source}:`, err);
@@ -181,11 +166,6 @@ export function VocabularyPanel({ date }: VocabularyPanelProps) {
             </Button>
           </div>
         </div>
-        {extractResult && (
-          <p className="text-xs text-muted-foreground">
-            {extractResult.totalExtracted ?? 0} 件の用語をタスクとして登録しました
-          </p>
-        )}
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Add form */}

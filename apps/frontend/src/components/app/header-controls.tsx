@@ -83,18 +83,18 @@ export function HeaderControls({ now, date, onDateChange, jobStats }: HeaderCont
           <div className="flex items-center gap-2 text-sm">
             <Bot className="size-4 text-muted-foreground" />
             <span
-              className={`flex items-center gap-1 ${jobStats.processing > 0 ? "text-blue-500" : "text-muted-foreground"}`}
-              title="Processing"
-            >
-              <Loader2 className={`size-3.5 ${jobStats.processing > 0 ? "animate-spin" : ""}`} />
-              {jobStats.processing}
-            </span>
-            <span
               className={`flex items-center gap-1 ${jobStats.pending > 0 ? "text-orange-500" : "text-muted-foreground"}`}
               title="Pending"
             >
               <Clock className="size-3.5" />
               {jobStats.pending}
+            </span>
+            <span
+              className={`flex items-center gap-1 ${jobStats.processing > 0 ? "text-blue-500" : "text-muted-foreground"}`}
+              title="Processing"
+            >
+              <Loader2 className={`size-3.5 ${jobStats.processing > 0 ? "animate-spin" : ""}`} />
+              {jobStats.processing}
             </span>
             <span className="flex items-center gap-1 text-muted-foreground" title="Completed">
               <Check className="size-3.5" />

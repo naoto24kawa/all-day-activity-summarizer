@@ -105,8 +105,8 @@ export function useTasks() {
   );
 
   const extractMemoTasks = useCallback(
-    (options?: { date?: string }) =>
-      createExtractFn<{ date?: string }>("/api/tasks/extract-memos")(options),
+    (options?: { date?: string; memoIds?: number[] }) =>
+      createExtractFn<{ date?: string; memoIds?: number[] }>("/api/tasks/extract-memos")(options),
     [createExtractFn],
   );
 

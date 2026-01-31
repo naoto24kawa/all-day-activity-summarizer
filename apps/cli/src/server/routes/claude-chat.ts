@@ -63,13 +63,19 @@ async function updateSummary(
   assistantMessage: string,
 ): Promise<void> {
   try {
-    const summarizePrompt = `以下の会話を簡潔に要約してください。重要な情報、決定事項、文脈を保持してください。
+    const summarizePrompt = `以下の会話を要約してください。後で会話を続ける際に必要な情報を保持してください。
 
-${currentSummary ? `[これまでの要約]\n${currentSummary}\n\n` : ""}[今回のやり取り]
-User: ${userMessage}
-Assistant: ${assistantMessage}
+【保持すべき情報】
+- ユーザーが質問した具体的な内容
+- 話題のトピック、名前、固有名詞
+- 回答した内容のポイント
+- 決定事項や合意した内容
 
-要約 (200文字以内):`;
+${currentSummary ? `【これまでの要約】\n${currentSummary}\n\n` : ""}【今回のやり取り】
+ユーザー: ${userMessage}
+アシスタント: ${assistantMessage}
+
+【新しい要約】(300文字以内、箇条書きでも可):`;
 
     const newSummary = await runClaude(summarizePrompt);
 
@@ -109,11 +115,14 @@ export function createClaudeChatRouter() {
     // コンテキスト付きプロンプトを構築
     let contextPrompt = prompt;
     if (session.summary) {
-      contextPrompt = `[これまでの会話の要約]
-${session.summary}
+      contextPrompt = `あなたはユーザーと会話を続けています。以下は今までの会話の要約です。この文脈を踏まえて返答してください。
 
-[新しい質問]
-${prompt}`;
+---
+【会話の要約】
+${session.summary}
+---
+
+ユーザーの新しいメッセージ: ${prompt}`;
     }
 
     return streamSSE(c, async (stream) => {
@@ -127,6 +136,14 @@ ${prompt}`;
         "stream-json",
         "--verbose",
       ];
+
+      // 会話継続時はシステムプロンプトを追加
+      if (session.summary) {
+        args.push(
+          "--system-prompt",
+          "あなたはユーザーと継続的な会話をしています。提供された会話の要約には、以前のやり取りで話した内容が含まれています。ユーザーが「さっき」「前に」「それ」などと言及した場合、要約の内容を参照してください。",
+        );
+      }
 
       const proc = spawn("claude", args, {
         stdio: ["ignore", "pipe", "pipe"],

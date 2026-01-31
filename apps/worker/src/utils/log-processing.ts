@@ -9,10 +9,10 @@ import consola from "consola";
 
 /**
  * CLI Server の URL を環境変数から取得
- * デフォルト: http://localhost:3456
+ * デフォルト: http://localhost:3001
  */
 function getCliServerUrl(): string {
-  return process.env.ADAS_CLI_SERVER_URL || "http://localhost:3456";
+  return process.env.ADAS_CLI_SERVER_URL || "http://localhost:3001";
 }
 
 /**

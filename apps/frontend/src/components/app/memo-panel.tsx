@@ -3,6 +3,8 @@ import { MEMO_TAGS } from "@repo/types";
 import {
   Check,
   FolderGit2,
+  ListTodo,
+  Loader2,
   Mic,
   MicOff,
   Pencil,
@@ -26,6 +28,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMemos } from "@/hooks/use-memos";
 import { getProjectName, useProjects } from "@/hooks/use-projects";
+import { useTasks } from "@/hooks/use-tasks";
 import { formatTimeJST } from "@/lib/date";
 
 /** タグごとの色定義 */
@@ -99,6 +102,7 @@ interface MemoPanelProps {
 export function MemoPanel({ date, className }: MemoPanelProps) {
   const { memos, loading, error, postMemo, updateMemo, deleteMemo, refetch } = useMemos(date);
   const { projects } = useProjects();
+  const { extractMemoTasks } = useTasks();
   const [refreshing, setRefreshing] = useState(false);
   const [input, setInput] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -290,6 +294,7 @@ export function MemoPanel({ date, className }: MemoPanelProps) {
                   projects={projects}
                   onUpdate={updateMemo}
                   onDelete={deleteMemo}
+                  onCreateTask={extractMemoTasks}
                 />
               ))}
             </div>
@@ -366,15 +371,17 @@ interface MemoItemProps {
     projectId?: number | null,
   ) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
+  onCreateTask: (options: { memoIds: number[] }) => Promise<{ extracted: number }>;
 }
 
-function MemoItem({ memo, projects, onUpdate, onDelete }: MemoItemProps) {
+function MemoItem({ memo, projects, onUpdate, onDelete, onCreateTask }: MemoItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(memo.content);
   const [editTags, setEditTags] = useState<string[]>(parseTags(memo.tags));
   const [editProjectId, setEditProjectId] = useState<number | null>(memo.projectId);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [creatingTask, setCreatingTask] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const memoTags = parseTags(memo.tags);
   const projectName = getProjectName(projects, memo.projectId);
@@ -382,9 +389,11 @@ function MemoItem({ memo, projects, onUpdate, onDelete }: MemoItemProps) {
   useEffect(() => {
     if (isEditing && textareaRef.current) {
       textareaRef.current.focus();
-      textareaRef.current.setSelectionRange(editContent.length, editContent.length);
+      const len = textareaRef.current.value.length;
+      textareaRef.current.setSelectionRange(len, len);
     }
-  }, [isEditing, editContent.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 編集モード開始時のみ実行
+  }, [isEditing]);
 
   const handleSave = async () => {
     const content = editContent.trim();
@@ -413,6 +422,23 @@ function MemoItem({ memo, projects, onUpdate, onDelete }: MemoItemProps) {
       await onDelete(memo.id);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleCreateTask = async () => {
+    if (creatingTask) return;
+    setCreatingTask(true);
+    try {
+      const result = await onCreateTask({ memoIds: [memo.id] });
+      if (result.extracted > 0) {
+        alert(`${result.extracted} 件のタスクを作成しました`);
+      } else {
+        alert("タスクは抽出されませんでした");
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "タスク作成に失敗しました");
+    } finally {
+      setCreatingTask(false);
     }
   };
 
@@ -511,8 +537,22 @@ function MemoItem({ memo, projects, onUpdate, onDelete }: MemoItemProps) {
             size="icon"
             variant="ghost"
             className="h-6 w-6"
+            onClick={handleCreateTask}
+            disabled={creatingTask || deleting}
+            title="タスク化"
+          >
+            {creatingTask ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <ListTodo className="h-3 w-3" />
+            )}
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6"
             onClick={() => setIsEditing(true)}
-            disabled={deleting}
+            disabled={deleting || creatingTask}
           >
             <Pencil className="h-3 w-3" />
           </Button>
@@ -521,7 +561,7 @@ function MemoItem({ memo, projects, onUpdate, onDelete }: MemoItemProps) {
             variant="ghost"
             className="h-6 w-6 text-destructive hover:text-destructive"
             onClick={handleDelete}
-            disabled={deleting}
+            disabled={deleting || creatingTask}
           >
             <Trash2 className="h-3 w-3" />
           </Button>
