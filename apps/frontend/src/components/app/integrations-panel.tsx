@@ -52,11 +52,15 @@ export function IntegrationsPanel() {
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
 
+  // Daily サマリ自動実行時間
+  const [dailyScheduleHour, setDailyScheduleHour] = useState("23");
+
   // 初期値を設定
   useEffect(() => {
     if (integrations?.summarizer) {
       setLmStudioUrl(integrations.summarizer.lmstudio.url);
       setLmStudioModel(integrations.summarizer.lmstudio.model);
+      setDailyScheduleHour(String(integrations.summarizer.dailyScheduleHour ?? 23));
     }
   }, [integrations?.summarizer]);
 
@@ -156,6 +160,18 @@ export function IntegrationsPanel() {
       setGeneratingSummary(false);
     }
   }, [summaryStartHour, summaryEndHour, today, generateSummary]);
+
+  const handleDailyScheduleHourChange = useCallback(
+    async (value: string) => {
+      setDailyScheduleHour(value);
+      try {
+        await updateSummarizerConfig({ dailyScheduleHour: Number.parseInt(value, 10) });
+      } catch {
+        // エラーはhook内で処理済み
+      }
+    },
+    [updateSummarizerConfig],
+  );
 
   if (loading) {
     return (
@@ -426,6 +442,36 @@ export function IntegrationsPanel() {
                 </div>
               </div>
             )}
+
+            {/* Daily サマリ自動実行時間 */}
+            <div className="mt-4 space-y-3 pt-4 border-t">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                <Label className="text-sm">Daily サマリ自動実行</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                毎日指定した時間に Daily サマリを自動生成します
+              </p>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={dailyScheduleHour}
+                  onValueChange={handleDailyScheduleHourChange}
+                  disabled={updating}
+                >
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <SelectItem key={`daily-${i}`} value={String(i)}>
+                        {String(i).padStart(2, "0")}:00
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-muted-foreground">以降</span>
+              </div>
+            </div>
 
             {/* 時間範囲指定サマリ生成 */}
             <div className="mt-4 space-y-3 pt-4 border-t">

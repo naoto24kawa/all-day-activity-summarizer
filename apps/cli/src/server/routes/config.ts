@@ -11,6 +11,7 @@ interface IntegrationsUpdateBody {
   promptImprovement?: { enabled: boolean };
   summarizer?: {
     provider?: "claude" | "lmstudio";
+    dailyScheduleHour?: number;
     lmstudio?: {
       url?: string;
       model?: string;
@@ -62,6 +63,12 @@ function updateSummarizerConfig(
 
   if (summarizer.provider !== undefined) {
     config.summarizer.provider = summarizer.provider;
+    updated = true;
+  }
+  if (summarizer.dailyScheduleHour !== undefined) {
+    // 0-23 の範囲でバリデーション
+    const hour = Math.max(0, Math.min(23, summarizer.dailyScheduleHour));
+    config.summarizer.dailyScheduleHour = hour;
     updated = true;
   }
   if (summarizer.lmstudio?.url !== undefined) {
@@ -145,6 +152,7 @@ export function createConfigRouter() {
       },
       summarizer: {
         provider: config.summarizer.provider,
+        dailyScheduleHour: config.summarizer.dailyScheduleHour ?? 23,
         lmstudio: {
           url: config.summarizer.lmstudio.url,
           model: config.summarizer.lmstudio.model,
@@ -186,6 +194,7 @@ export function createConfigRouter() {
         promptImprovement: { enabled: config.promptImprovement.enabled },
         summarizer: {
           provider: config.summarizer.provider,
+          dailyScheduleHour: config.summarizer.dailyScheduleHour ?? 23,
           lmstudio: {
             url: config.summarizer.lmstudio.url,
             model: config.summarizer.lmstudio.model,

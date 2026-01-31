@@ -1,5 +1,6 @@
 import type { AdasDatabase, SummaryQueueJob } from "@repo/db";
 import consola from "consola";
+import type { AdasConfig } from "../config.js";
 import { getTodayDateString } from "../utils/date.js";
 import { generateDailySummary, generateTimesSummary } from "./generator.js";
 import {
@@ -19,16 +20,17 @@ export { generateDailySummary, generateTimesSummary } from "./generator.js";
 // Enqueue Scheduler - 時間境界を検出してジョブを投入
 // ---------------------------------------------------------------------------
 
-export function startEnqueueScheduler(db: AdasDatabase): () => void {
+export function startEnqueueScheduler(db: AdasDatabase, config: AdasConfig): () => void {
   let lastDailyDate = "";
+  const dailyScheduleHour = config.summarizer.dailyScheduleHour ?? 23;
 
   const checkAndEnqueue = () => {
     const now = new Date();
     const date = getTodayDateString();
     const currentHour = now.getHours();
 
-    // Daily: 23:00以降に1日分をキューに追加 (自動生成は daily のみ)
-    if (currentHour >= 23 && lastDailyDate !== date) {
+    // Daily: 指定時間以降に1日分をキューに追加 (自動生成は daily のみ)
+    if (currentHour >= dailyScheduleHour && lastDailyDate !== date) {
       lastDailyDate = date;
       const job = enqueue(db, {
         jobType: "daily",
@@ -39,6 +41,8 @@ export function startEnqueueScheduler(db: AdasDatabase): () => void {
       }
     }
   };
+
+  consola.info(`Daily summary scheduled at ${dailyScheduleHour}:00`);
 
   // 初回実行
   checkAndEnqueue();
@@ -149,13 +153,13 @@ export function startWorker(db: AdasDatabase): () => void {
 // 統合スケジューラー (既存 API 互換)
 // ---------------------------------------------------------------------------
 
-export function startScheduler(db: AdasDatabase): () => void {
+export function startScheduler(db: AdasDatabase, config: AdasConfig): () => void {
   consola.info("Starting summary scheduler with queue-based processing");
 
   const stats = getQueueStats(db);
   consola.debug(`Queue stats: ${JSON.stringify(stats)}`);
 
-  const stopEnqueue = startEnqueueScheduler(db);
+  const stopEnqueue = startEnqueueScheduler(db, config);
   const stopWorker = startWorker(db);
 
   return () => {

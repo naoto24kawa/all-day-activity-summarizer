@@ -83,7 +83,7 @@ export function registerServeCommand(program: Command): void {
       await checkWorkerConnection(config);
       startWorkerHealthCheck(config);
 
-      startScheduler(db);
+      startScheduler(db, config);
       consola.success("Summary scheduler started");
 
       // Start Slack system if enabled

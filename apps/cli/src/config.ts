@@ -62,6 +62,7 @@ export interface AdasConfig {
   };
   summarizer: {
     provider: "claude" | "lmstudio";
+    dailyScheduleHour: number; // Daily サマリ自動生成時間 (0-23)
     lmstudio: {
       url: string;
       model: string;
@@ -152,6 +153,7 @@ const defaultConfig: AdasConfig = {
   },
   summarizer: {
     provider: "claude",
+    dailyScheduleHour: 23,
     lmstudio: {
       url: "http://192.168.1.17:1234",
       model: "",
