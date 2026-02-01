@@ -20,6 +20,7 @@ import { createMemosRouter } from "./routes/memos.js";
 import { createProfileRouter } from "./routes/profile.js";
 import { createProjectsRouter } from "./routes/projects.js";
 import { createPromptImprovementsRouter } from "./routes/prompt-improvements.js";
+import { createRateLimitRouter } from "./routes/rate-limit.js";
 import { createRecordingRouter } from "./routes/recording.js";
 import { createServerLogsRouter } from "./routes/server-logs.js";
 import { createSlackChannelsRouter } from "./routes/slack-channels.js";
@@ -70,6 +71,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/projects", createProjectsRouter(db));
   app.route("/api/config", createConfigRouter());
   app.route("/api/ai-jobs", createAIJobsRouter(db));
+  app.route("/api/rate-limit", createRateLimitRouter(db));
   app.route("/api/claude-chat", createClaudeChatRouter());
 
   if (options?.micCapture || options?.speakerCapture) {

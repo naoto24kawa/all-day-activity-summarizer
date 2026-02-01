@@ -842,3 +842,23 @@ export const claudeCodePaths = sqliteTable("claude_code_paths", {
 
 export type ClaudeCodePath = typeof claudeCodePaths.$inferSelect;
 export type NewClaudeCodePath = typeof claudeCodePaths.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Rate Limit Usage (レート制限使用量ログ)
+// ---------------------------------------------------------------------------
+
+export const rateLimitUsage = sqliteTable("rate_limit_usage", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  timestamp: text("timestamp").notNull(), // ISO8601
+  processType: text("process_type").notNull(),
+  model: text("model"),
+  requestCount: integer("request_count").notNull().default(1),
+  estimatedTokens: integer("estimated_tokens").notNull(),
+  actualTokens: integer("actual_tokens"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type RateLimitUsage = typeof rateLimitUsage.$inferSelect;
+export type NewRateLimitUsage = typeof rateLimitUsage.$inferInsert;

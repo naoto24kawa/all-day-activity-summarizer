@@ -7,6 +7,7 @@
 import type { AdasDatabase } from "@repo/db";
 import consola from "consola";
 import type { AdasConfig } from "../config.js";
+import { cleanupOldUsage } from "../utils/rate-limiter.js";
 import { registerAllHandlers } from "./handlers/index.js";
 import { cleanupOldJobs } from "./queue.js";
 import { processJob } from "./worker.js";
@@ -93,9 +94,14 @@ export function startAIJobScheduler(db: AdasDatabase, config: AdasConfig): () =>
   // クリーンアップタイマー
   const cleanupInterval = setInterval(() => {
     try {
-      const deleted = cleanupOldJobs(db);
-      if (deleted > 0) {
-        consola.info(`[ai-job] Cleaned up ${deleted} old jobs`);
+      const deletedJobs = cleanupOldJobs(db);
+      if (deletedJobs > 0) {
+        consola.info(`[ai-job] Cleaned up ${deletedJobs} old jobs`);
+      }
+
+      const deletedUsage = cleanupOldUsage(db);
+      if (deletedUsage > 0) {
+        consola.info(`[ai-job] Cleaned up ${deletedUsage} old rate limit usage records`);
       }
     } catch (err) {
       consola.error("[ai-job] Cleanup error:", err);
@@ -104,9 +110,16 @@ export function startAIJobScheduler(db: AdasDatabase, config: AdasConfig): () =>
 
   // 初回クリーンアップを実行
   try {
-    const deleted = cleanupOldJobs(db);
-    if (deleted > 0) {
-      consola.info(`[ai-job] Initial cleanup: ${deleted} old jobs deleted`);
+    const deletedJobs = cleanupOldJobs(db);
+    if (deletedJobs > 0) {
+      consola.info(`[ai-job] Initial cleanup: ${deletedJobs} old jobs deleted`);
+    }
+
+    const deletedUsage = cleanupOldUsage(db);
+    if (deletedUsage > 0) {
+      consola.info(
+        `[ai-job] Initial cleanup: ${deletedUsage} old rate limit usage records deleted`,
+      );
     }
   } catch (err) {
     consola.error("[ai-job] Initial cleanup error:", err);

@@ -157,6 +157,24 @@ export function getJob(db: AdasDatabase, jobId: number) {
 }
 
 /**
+ * ジョブを再スケジュール (レート制限による遅延)
+ */
+export function rescheduleJob(db: AdasDatabase, jobId: number, delayMs: number): void {
+  const now = new Date().toISOString();
+  const runAfter = new Date(Date.now() + delayMs).toISOString();
+
+  db.update(schema.aiJobQueue)
+    .set({
+      status: "pending",
+      lockedAt: null,
+      runAfter,
+      updatedAt: now,
+    })
+    .where(eq(schema.aiJobQueue.id, jobId))
+    .run();
+}
+
+/**
  * ジョブ一覧を取得
  */
 export function listJobs(

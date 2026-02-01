@@ -28,6 +28,28 @@ export interface TaskElaborationConfig {
   defaultLevel: ElaborationLevel;
 }
 
+export interface RateLimitLimits {
+  requestsPerMinute: number;
+  requestsPerHour: number;
+  requestsPerDay: number;
+  tokensPerMinute: number;
+  tokensPerHour: number;
+  tokensPerDay: number;
+}
+
+export interface RateLimitPriorityMultipliers {
+  high: number;
+  medium: number;
+  low: number;
+  lowest: number;
+}
+
+export interface RateLimitConfig {
+  enabled: boolean;
+  limits: RateLimitLimits;
+  priorityMultipliers: RateLimitPriorityMultipliers;
+}
+
 export interface IntegrationsConfig {
   whisper: IntegrationStatus & {
     engine: "whisperx" | "whisper-cpp";
@@ -56,6 +78,7 @@ export interface IntegrationsConfig {
   };
   summarizer: SummarizerConfig;
   taskElaboration: TaskElaborationConfig;
+  rateLimit: RateLimitConfig;
 }
 
 interface ConfigResponse {
@@ -74,6 +97,7 @@ interface UpdateIntegrationsResponse {
     promptImprovement: IntegrationStatus;
     summarizer: SummarizerConfig;
     taskElaboration: TaskElaborationConfig;
+    rateLimit: { enabled: boolean; limits: RateLimitLimits };
   };
 }
 
@@ -180,6 +204,42 @@ export function useConfig() {
     [],
   );
 
+  const updateRateLimitConfig = useCallback(
+    async (config: { enabled?: boolean; limits?: Partial<RateLimitLimits> }) => {
+      try {
+        setUpdating(true);
+        setError(null);
+        const body = { rateLimit: config };
+        const data = await patchAdasApi<UpdateIntegrationsResponse>(
+          "/api/config/integrations",
+          body,
+        );
+
+        // ローカル状態を更新
+        setIntegrations((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rateLimit: {
+              ...prev.rateLimit,
+              enabled: data.integrations.rateLimit?.enabled ?? prev.rateLimit.enabled,
+              limits: data.integrations.rateLimit?.limits ?? prev.rateLimit.limits,
+            },
+          };
+        });
+
+        return data;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "設定の更新に失敗しました";
+        setError(message);
+        throw err;
+      } finally {
+        setUpdating(false);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     fetchConfig();
   }, [fetchConfig]);
@@ -192,5 +252,6 @@ export function useConfig() {
     fetchConfig,
     updateIntegration,
     updateSummarizerConfig,
+    updateRateLimitConfig,
   };
 }

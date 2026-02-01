@@ -73,6 +73,23 @@ export interface AdasConfig {
   taskElaboration: {
     defaultLevel: "light" | "standard" | "detailed";
   };
+  rateLimit: {
+    enabled: boolean;
+    limits: {
+      requestsPerMinute: number;
+      requestsPerHour: number;
+      requestsPerDay: number;
+      tokensPerMinute: number;
+      tokensPerHour: number;
+      tokensPerDay: number;
+    };
+    priorityMultipliers: {
+      high: number;
+      medium: number;
+      low: number;
+      lowest: number;
+    };
+  };
 }
 
 const ADAS_HOME = join(homedir(), ".adas");
@@ -165,6 +182,23 @@ const defaultConfig: AdasConfig = {
   taskElaboration: {
     defaultLevel: "standard",
   },
+  rateLimit: {
+    enabled: true,
+    limits: {
+      requestsPerMinute: 50,
+      requestsPerHour: 1000,
+      requestsPerDay: 10000,
+      tokensPerMinute: 40000,
+      tokensPerHour: 400000,
+      tokensPerDay: 2000000,
+    },
+    priorityMultipliers: {
+      high: 1.2,
+      medium: 1.0,
+      low: 0.8,
+      lowest: 0.6,
+    },
+  },
 };
 
 export function getAdasHome(): string {
@@ -208,6 +242,15 @@ export function loadConfig(): AdasConfig {
       lmstudio: { ...defaultConfig.summarizer.lmstudio, ...userConfig.summarizer?.lmstudio },
     },
     taskElaboration: { ...defaultConfig.taskElaboration, ...userConfig.taskElaboration },
+    rateLimit: {
+      ...defaultConfig.rateLimit,
+      ...userConfig.rateLimit,
+      limits: { ...defaultConfig.rateLimit.limits, ...userConfig.rateLimit?.limits },
+      priorityMultipliers: {
+        ...defaultConfig.rateLimit.priorityMultipliers,
+        ...userConfig.rateLimit?.priorityMultipliers,
+      },
+    },
   };
 }
 

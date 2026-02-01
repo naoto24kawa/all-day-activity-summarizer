@@ -1,11 +1,16 @@
 import type { RpcSummarizeResponse } from "@repo/types";
 import consola from "consola";
 import { loadConfig } from "../config.js";
+import { withProcessingLog } from "../utils/ai-processing-log.js";
 
-const MODEL = "sonnet";
+const DEFAULT_MODEL = "sonnet";
 
 export function getModelName(): string {
-  return MODEL;
+  const config = loadConfig();
+  if (config.summarizer.provider === "lmstudio") {
+    return config.summarizer.lmstudio.model || "lmstudio";
+  }
+  return DEFAULT_MODEL;
 }
 
 interface LMStudioChatResponse {
@@ -71,7 +76,7 @@ async function generateSummaryWithClaude(prompt: string): Promise<string> {
     const response = await fetch(`${url}/rpc/summarize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, model: MODEL }),
+      body: JSON.stringify({ prompt, model: DEFAULT_MODEL }),
       signal: controller.signal,
     });
 
@@ -97,8 +102,18 @@ export async function generateSummary(prompt: string): Promise<string> {
   const provider = config.summarizer.provider;
 
   if (provider === "lmstudio") {
-    return generateSummaryWithLMStudio(prompt);
+    const model = config.summarizer.lmstudio.model || "lmstudio";
+    return withProcessingLog(
+      "summarize",
+      model,
+      () => generateSummaryWithLMStudio(prompt),
+      (result) => ({
+        inputSize: prompt.length,
+        outputSize: result.length,
+      }),
+    );
   }
 
+  // Worker経由の場合は Worker 側でログ記録される
   return generateSummaryWithClaude(prompt);
 }

@@ -13,6 +13,7 @@ import type {
   ApplyElaborationRequest,
   ApplyElaborationResponse,
   ElaborationChildTask,
+  ElaborationLevel,
   ElaborationResult,
   ElaborationStatusResponse,
   Project,
@@ -44,6 +45,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 
@@ -55,7 +63,7 @@ interface TaskElaborateDialogProps {
   project: Project | null;
   onStartElaborate: (
     taskId: number,
-    request?: { userInstruction?: string },
+    request?: { userInstruction?: string; level?: ElaborationLevel },
   ) => Promise<StartElaborationResponse>;
   onGetElaborationStatus: (taskId: number) => Promise<ElaborationStatusResponse>;
   onApplyElaboration: (
@@ -86,6 +94,7 @@ export function TaskElaborateDialog({
 }: TaskElaborateDialogProps) {
   const [phase, setPhase] = useState<DialogPhase>("input");
   const [userInstruction, setUserInstruction] = useState("");
+  const [elaborationLevel, setElaborationLevel] = useState<ElaborationLevel>("standard");
   const [elaborationResult, setElaborationResult] = useState<ElaborationResult | null>(null);
   const [childTaskEdits, setChildTaskEdits] = useState<ChildTaskEdit[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -191,6 +200,7 @@ export function TaskElaborateDialog({
       stopPolling();
       setPhase("input");
       setUserInstruction("");
+      setElaborationLevel("standard");
       setElaborationResult(null);
       setChildTaskEdits([]);
       setError(null);
@@ -210,6 +220,7 @@ export function TaskElaborateDialog({
     try {
       await onStartElaborate(task.id, {
         userInstruction: userInstruction.trim() || undefined,
+        level: elaborationLevel,
       });
 
       setPhase("polling");
@@ -220,6 +231,7 @@ export function TaskElaborateDialog({
   }, [
     task.id,
     userInstruction,
+    elaborationLevel,
     inputListening,
     stopInputListening,
     onStartElaborate,
@@ -327,6 +339,40 @@ export function TaskElaborateDialog({
                 プロジェクトが未設定のため、コードベースを参照できません
               </p>
             )}
+
+            <div className="space-y-2">
+              <Label htmlFor="elaboration-level">詳細度</Label>
+              <Select
+                value={elaborationLevel}
+                onValueChange={(value) => setElaborationLevel(value as ElaborationLevel)}
+              >
+                <SelectTrigger id="elaboration-level">
+                  <SelectValue placeholder="詳細度を選択" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="light">
+                    <div className="flex flex-col items-start">
+                      <span>簡潔</span>
+                      <span className="text-xs text-muted-foreground">2-3ステップ、概要のみ</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="standard">
+                    <div className="flex flex-col items-start">
+                      <span>標準</span>
+                      <span className="text-xs text-muted-foreground">3-5ステップ、適度な説明</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="detailed">
+                    <div className="flex flex-col items-start">
+                      <span>詳細</span>
+                      <span className="text-xs text-muted-foreground">
+                        5-7ステップ、具体的な手順
+                      </span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="user-instruction">追加の指示 (任意)</Label>

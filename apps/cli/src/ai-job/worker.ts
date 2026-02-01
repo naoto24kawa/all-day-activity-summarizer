@@ -8,7 +8,13 @@ import type { AdasDatabase } from "@repo/db";
 import type { AIJobType } from "@repo/types";
 import consola from "consola";
 import type { AdasConfig } from "../config.js";
-import { dequeueJob, markJobCompleted, markJobFailed } from "./queue.js";
+import {
+  checkRateLimit,
+  estimateTokens,
+  recordUsage,
+  updateActualTokens,
+} from "../utils/rate-limiter.js";
+import { dequeueJob, markJobCompleted, markJobFailed, rescheduleJob } from "./queue.js";
 
 /** ジョブ結果 */
 export interface JobResult {
@@ -39,7 +45,7 @@ export interface ProcessJobResult {
   processed: boolean;
   jobId?: number;
   jobType?: string;
-  status?: "completed" | "failed";
+  status?: "completed" | "failed" | "rescheduled";
   resultSummary?: string | null;
 }
 
@@ -69,9 +75,38 @@ export async function processJob(db: AdasDatabase, config: AdasConfig): Promise<
 
   const params = job.params ? JSON.parse(job.params) : {};
 
+  // レート制限チェック
+  const paramsStr = JSON.stringify(params);
+  const estimatedTokensForJob = estimateTokens(paramsStr);
+  const rateLimitCheck = checkRateLimit(db, config, job.jobType, estimatedTokensForJob);
+
+  if (!rateLimitCheck.allowed) {
+    const delayMs = rateLimitCheck.retryAfterMs ?? 60000;
+    consola.warn(
+      `Job ${job.id} rate limited: ${rateLimitCheck.reason}. Rescheduling in ${delayMs / 1000}s`,
+    );
+    rescheduleJob(db, job.id, delayMs);
+    return {
+      processed: true,
+      jobId: job.id,
+      jobType: job.jobType,
+      status: "rescheduled",
+      resultSummary: rateLimitCheck.reason,
+    };
+  }
+
+  // 使用量を事前記録
+  const usageId = recordUsage(db, job.jobType, estimatedTokensForJob);
+
   try {
     consola.info(`Processing job ${job.id} (${job.jobType})`);
     const result = await handler(db, config, params);
+
+    // 実際のトークン数を更新 (結果から推定)
+    if (result.data) {
+      const actualTokens = estimateTokens(JSON.stringify(result.data));
+      updateActualTokens(db, usageId, actualTokens);
+    }
 
     if (result.success) {
       markJobCompleted(db, job.id, result.data ?? null, result.resultSummary);

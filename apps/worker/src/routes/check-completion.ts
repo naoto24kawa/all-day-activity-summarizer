@@ -47,6 +47,35 @@ export function createCheckCompletionRouter() {
   return router;
 }
 
+/**
+ * 子タスク情報をプロンプト用にフォーマット
+ */
+function formatChildTasksSection(
+  childTasks?: { stepNumber: number; title: string; status: string }[],
+): string {
+  if (!childTasks || childTasks.length === 0) {
+    return "";
+  }
+
+  const lines = [`\n### 子タスク (${childTasks.length}件)`];
+  for (const child of childTasks) {
+    lines.push(`${child.stepNumber}. [${child.status}] ${child.title}`);
+  }
+  lines.push("");
+  lines.push("注意: 親タスクは全ての子タスクが完了している場合のみ「完了」と判断してください。");
+  return lines.join("\n");
+}
+
+/**
+ * 親タスク情報をプロンプト用にフォーマット
+ */
+function formatParentTaskSection(parentTask?: { id: number; title: string }): string {
+  if (!parentTask) {
+    return "";
+  }
+  return `\n### 親タスク\n#${parentTask.id} ${parentTask.title}`;
+}
+
 async function checkCompletionWithClaude(
   req: CheckCompletionRequest,
 ): Promise<CheckCompletionResponse> {
@@ -56,11 +85,14 @@ async function checkCompletionWithClaude(
     transcribe: "音声書き起こしテキスト",
   };
 
+  const childTasksSection = formatChildTasksSection(req.task.childTasks);
+  const parentTaskSection = formatParentTaskSection(req.task.parentTask);
+
   const prompt = `あなたはタスク完了判定の専門家です。
 
 ## タスク情報
 タイトル: ${req.task.title}
-${req.task.description ? `説明: ${req.task.description}` : ""}
+${req.task.description ? `説明: ${req.task.description}` : ""}${childTasksSection}${parentTaskSection}
 
 ## コンテキスト (${sourceDescriptions[req.source]})
 ${req.context}

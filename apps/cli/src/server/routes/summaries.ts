@@ -3,12 +3,14 @@ import { schema } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { enqueueJob } from "../../ai-job/queue.js";
+import { loadConfig } from "../../config.js";
 import { getTodayDateString } from "../../utils/date.js";
 
 /** 時間範囲の最大値 (12時間) */
 const MAX_TIME_RANGE_HOURS = 12;
 
 export function createSummariesRouter(db: AdasDatabase) {
+  const config = loadConfig();
   const router = new Hono();
 
   router.get("/", (c) => {
@@ -81,9 +83,28 @@ export function createSummariesRouter(db: AdasDatabase) {
       });
     }
 
-    // デフォルト: Daily のみ生成
-    const jobId = enqueueJob(db, "summarize-daily", { date });
-    return c.json({ success: true, jobId, message: "日次サマリ生成をキューに追加しました" });
+    // デフォルト: Daily と (自動インターバル設定があれば) Times を生成
+    const dailyJobId = enqueueJob(db, "summarize-daily", { date });
+    const jobIds = [dailyJobId];
+
+    const timesIntervalMinutes = config.summarizer.timesIntervalMinutes;
+    if (timesIntervalMinutes > 0) {
+      const currentHour = new Date().getHours();
+      const hoursToSummarize = Math.max(1, Math.ceil(timesIntervalMinutes / 60));
+      const endHour = currentHour;
+      const startHour = Math.max(0, endHour - hoursToSummarize + 1);
+
+      const timesJobId = enqueueJob(db, "summarize-times", { date, startHour, endHour });
+      jobIds.push(timesJobId);
+
+      return c.json({
+        success: true,
+        jobIds,
+        message: `日次サマリと ${startHour}時〜${endHour}時のTimesサマリ生成をキューに追加しました`,
+      });
+    }
+
+    return c.json({ success: true, jobIds, message: "日次サマリ生成をキューに追加しました" });
   });
 
   return router;

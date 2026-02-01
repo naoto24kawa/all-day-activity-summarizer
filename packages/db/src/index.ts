@@ -32,6 +32,7 @@ export type {
   NewProject,
   NewProjectSuggestion,
   NewPromptImprovement,
+  NewRateLimitUsage,
   NewSegmentFeedback,
   NewSlackChannel,
   NewSlackMessage,
@@ -47,6 +48,7 @@ export type {
   Project,
   ProjectSuggestion,
   PromptImprovement,
+  RateLimitUsage,
   SegmentFeedback,
   SlackChannel,
   SlackMessage,
@@ -1210,7 +1212,7 @@ export function createDatabase(dbPath: string) {
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='summaries'",
       )
       .get();
-    if (row && row.sql.includes("'pomodoro'") && !row.sql.includes("'times'")) {
+    if (row?.sql.includes("'pomodoro'") && !row.sql.includes("'times'")) {
       sqlite.exec(`
         -- 既存の pomodoro/hourly サマリーを削除
         DELETE FROM summaries WHERE summary_type IN ('pomodoro', 'hourly');
@@ -1247,7 +1249,7 @@ export function createDatabase(dbPath: string) {
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='summary_queue'",
       )
       .get();
-    if (row && row.sql.includes("'pomodoro'") && !row.sql.includes("'times'")) {
+    if (row?.sql.includes("'pomodoro'") && !row.sql.includes("'times'")) {
       sqlite.exec(`
         -- 既存の pomodoro/hourly ジョブを削除
         DELETE FROM summary_queue WHERE job_type IN ('pomodoro', 'hourly');
@@ -1291,7 +1293,7 @@ export function createDatabase(dbPath: string) {
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='ai_job_queue'",
       )
       .get();
-    if (row && row.sql.includes("'summarize-pomodoro'") && !row.sql.includes("'summarize-times'")) {
+    if (row?.sql.includes("'summarize-pomodoro'") && !row.sql.includes("'summarize-times'")) {
       sqlite.exec(`
         -- 既存の pomodoro/hourly ジョブを削除
         DELETE FROM ai_job_queue WHERE job_type IN ('summarize-pomodoro', 'summarize-hourly');
@@ -1332,6 +1334,23 @@ export function createDatabase(dbPath: string) {
   } catch {
     // Migration already applied or fresh DB
   }
+
+  // Migration: create rate_limit_usage table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS rate_limit_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL,
+      process_type TEXT NOT NULL,
+      model TEXT,
+      request_count INTEGER NOT NULL DEFAULT 1,
+      estimated_tokens INTEGER NOT NULL,
+      actual_tokens INTEGER,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_rate_limit_usage_timestamp ON rate_limit_usage(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_rate_limit_usage_process_type ON rate_limit_usage(process_type);
+  `);
 
   return db;
 }

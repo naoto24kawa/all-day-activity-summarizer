@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFeedbacks } from "@/hooks/use-feedbacks";
+import { useJobProgress } from "@/hooks/use-job-progress";
 import { useSummaries } from "@/hooks/use-summaries";
 import { formatTimeJST } from "@/lib/date";
 
@@ -42,7 +43,17 @@ export function SummaryView({ date, className }: SummaryViewProps) {
   } = useSummaries(date, "daily");
   const { generateSummary } = useSummaries(date);
   const { getFeedback, postFeedback } = useFeedbacks("summary", date);
-  const [generating, setGenerating] = useState(false);
+  const {
+    trackJob,
+    trackJobs,
+    isProcessing: generating,
+  } = useJobProgress({
+    onAllCompleted: () => {
+      // 全ジョブ完了時にサマリを再取得
+      refetchTimes();
+      refetchDaily();
+    },
+  });
   const [pendingFeedback, setPendingFeedback] = useState<{
     summaryId: number;
     rating: FeedbackRating;
@@ -53,11 +64,12 @@ export function SummaryView({ date, className }: SummaryViewProps) {
   };
 
   const handleGenerate = async () => {
-    setGenerating(true);
-    try {
-      await generateSummary({ date });
-    } finally {
-      setGenerating(false);
+    const result = await generateSummary({ date });
+    // jobId または jobIds を追跡
+    if (result.jobIds) {
+      trackJobs(result.jobIds);
+    } else if (result.jobId) {
+      trackJob(result.jobId);
     }
   };
 

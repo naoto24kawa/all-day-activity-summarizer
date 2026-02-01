@@ -11,8 +11,9 @@ import type {
   TranscriptionSegment,
 } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, between, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, between, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { loadConfig } from "../config.js";
+import { getChildTasks } from "../utils/task-hierarchy.js";
 import { generateSummary, getModelName } from "./client.js";
 import { buildDailySummaryPrompt, buildTimesSummaryPrompt } from "./prompts.js";
 
@@ -202,7 +203,7 @@ function groupItemsByProject<T extends { projectId: number | null }>(
   return sortedKeys.map((projectId) => ({
     projectId,
     projectName: projectNameMap.get(projectId) ?? "その他",
-    items: groups.get(projectId)!,
+    items: groups.get(projectId) ?? [],
   }));
 }
 
@@ -265,13 +266,16 @@ interface ActionableTasksResult {
 
 /**
  * 着手すべきタスク (承認済み・進行中) を優先度順・ブロック状態付きで取得
+ * 親タスクのみ取得 (子タスクは親と一緒に表示される)
  */
 function fetchActionableTasks(db: AdasDatabase, limit = 5): ActionableTasksResult {
-  // 全件カウント (accepted + in_progress)
+  // 親タスクのみを対象 (accepted + in_progress, parentId is null)
   const allTasks = db
     .select()
     .from(schema.tasks)
-    .where(inArray(schema.tasks.status, ["accepted", "in_progress"]))
+    .where(
+      and(inArray(schema.tasks.status, ["accepted", "in_progress"]), isNull(schema.tasks.parentId)),
+    )
     .orderBy(desc(schema.tasks.priority), desc(schema.tasks.acceptedAt))
     .all();
 
@@ -327,11 +331,12 @@ function fetchActionableTasks(db: AdasDatabase, limit = 5): ActionableTasksResul
 }
 
 /**
- * 着手すべきタスクをテキスト形式に変換 (プロジェクト毎にグループ化)
+ * 着手すべきタスクをテキスト形式に変換 (プロジェクト毎にグループ化、子タスク含む)
  */
 function formatActionableTasks(
   result: ActionableTasksResult,
   projectNameMap: Map<number | null, string>,
+  db?: AdasDatabase,
 ): string {
   const { tasks: actionableTasks, totalCount } = result;
 
@@ -366,7 +371,7 @@ function formatActionableTasks(
   });
 
   for (const projectId of sortedProjectIds) {
-    const projectTasks = tasksByProject.get(projectId)!;
+    const projectTasks = tasksByProject.get(projectId) ?? [];
     const projectName = projectNameMap.get(projectId) ?? "その他";
     lines.push(`### ${projectName}`);
 
@@ -377,6 +382,15 @@ function formatActionableTasks(
       lines.push(`- ${priorityLabel}${statusLabel}${blockedStatus} ${task.title}`);
       if (isBlocked && blockedBy.length > 0) {
         lines.push(`  ブロッカー: ${blockedBy.map((b) => `#${b.id} ${b.title}`).join(", ")}`);
+      }
+
+      // 子タスクを表示 (db が渡されている場合)
+      if (db) {
+        const childTasks = getChildTasks(db, task.id);
+        for (const child of childTasks) {
+          const childStatusLabel = child.status === "completed" ? "[完了]" : `[${child.status}]`;
+          lines.push(`  - Step ${child.stepNumber}: ${child.title} ${childStatusLabel}`);
+        }
       }
     }
   }
@@ -524,25 +538,35 @@ function buildActivityTextWithProjectSections(
     }
   }
 
-  // タスクをプロジェクト別にグループ化
+  // タスクをプロジェクト別にグループ化 (親タスクのみ、子タスクは除外)
   const acceptedTasks = classified.personal.tasks.filter(
-    (t) => t.status === "accepted" || t.status === "completed",
+    (t) => (t.status === "accepted" || t.status === "completed") && t.parentId === null,
   );
   const taskGroups = groupItemsByProject(acceptedTasks, projectNameMap);
   for (const group of taskGroups) {
     if (group.items.length > 0) {
-      const taskText = group.items
-        .map((t) => {
-          const priorityLabel = t.priority ? `[${t.priority}]` : "";
-          const statusLabel = t.status === "completed" ? "[完了]" : "";
-          const source =
-            t.sourceType === "github" ? "[GitHub]" : t.sourceType === "manual" ? "[手動]" : "";
-          return `- ${priorityLabel}${statusLabel}${source} ${t.title}`;
-        })
-        .join("\n");
+      const taskLines: string[] = [];
+      for (const t of group.items) {
+        const priorityLabel = t.priority ? `[${t.priority}]` : "";
+        const statusLabel = t.status === "completed" ? "[完了]" : "";
+        const source =
+          t.sourceType === "github" ? "[GitHub]" : t.sourceType === "manual" ? "[手動]" : "";
+        taskLines.push(`- ${priorityLabel}${statusLabel}${source} ${t.title}`);
+
+        // 子タスクを取得して表示
+        const childTasks = classified.personal.tasks.filter((c) => c.parentId === t.id);
+        if (childTasks.length > 0) {
+          for (const child of childTasks.sort(
+            (a, b) => (a.stepNumber ?? 0) - (b.stepNumber ?? 0),
+          )) {
+            const childStatusLabel = child.status === "completed" ? "[完了]" : `[${child.status}]`;
+            taskLines.push(`  - Step ${child.stepNumber}: ${child.title} ${childStatusLabel}`);
+          }
+        }
+      }
       const projectLabel =
         group.projectId !== null ? `#### タスク [${group.projectName}]` : "#### タスク (その他)";
-      personalSections.push(`${projectLabel}\n${taskText}`);
+      personalSections.push(`${projectLabel}\n${taskLines.join("\n")}`);
     }
   }
 
@@ -825,7 +849,7 @@ export async function generateTimesSummary(
 
   // 着手すべきタスクを取得してプロンプトに追加
   const actionableTasks = fetchActionableTasks(db, 5);
-  const actionableTasksText = formatActionableTasks(actionableTasks, projectNameMap);
+  const actionableTasksText = formatActionableTasks(actionableTasks, projectNameMap, db);
 
   const prompt = await buildTimesSummaryPrompt(activityText, db, actionableTasksText || undefined);
   const content = await generateSummary(prompt);
@@ -935,7 +959,7 @@ export async function generateDailySummary(db: AdasDatabase, date: string): Prom
 
   // 着手すべきタスクを取得してプロンプトに追加
   const actionableTasks = fetchActionableTasks(db, 5);
-  const actionableTasksText = formatActionableTasks(actionableTasks, projectNameMap);
+  const actionableTasksText = formatActionableTasks(actionableTasks, projectNameMap, db);
 
   const prompt = await buildDailySummaryPrompt(summariesText, db, actionableTasksText || undefined);
   const content = await generateSummary(prompt);

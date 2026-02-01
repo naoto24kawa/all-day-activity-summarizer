@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { getPromptFilePath, runClaude } from "@repo/core";
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import type { ElaborationResult } from "@repo/types";
+import type { ElaborationLevel, ElaborationResult } from "@repo/types";
 import consola from "consola";
 import { eq } from "drizzle-orm";
 import type { AdasConfig } from "../../config.js";
@@ -21,6 +21,7 @@ import type { JobResult } from "../worker.js";
 interface TaskElaborateParams {
   taskId: number;
   userInstruction?: string;
+  level?: ElaborationLevel;
 }
 
 /**
@@ -31,7 +32,7 @@ export async function handleTaskElaborate(
   _config: AdasConfig,
   params: Record<string, unknown>,
 ): Promise<JobResult> {
-  const { taskId, userInstruction } = params as TaskElaborateParams;
+  const { taskId, userInstruction, level } = params as unknown as TaskElaborateParams;
 
   if (!taskId) {
     return {
@@ -89,6 +90,10 @@ export async function handleTaskElaborate(
     if (userInstruction) {
       userPrompt += `**追加の指示**:\n${userInstruction}\n\n`;
     }
+
+    // 詳細度レベル (デフォルトは standard)
+    const elaborationLevel = level ?? "standard";
+    userPrompt += `**詳細度レベル**: ${elaborationLevel}\n\n`;
 
     userPrompt += "JSON 形式で出力してください。\n";
 
@@ -170,8 +175,8 @@ function parseElaborationResponse(response: string): ElaborationResult {
 
   // ```json ... ``` を除去
   const jsonBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (jsonBlockMatch) {
-    jsonStr = jsonBlockMatch[1]?.trim();
+  if (jsonBlockMatch?.[1]) {
+    jsonStr = jsonBlockMatch[1].trim();
   }
 
   // JSON の開始位置を見つける
@@ -223,8 +228,8 @@ function extractReferencedFiles(response: string): Set<string> {
 
   // ツール使用パターンから抽出
   for (const pattern of [readPattern, globPattern, grepPattern]) {
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(response)) !== null) {
+    const matches = response.matchAll(pattern);
+    for (const match of matches) {
       const path = match[1]?.trim();
       if (path && !path.includes("*")) {
         referencedFiles.add(path);
@@ -233,8 +238,8 @@ function extractReferencedFiles(response: string): Set<string> {
   }
 
   // ファイルパスパターンから抽出
-  let match: RegExpExecArray | null;
-  while ((match = filePathPattern.exec(response)) !== null) {
+  const fileMatches = response.matchAll(filePathPattern);
+  for (const match of fileMatches) {
     referencedFiles.add(match[0]);
   }
 

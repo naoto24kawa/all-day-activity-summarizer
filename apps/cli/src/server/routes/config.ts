@@ -21,6 +21,17 @@ interface IntegrationsUpdateBody {
   taskElaboration?: {
     defaultLevel?: "light" | "standard" | "detailed";
   };
+  rateLimit?: {
+    enabled?: boolean;
+    limits?: {
+      requestsPerMinute?: number;
+      requestsPerHour?: number;
+      requestsPerDay?: number;
+      tokensPerMinute?: number;
+      tokensPerHour?: number;
+      tokensPerDay?: number;
+    };
+  };
 }
 
 /** enabled 設定を持つ連携機能のキー */
@@ -32,8 +43,6 @@ const INTEGRATION_KEYS = [
   "evaluator",
   "promptImprovement",
 ] as const;
-
-type IntegrationKey = (typeof INTEGRATION_KEYS)[number];
 
 /**
  * 連携機能の enabled 設定を更新
@@ -114,6 +123,53 @@ function updateTaskElaborationConfig(
 }
 
 /**
+ * rateLimit 設定を更新
+ */
+function updateRateLimitConfig(
+  config: AdasConfig,
+  rateLimit: IntegrationsUpdateBody["rateLimit"],
+): boolean {
+  if (!rateLimit) return false;
+
+  let updated = false;
+
+  if (rateLimit.enabled !== undefined) {
+    config.rateLimit.enabled = rateLimit.enabled;
+    updated = true;
+  }
+
+  if (rateLimit.limits) {
+    const limits = rateLimit.limits;
+    if (limits.requestsPerMinute !== undefined) {
+      config.rateLimit.limits.requestsPerMinute = Math.max(1, limits.requestsPerMinute);
+      updated = true;
+    }
+    if (limits.requestsPerHour !== undefined) {
+      config.rateLimit.limits.requestsPerHour = Math.max(1, limits.requestsPerHour);
+      updated = true;
+    }
+    if (limits.requestsPerDay !== undefined) {
+      config.rateLimit.limits.requestsPerDay = Math.max(1, limits.requestsPerDay);
+      updated = true;
+    }
+    if (limits.tokensPerMinute !== undefined) {
+      config.rateLimit.limits.tokensPerMinute = Math.max(1, limits.tokensPerMinute);
+      updated = true;
+    }
+    if (limits.tokensPerHour !== undefined) {
+      config.rateLimit.limits.tokensPerHour = Math.max(1, limits.tokensPerHour);
+      updated = true;
+    }
+    if (limits.tokensPerDay !== undefined) {
+      config.rateLimit.limits.tokensPerDay = Math.max(1, limits.tokensPerDay);
+      updated = true;
+    }
+  }
+
+  return updated;
+}
+
+/**
  * 連携機能の有効/無効設定を管理するAPI
  * トークンなどの機密情報は返さない
  */
@@ -170,6 +226,11 @@ export function createConfigRouter() {
       taskElaboration: {
         defaultLevel: config.taskElaboration?.defaultLevel ?? "standard",
       },
+      rateLimit: {
+        enabled: config.rateLimit.enabled,
+        limits: config.rateLimit.limits,
+        priorityMultipliers: config.rateLimit.priorityMultipliers,
+      },
     };
 
     return c.json({ integrations });
@@ -183,7 +244,9 @@ export function createConfigRouter() {
     const enabledUpdated = updateIntegrationEnabled(config, body);
     const summarizerUpdated = updateSummarizerConfig(config, body.summarizer);
     const taskElaborationUpdated = updateTaskElaborationConfig(config, body.taskElaboration);
-    const updated = enabledUpdated || summarizerUpdated || taskElaborationUpdated;
+    const rateLimitUpdated = updateRateLimitConfig(config, body.rateLimit);
+    const updated =
+      enabledUpdated || summarizerUpdated || taskElaborationUpdated || rateLimitUpdated;
 
     if (updated) {
       saveConfig(config);
@@ -211,6 +274,10 @@ export function createConfigRouter() {
         },
         taskElaboration: {
           defaultLevel: config.taskElaboration?.defaultLevel ?? "standard",
+        },
+        rateLimit: {
+          enabled: config.rateLimit.enabled,
+          limits: config.rateLimit.limits,
         },
       },
     });

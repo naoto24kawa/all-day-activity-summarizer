@@ -2,6 +2,7 @@ import {
   Bot,
   Check,
   Clock,
+  Gauge,
   Github,
   Loader2,
   MessageSquare,
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
@@ -28,11 +30,20 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useConfig } from "@/hooks/use-config";
+import { useRateLimit } from "@/hooks/use-rate-limit";
 import { fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
 export function IntegrationsPanel() {
-  const { integrations, loading, error, updating, updateIntegration, updateSummarizerConfig } =
-    useConfig();
+  const {
+    integrations,
+    loading,
+    error,
+    updating,
+    updateIntegration,
+    updateSummarizerConfig,
+    updateRateLimitConfig,
+  } = useConfig();
+  const { status: rateLimitStatus } = useRateLimit();
 
   // LM Studio 関連の状態
   const [lmStudioUrl, setLmStudioUrl] = useState("");
@@ -443,6 +454,7 @@ export function IntegrationsPanel() {
                   </SelectTrigger>
                   <SelectContent>
                     {Array.from({ length: 24 }, (_, i) => (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: Hours 0-23 are stable identifiers
                       <SelectItem key={`daily-${i}`} value={String(i)}>
                         {String(i).padStart(2, "0")}:00
                       </SelectItem>
@@ -484,7 +496,103 @@ export function IntegrationsPanel() {
             </div>
           </div>
         </div>
+
+        {/* Rate Limit */}
+        <div className="border-t pt-4 mt-4">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Gauge className="h-4 w-4" />
+                <Label className="text-base">Rate Limit</Label>
+              </div>
+              <Switch
+                checked={integrations.rateLimit?.enabled ?? true}
+                onCheckedChange={(checked) => updateRateLimitConfig({ enabled: checked })}
+                disabled={updating}
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              AI 処理のレート制限を設定して予期しない過剰使用を防止
+            </p>
+
+            {rateLimitStatus && integrations.rateLimit?.enabled && (
+              <div className="space-y-3 mt-4">
+                <div className="text-xs font-medium text-muted-foreground">現在の使用状況</div>
+
+                {/* Requests per Minute */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span>Requests / min</span>
+                    <span>
+                      {rateLimitStatus.currentUsage.requestsPerMinute} /{" "}
+                      {rateLimitStatus.limits.requestsPerMinute}
+                    </span>
+                  </div>
+                  <Progress
+                    value={Math.min(rateLimitStatus.usagePercent.requestsPerMinute, 100)}
+                    className="h-1.5"
+                  />
+                </div>
+
+                {/* Requests per Hour */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span>Requests / hour</span>
+                    <span>
+                      {rateLimitStatus.currentUsage.requestsPerHour} /{" "}
+                      {rateLimitStatus.limits.requestsPerHour}
+                    </span>
+                  </div>
+                  <Progress
+                    value={Math.min(rateLimitStatus.usagePercent.requestsPerHour, 100)}
+                    className="h-1.5"
+                  />
+                </div>
+
+                {/* Requests per Day */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span>Requests / day</span>
+                    <span>
+                      {rateLimitStatus.currentUsage.requestsPerDay} /{" "}
+                      {rateLimitStatus.limits.requestsPerDay}
+                    </span>
+                  </div>
+                  <Progress
+                    value={Math.min(rateLimitStatus.usagePercent.requestsPerDay, 100)}
+                    className="h-1.5"
+                  />
+                </div>
+
+                {/* Tokens per Day */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span>Tokens / day</span>
+                    <span>
+                      {formatNumber(rateLimitStatus.currentUsage.tokensPerDay)} /{" "}
+                      {formatNumber(rateLimitStatus.limits.tokensPerDay)}
+                    </span>
+                  </div>
+                  <Progress
+                    value={Math.min(rateLimitStatus.usagePercent.tokensPerDay, 100)}
+                    className="h-1.5"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
+}
+
+function formatNumber(num: number): string {
+  if (num >= 1000000) {
+    return `${(num / 1000000).toFixed(1)}M`;
+  }
+  if (num >= 1000) {
+    return `${(num / 1000).toFixed(1)}K`;
+  }
+  return String(num);
 }
