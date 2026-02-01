@@ -92,6 +92,30 @@ const DEFAULT_SIZE = { width: 380, height: 500 };
 const MIN_SIZE = { width: 300, height: 400 };
 export const MEMO_SIDEBAR_WIDTH = 400;
 
+const STORAGE_KEY = "adas-memo-panel-open";
+
+/** LocalStorage から開閉状態を読み込む */
+function loadOpenState(): boolean {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved !== null) {
+      return saved === "true";
+    }
+  } catch {
+    // LocalStorage アクセスエラーは無視
+  }
+  return true; // デフォルト: 開いている
+}
+
+/** LocalStorage に開閉状態を保存 */
+function saveOpenState(isOpen: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, String(isOpen));
+  } catch {
+    // LocalStorage アクセスエラーは無視
+  }
+}
+
 interface MemoFloatingChatProps {
   date: string;
   /** サイドバーモードで開始するか */
@@ -113,7 +137,7 @@ export function MemoFloatingChat({
 }: MemoFloatingChatProps) {
   const { memos, loading, error, postMemo, updateMemo, deleteMemo, refetch } = useMemos(date);
   const { extractMemoTasks } = useTasks();
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(loadOpenState);
   const [mode, setMode] = useState<MemoMode>(initialSidebar ? "sidebar" : "floating");
   const [size, setSize] = useState(DEFAULT_SIZE);
   const [refreshing, setRefreshing] = useState(false);
@@ -159,9 +183,10 @@ export function MemoFloatingChat({
     }
   }, [isOpen]);
 
-  // 親に開閉状態を通知
+  // 親に開閉状態を通知 & LocalStorage に保存
   useEffect(() => {
     onOpenChange?.(isOpen);
+    saveOpenState(isOpen);
   }, [isOpen, onOpenChange]);
 
   // 親に高さを通知

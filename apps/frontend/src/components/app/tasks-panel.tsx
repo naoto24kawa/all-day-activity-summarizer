@@ -87,8 +87,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 import { useNotifications } from "@/hooks/use-notifications";
 import { getProjectName, useProjects } from "@/hooks/use-projects";
 import {
@@ -118,6 +118,57 @@ const TASK_STATUS_STYLES: Record<TaskStatus | "selected" | "suggested", string> 
   suggested: "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-950",
   accepted: "",
 };
+
+/** ステータスフィルターの設定 */
+const STATUS_FILTER_CONFIG: {
+  status: TaskStatus;
+  label: string;
+  icon: typeof Circle;
+  activeClass: string;
+}[] = [
+  {
+    status: "pending",
+    label: "承認待ち",
+    icon: Circle,
+    activeClass:
+      "bg-orange-100 border-orange-400 text-orange-700 dark:bg-orange-950 dark:border-orange-600 dark:text-orange-300",
+  },
+  {
+    status: "accepted",
+    label: "承認済み",
+    icon: Check,
+    activeClass:
+      "bg-blue-100 border-blue-400 text-blue-700 dark:bg-blue-950 dark:border-blue-600 dark:text-blue-300",
+  },
+  {
+    status: "in_progress",
+    label: "進行中",
+    icon: Play,
+    activeClass:
+      "bg-green-100 border-green-400 text-green-700 dark:bg-green-950 dark:border-green-600 dark:text-green-300",
+  },
+  {
+    status: "paused",
+    label: "中断",
+    icon: Pause,
+    activeClass:
+      "bg-yellow-100 border-yellow-400 text-yellow-700 dark:bg-yellow-950 dark:border-yellow-600 dark:text-yellow-300",
+  },
+  {
+    status: "completed",
+    label: "完了",
+    icon: CheckCircle2,
+    activeClass:
+      "bg-gray-100 border-gray-400 text-gray-700 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300",
+  },
+  {
+    status: "rejected",
+    label: "却下",
+    icon: XCircle,
+    activeClass:
+      "bg-red-100 border-red-400 text-red-700 dark:bg-red-950 dark:border-red-600 dark:text-red-300",
+  },
+];
 
 /** 用語提案ソースタイプのラベルマップ */
 const VOCABULARY_SOURCE_LABELS: Record<VocabularySuggestionSourceType, string> = {
@@ -208,6 +259,11 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
 
   // 重複チェック
   const [checkingSimilarity, setCheckingSimilarity] = useState(false);
+
+  // ステータスフィルター (複数選択可能)
+  const [statusFilters, setStatusFilters] = useState<Set<TaskStatus>>(
+    new Set(["pending", "accepted", "in_progress"]),
+  );
 
   // タスク詳細化
   const [elaborateDialogOpen, setElaborateDialogOpen] = useState(false);
@@ -367,13 +423,33 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
         detectDuplicates({ date }),
       ]);
       setDuplicateSuggestions(duplicatesResult.duplicates);
-      if (similarityResult.updated > 0) {
-        console.log(
-          `重複チェック完了: ${similarityResult.checked}件中${similarityResult.updated}件に類似タスクが見つかりました`,
-        );
+
+      // 結果を通知
+      const duplicateCount = duplicatesResult.duplicates.length;
+      const similarCount = similarityResult.updated;
+
+      if (duplicateCount > 0 || similarCount > 0) {
+        const messages: string[] = [];
+        if (duplicateCount > 0) {
+          messages.push(`重複候補 ${duplicateCount}件`);
+        }
+        if (similarCount > 0) {
+          messages.push(`類似タスク ${similarCount}件`);
+        }
+        toast.success(`チェック完了: ${messages.join("、")}`, {
+          description: duplicateCount > 0 ? "「承認済み」タブで重複候補を確認できます" : undefined,
+        });
+
+        // 重複が見つかった場合は「承認済み」タブに切り替え
+        if (duplicateCount > 0) {
+          setActiveTab("accepted");
+        }
+      } else {
+        toast.info("重複・類似タスクは見つかりませんでした");
       }
     } catch (err) {
       console.error("Failed to check duplicates:", err);
+      toast.error("重複チェックに失敗しました");
     } finally {
       setDetectingDuplicates(false);
       setCheckingSimilarity(false);
@@ -427,8 +503,22 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     });
   };
 
-  const selectAllInTab = (taskList: Task[]) => {
-    setSelectedTaskIds(new Set(taskList.map((t) => t.id)));
+  const toggleSelectAll = (taskList: Task[]) => {
+    const taskIds = taskList.map((t) => t.id);
+    const allSelected = taskIds.every((id) => selectedTaskIds.has(id));
+    if (allSelected) {
+      // 全解除
+      setSelectedTaskIds((prev) => {
+        const next = new Set(prev);
+        for (const id of taskIds) {
+          next.delete(id);
+        }
+        return next;
+      });
+    } else {
+      // 全選択
+      setSelectedTaskIds((prev) => new Set([...prev, ...taskIds]));
+    }
   };
 
   const clearSelection = () => {
@@ -457,6 +547,22 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   };
 
   const suggestionTaskIds = new Set(completionSuggestions.map((s) => s.taskId));
+
+  // ステータスフィルターのトグル
+  const toggleStatusFilter = (status: TaskStatus) => {
+    setStatusFilters((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(status)) {
+        // 最低1つは選択されている必要がある
+        if (newSet.size > 1) {
+          newSet.delete(status);
+        }
+      } else {
+        newSet.add(status);
+      }
+      return newSet;
+    });
+  };
 
   if (loading) {
     return (
@@ -494,6 +600,36 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const pausedTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "paused")));
   const completedTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "completed")));
   const rejectedTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "rejected")));
+
+  // 選択されたステータスでフィルタリングし、ステータス順でソート
+  const statusOrder: TaskStatus[] = [
+    "pending",
+    "accepted",
+    "in_progress",
+    "paused",
+    "completed",
+    "rejected",
+  ];
+  const filteredTasksByStatus = statusOrder
+    .filter((status) => statusFilters.has(status))
+    .flatMap((status) => {
+      switch (status) {
+        case "pending":
+          return pendingTasks;
+        case "accepted":
+          return acceptedTasks;
+        case "in_progress":
+          return inProgressTasks;
+        case "paused":
+          return pausedTasks;
+        case "completed":
+          return completedTasks;
+        case "rejected":
+          return rejectedTasks;
+        default:
+          return [];
+      }
+    });
 
   // Count tasks by source for filter badges
   const sourceCount = {
@@ -855,181 +991,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
           </div>
         )}
 
-        {/* 編集モードバー */}
-        {selectionMode && (
-          <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2 rounded-md border bg-blue-50 p-2 dark:bg-blue-950">
-            <div className="flex items-center gap-2">
-              <CheckSquare className="h-4 w-4 text-blue-500" />
-              <span className="text-sm font-medium">
-                {selectedTaskIds.size > 0
-                  ? `${selectedTaskIds.size}件選択中`
-                  : "タスクを選択してください"}
-              </span>
-            </div>
-            {selectedTaskIds.size > 0 && (
-              <>
-                <div className="h-4 w-px bg-border" />
-                {/* ステータス一括変更 */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-7" disabled={batchUpdating}>
-                      <Circle className="mr-1 h-3 w-3" />
-                      ステータス
-                      <ChevronDown className="ml-1 h-3 w-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "accepted" })}>
-                      <Check className="mr-2 h-4 w-4 text-green-500" />
-                      承認
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "rejected" })}>
-                      <X className="mr-2 h-4 w-4 text-red-500" />
-                      却下
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "in_progress" })}>
-                      <Play className="mr-2 h-4 w-4 text-blue-500" />
-                      進行中
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "paused" })}>
-                      <Pause className="mr-2 h-4 w-4 text-yellow-500" />
-                      中断
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "completed" })}>
-                      <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
-                      完了
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                {/* 優先度一括変更 */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-7" disabled={batchUpdating}>
-                      <Signal className="mr-1 h-3 w-3" />
-                      優先度
-                      <ChevronDown className="ml-1 h-3 w-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem
-                      onClick={() => handleBatchUpdate({ priority: "high" })}
-                      className="text-red-500"
-                    >
-                      <AlertTriangle className="mr-2 h-4 w-4" />
-                      HIGH
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => handleBatchUpdate({ priority: "medium" })}
-                      className="text-yellow-500"
-                    >
-                      <Signal className="mr-2 h-4 w-4" />
-                      MEDIUM
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => handleBatchUpdate({ priority: "low" })}
-                      className="text-green-500"
-                    >
-                      <Minus className="mr-2 h-4 w-4" />
-                      LOW
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => handleBatchUpdate({ priority: null })}
-                      className="text-muted-foreground"
-                    >
-                      <X className="mr-2 h-4 w-4" />
-                      解除
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                {/* プロジェクト一括変更 */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-7" disabled={batchUpdating}>
-                      <FolderGit2 className="mr-1 h-3 w-3" />
-                      プロジェクト
-                      <ChevronDown className="ml-1 h-3 w-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-                    {projects.map((project) => (
-                      <DropdownMenuItem
-                        key={project.id}
-                        onClick={() => handleBatchUpdate({ projectId: project.id })}
-                      >
-                        <FolderGit2 className="mr-2 h-4 w-4" />
-                        {project.name}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuItem
-                      onClick={() => handleBatchUpdate({ projectId: null })}
-                      className="text-muted-foreground"
-                    >
-                      <X className="mr-2 h-4 w-4" />
-                      プロジェクト解除
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <div className="h-4 w-px bg-border" />
-                {/* 詳細化ボタン */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7"
-                  onClick={() => setBulkElaborateDialogOpen(true)}
-                  disabled={
-                    batchUpdating || selectedTaskIds.size === 0 || selectedTaskIds.size > 10
-                  }
-                  title={
-                    selectedTaskIds.size > 10
-                      ? "最大10件まで選択可能"
-                      : "選択したタスクを AI 詳細化"
-                  }
-                >
-                  <Wand2 className="mr-1 h-3 w-3" />
-                  詳細化
-                </Button>
-                <div className="h-4 w-px bg-border" />
-                {/* 完了チェック */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7"
-                  onClick={handleCheckCompletions}
-                  disabled={checkingCompletion}
-                  title="完了チェック"
-                >
-                  <Search className={`mr-1 h-3 w-3 ${checkingCompletion ? "animate-pulse" : ""}`} />
-                  {checkingCompletion ? "チェック中..." : "完了チェック"}
-                </Button>
-                {/* 重複チェック */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7"
-                  onClick={handleBulkDuplicateCheck}
-                  disabled={detectingDuplicates || checkingSimilarity}
-                  title="重複チェック"
-                >
-                  <Search
-                    className={`mr-1 h-3 w-3 ${detectingDuplicates || checkingSimilarity ? "animate-pulse" : ""}`}
-                  />
-                  {detectingDuplicates || checkingSimilarity ? "チェック中..." : "重複チェック"}
-                </Button>
-                <div className="h-4 w-px bg-border" />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7"
-                  onClick={clearSelection}
-                  disabled={batchUpdating}
-                >
-                  選択解除
-                </Button>
-              </>
-            )}
-          </div>
-        )}
-
         {/* プロンプト改善案生成 */}
         {promptStats && Object.values(promptStats).some((s) => s.canGenerate) && (
           <div className="rounded-md border bg-muted/50 p-3">
@@ -1089,167 +1050,279 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
             </p>
           </div>
         ) : (
-          <Tabs defaultValue="pending" className="flex min-h-0 flex-1 flex-col">
-            <TabsList className="shrink-0">
-              <TabsTrigger value="pending" className="flex items-center gap-1">
-                <Circle className="h-3 w-3" />
-                承認待ち
-                {stats.pending > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
-                    {stats.pending}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="accepted" className="flex items-center gap-1">
-                <Check className="h-3 w-3" />
-                承認済み
-                {stats.accepted > 0 && (
-                  <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
-                    {stats.accepted}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="in_progress" className="flex items-center gap-1">
-                <Play className="h-3 w-3" />
-                進行中
-                {stats.in_progress > 0 && (
-                  <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
-                    {stats.in_progress}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="paused" className="flex items-center gap-1">
-                <Pause className="h-3 w-3" />
-                中断
-                {stats.paused > 0 && (
-                  <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
-                    {stats.paused}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="completed" className="flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3" />
-                完了
-                {stats.completed > 0 && (
-                  <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
-                    {stats.completed}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="rejected" className="flex items-center gap-1">
-                <XCircle className="h-3 w-3" />
-                却下
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="pending" className="min-h-0 flex-1 space-y-2">
-              <TaskList
-                tasks={pendingTasks}
-                projects={projects}
-                allTasks={tasks}
-                onUpdateTask={updateTask}
-                onDeleteTask={deleteTask}
-                onElaborate={openElaborateDialog}
-                selectionMode={selectionMode}
-                selectedTaskIds={selectedTaskIds}
-                onToggleSelection={toggleTaskSelection}
-                onSelectAll={() => selectAllInTab(pendingTasks)}
-              />
-            </TabsContent>
-            <TabsContent value="accepted" className="min-h-0 flex-1 space-y-2">
-              {/* 重複候補パネル */}
-              <DuplicateSuggestionsPanel
-                duplicates={duplicateSuggestions}
-                onMerge={handleMergeDuplicates}
-                onDismiss={handleDismissDuplicate}
-              />
+          <div className="flex min-h-0 flex-1 flex-col">
+            {/* ステータスフィルター */}
+            <div className="mb-3 flex shrink-0 flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-xs text-muted-foreground">表示:</span>
+              {STATUS_FILTER_CONFIG.map(({ status, label, icon: Icon, activeClass }) => {
+                const isActive = statusFilters.has(status);
+                const count = stats[status] ?? 0;
+                return (
+                  <button
+                    type="button"
+                    key={status}
+                    onClick={() => toggleStatusFilter(status)}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      isActive
+                        ? activeClass
+                        : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <Icon className="h-3 w-3" />
+                    {label}
+                    {count > 0 && (
+                      <span className={`ml-0.5 ${isActive ? "" : "opacity-60"}`}>{count}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
 
-              {completionSuggestions.length > 0 && (
-                <div className="rounded-md border border-green-200 bg-green-50 p-2 dark:border-green-800 dark:bg-green-950">
-                  <div className="mb-2 flex items-center gap-1 text-sm font-medium text-green-700 dark:text-green-300">
-                    <CheckCircle2 className="h-4 w-4" />
-                    完了候補 ({completionSuggestions.length}件)
-                  </div>
-                  <div className="space-y-2">
-                    {completionSuggestions.map((suggestion) => (
-                      <CompletionSuggestionItem
-                        key={suggestion.taskId}
-                        suggestion={suggestion}
-                        onComplete={() => handleCompleteFromSuggestion(suggestion.taskId)}
-                      />
-                    ))}
-                  </div>
+            {/* 編集モードバー */}
+            {selectionMode && (
+              <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded-md border bg-blue-50 p-2 dark:bg-blue-950">
+                <div className="flex items-center gap-2">
+                  <CheckSquare className="h-4 w-4 text-blue-500" />
+                  <span className="text-sm font-medium">
+                    {selectedTaskIds.size > 0
+                      ? `${selectedTaskIds.size}件選択中`
+                      : "タスクを選択してください"}
+                  </span>
                 </div>
-              )}
+                {selectedTaskIds.size > 0 && (
+                  <>
+                    <div className="h-4 w-px bg-border" />
+                    {/* ステータス変更 */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7"
+                          disabled={batchUpdating}
+                        >
+                          <Circle className="mr-1 h-3 w-3" />
+                          ステータス
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "accepted" })}>
+                          <Check className="mr-2 h-4 w-4 text-green-500" />
+                          承認
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "rejected" })}>
+                          <X className="mr-2 h-4 w-4 text-red-500" />
+                          却下
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleBatchUpdate({ status: "in_progress" })}
+                        >
+                          <Play className="mr-2 h-4 w-4 text-blue-500" />
+                          進行中
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "paused" })}>
+                          <Pause className="mr-2 h-4 w-4 text-yellow-500" />
+                          中断
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleBatchUpdate({ status: "completed" })}
+                        >
+                          <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
+                          完了
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    {/* 優先度変更 */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7"
+                          disabled={batchUpdating}
+                        >
+                          <Signal className="mr-1 h-3 w-3" />
+                          優先度
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuItem
+                          onClick={() => handleBatchUpdate({ priority: "high" })}
+                          className="text-red-500"
+                        >
+                          <AlertTriangle className="mr-2 h-4 w-4" />
+                          HIGH
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleBatchUpdate({ priority: "medium" })}
+                          className="text-yellow-500"
+                        >
+                          <Signal className="mr-2 h-4 w-4" />
+                          MEDIUM
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleBatchUpdate({ priority: "low" })}
+                          className="text-green-500"
+                        >
+                          <Minus className="mr-2 h-4 w-4" />
+                          LOW
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleBatchUpdate({ priority: null })}
+                          className="text-muted-foreground"
+                        >
+                          <X className="mr-2 h-4 w-4" />
+                          解除
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    {/* プロジェクト変更 */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7"
+                          disabled={batchUpdating}
+                        >
+                          <FolderGit2 className="mr-1 h-3 w-3" />
+                          プロジェクト
+                          <ChevronDown className="ml-1 h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                        {projects.map((project) => (
+                          <DropdownMenuItem
+                            key={project.id}
+                            onClick={() => handleBatchUpdate({ projectId: project.id })}
+                          >
+                            <FolderGit2 className="mr-2 h-4 w-4" />
+                            {project.name}
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuItem
+                          onClick={() => handleBatchUpdate({ projectId: null })}
+                          className="text-muted-foreground"
+                        >
+                          <X className="mr-2 h-4 w-4" />
+                          プロジェクト解除
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <div className="h-4 w-px bg-border" />
+                    {/* 詳細化 */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => setBulkElaborateDialogOpen(true)}
+                      disabled={
+                        batchUpdating || selectedTaskIds.size === 0 || selectedTaskIds.size > 10
+                      }
+                      title={
+                        selectedTaskIds.size > 10
+                          ? "最大10件まで選択可能"
+                          : "選択したタスクを AI 詳細化"
+                      }
+                    >
+                      <Wand2 className="mr-1 h-3 w-3" />
+                      詳細化
+                    </Button>
+                    <div className="h-4 w-px bg-border" />
+                    {/* 完了チェック */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7"
+                      onClick={handleCheckCompletions}
+                      disabled={checkingCompletion}
+                      title="完了チェック"
+                    >
+                      <Search
+                        className={`mr-1 h-3 w-3 ${checkingCompletion ? "animate-pulse" : ""}`}
+                      />
+                      {checkingCompletion ? "チェック中..." : "完了チェック"}
+                    </Button>
+                    {/* 重複チェック */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7"
+                      onClick={handleBulkDuplicateCheck}
+                      disabled={detectingDuplicates || checkingSimilarity}
+                      title="重複チェック"
+                    >
+                      <Search
+                        className={`mr-1 h-3 w-3 ${detectingDuplicates || checkingSimilarity ? "animate-pulse" : ""}`}
+                      />
+                      {detectingDuplicates || checkingSimilarity ? "チェック中..." : "重複チェック"}
+                    </Button>
+                    <div className="h-4 w-px bg-border" />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7"
+                      onClick={clearSelection}
+                      disabled={batchUpdating}
+                    >
+                      選択解除
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
 
-              <TaskList
-                tasks={acceptedTasks}
-                projects={projects}
-                allTasks={tasks}
-                onUpdateTask={updateTask}
-                onDeleteTask={deleteTask}
-                onElaborate={openElaborateDialog}
-                suggestionTaskIds={suggestionTaskIds}
-                selectionMode={selectionMode}
-                selectedTaskIds={selectedTaskIds}
-                onToggleSelection={toggleTaskSelection}
-                onSelectAll={() => selectAllInTab(acceptedTasks)}
-              />
-            </TabsContent>
-            <TabsContent value="in_progress" className="min-h-0 flex-1">
-              <TaskList
-                tasks={inProgressTasks}
-                projects={projects}
-                allTasks={tasks}
-                onUpdateTask={updateTask}
-                onDeleteTask={deleteTask}
-                onElaborate={openElaborateDialog}
-                selectionMode={selectionMode}
-                selectedTaskIds={selectedTaskIds}
-                onToggleSelection={toggleTaskSelection}
-                onSelectAll={() => selectAllInTab(inProgressTasks)}
-              />
-            </TabsContent>
-            <TabsContent value="paused" className="min-h-0 flex-1">
-              <TaskList
-                tasks={pausedTasks}
-                projects={projects}
-                allTasks={tasks}
-                onUpdateTask={updateTask}
-                onDeleteTask={deleteTask}
-                onElaborate={openElaborateDialog}
-                selectionMode={selectionMode}
-                selectedTaskIds={selectedTaskIds}
-                onToggleSelection={toggleTaskSelection}
-                onSelectAll={() => selectAllInTab(pausedTasks)}
-              />
-            </TabsContent>
-            <TabsContent value="completed" className="min-h-0 flex-1">
-              <TaskList
-                tasks={completedTasks}
-                projects={projects}
-                allTasks={tasks}
-                onUpdateTask={updateTask}
-                onDeleteTask={deleteTask}
-                selectionMode={selectionMode}
-                selectedTaskIds={selectedTaskIds}
-                onToggleSelection={toggleTaskSelection}
-                onSelectAll={() => selectAllInTab(completedTasks)}
-              />
-            </TabsContent>
-            <TabsContent value="rejected" className="min-h-0 flex-1">
-              <TaskList
-                tasks={rejectedTasks}
-                projects={projects}
-                allTasks={tasks}
-                onUpdateTask={updateTask}
-                onDeleteTask={deleteTask}
-                selectionMode={selectionMode}
-                selectedTaskIds={selectedTaskIds}
-                onToggleSelection={toggleTaskSelection}
-                onSelectAll={() => selectAllInTab(rejectedTasks)}
-              />
-            </TabsContent>
-          </Tabs>
+            {/* 特殊パネル (acceptedフィルターが有効な場合のみ表示) */}
+            {statusFilters.has("accepted") && (
+              <div className="space-y-2">
+                {/* 重複候補パネル */}
+                <DuplicateSuggestionsPanel
+                  duplicates={duplicateSuggestions}
+                  onMerge={handleMergeDuplicates}
+                  onDismiss={handleDismissDuplicate}
+                />
+
+                {completionSuggestions.length > 0 && (
+                  <div className="rounded-md border border-green-200 bg-green-50 p-2 dark:border-green-800 dark:bg-green-950">
+                    <div className="mb-2 flex items-center gap-1 text-sm font-medium text-green-700 dark:text-green-300">
+                      <CheckCircle2 className="h-4 w-4" />
+                      完了候補 ({completionSuggestions.length}件)
+                    </div>
+                    <div className="space-y-2">
+                      {completionSuggestions.map((suggestion) => (
+                        <CompletionSuggestionItem
+                          key={suggestion.taskId}
+                          suggestion={suggestion}
+                          onComplete={() => handleCompleteFromSuggestion(suggestion.taskId)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* タスクリスト */}
+            <TaskList
+              tasks={filteredTasksByStatus}
+              projects={projects}
+              allTasks={tasks}
+              onUpdateTask={updateTask}
+              onDeleteTask={deleteTask}
+              onElaborate={openElaborateDialog}
+              suggestionTaskIds={suggestionTaskIds}
+              selectionMode={selectionMode}
+              selectedTaskIds={selectedTaskIds}
+              onToggleSelection={toggleTaskSelection}
+              onToggleSelectAll={() => toggleSelectAll(filteredTasksByStatus)}
+              allSelected={
+                filteredTasksByStatus.length > 0 &&
+                filteredTasksByStatus.every((t) => selectedTaskIds.has(t.id))
+              }
+            />
+          </div>
         )}
       </CardContent>
 
@@ -1356,7 +1429,8 @@ function TaskList({
   selectionMode = false,
   selectedTaskIds,
   onToggleSelection,
-  onSelectAll,
+  onToggleSelectAll,
+  allSelected = false,
 }: {
   tasks: Task[];
   projects: Project[];
@@ -1380,7 +1454,8 @@ function TaskList({
   selectionMode?: boolean;
   selectedTaskIds?: Set<number>;
   onToggleSelection?: (taskId: number) => void;
-  onSelectAll?: () => void;
+  onToggleSelectAll?: () => void;
+  allSelected?: boolean;
 }) {
   if (tasks.length === 0) {
     return <p className="py-4 text-center text-sm text-muted-foreground">タスクはありません</p>;
@@ -1388,13 +1463,21 @@ function TaskList({
 
   return (
     <div className="h-full overflow-y-auto">
-      {/* 選択モード時の全選択ボタン */}
-      {selectionMode && onSelectAll && (
-        <div className="mb-2 flex items-center gap-2">
-          <Button variant="outline" size="sm" className="h-6 text-xs" onClick={onSelectAll}>
-            <CheckSquare className="mr-1 h-3 w-3" />
-            このタブを全選択 ({tasks.length})
-          </Button>
+      {/* 選択モード時のヘッダー行 */}
+      {selectionMode && tasks.length > 0 && (
+        <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded p-1 hover:bg-muted/50"
+            onClick={onToggleSelectAll}
+          >
+            {allSelected ? (
+              <CheckSquare className="h-4 w-4 text-primary" />
+            ) : (
+              <Square className="h-4 w-4" />
+            )}
+            <span>{allSelected ? "全解除" : "全選択"}</span>
+          </button>
         </div>
       )}
       <div className="space-y-2">

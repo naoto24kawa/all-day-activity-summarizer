@@ -24,6 +24,30 @@ export const CLAUDE_CHAT_SIDEBAR_WIDTH = 450;
 /** アイコンの高さ + 余白 */
 const ICON_HEIGHT = 56 + 8; // h-14 + gap
 
+const STORAGE_KEY = "adas-chat-panel-open";
+
+/** LocalStorage から開閉状態を読み込む */
+function loadOpenState(): boolean {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved !== null) {
+      return saved === "true";
+    }
+  } catch {
+    // LocalStorage アクセスエラーは無視
+  }
+  return false; // デフォルト: 閉じている
+}
+
+/** LocalStorage に開閉状態を保存 */
+function saveOpenState(isOpen: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, String(isOpen));
+  } catch {
+    // LocalStorage アクセスエラーは無視
+  }
+}
+
 interface ClaudeChatPanelProps {
   /** サイドバーモードで開始するか */
   initialSidebar?: boolean;
@@ -41,7 +65,7 @@ export function ClaudeChatPanel({
   memoHeight = 500,
 }: ClaudeChatPanelProps) {
   const { messages, isStreaming, currentResponse, sendMessage, clearMessages } = useClaudeChat();
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(loadOpenState);
   const [mode, setMode] = useState<ChatMode>(initialSidebar ? "sidebar" : "floating");
   const [size, setSize] = useState(DEFAULT_SIZE);
   const [input, setInput] = useState("");
@@ -75,8 +99,9 @@ export function ClaudeChatPanel({
     prevCountRef.current = totalMessages;
   }, [messages.length, currentResponse]);
 
-  // パネルを開いたときに最下部にスクロール
+  // パネルを開いたときに最下部にスクロール & LocalStorage に保存
   useEffect(() => {
+    saveOpenState(isOpen);
     if (isOpen && scrollRef.current) {
       requestAnimationFrame(() => {
         if (scrollRef.current) {
