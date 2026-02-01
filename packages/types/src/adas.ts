@@ -618,6 +618,41 @@ export type TaskStatus =
 /** タスク優先度 */
 export type TaskPriority = "high" | "medium" | "low";
 
+/** タスク業務パターン */
+export type WorkType =
+  | "create" // 新しく作る (開発、資料作成、企画書、デザイン)
+  | "investigate" // 調べる・分析する (調査、リサーチ、分析、比較検討)
+  | "review" // 確認・評価する (レビュー、チェック、監査、品質確認)
+  | "communicate" // 伝える・調整する (会議、報告、連絡、交渉、依頼)
+  | "operate" // 実行・対応する (運用作業、問い合わせ対応、手続き)
+  | "learn" // 学ぶ・習得する (学習、研修、キャッチアップ)
+  | "plan" // 計画・設計する (計画立案、スケジュール調整、設計)
+  | "maintain"; // 整理・改善する (整理、リファクタ、改善、更新)
+
+/** 業務パターン定数 */
+export const WORK_TYPES: WorkType[] = [
+  "create",
+  "investigate",
+  "review",
+  "communicate",
+  "operate",
+  "learn",
+  "plan",
+  "maintain",
+];
+
+/** 業務パターンラベル */
+export const WORK_TYPE_LABELS: Record<WorkType, string> = {
+  create: "作成",
+  investigate: "調査",
+  review: "確認",
+  communicate: "連絡",
+  operate: "対応",
+  learn: "学習",
+  plan: "計画",
+  maintain: "改善",
+};
+
 /** タスク (各種ソースから抽出) */
 export interface Task {
   id: number;
@@ -633,6 +668,7 @@ export interface Task {
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority | null;
+  workType: WorkType | null; // 業務パターン
   confidence: number | null;
   dueDate: string | null;
   extractedAt: string;
@@ -679,6 +715,7 @@ export interface ExtractTasksResponse {
 export interface UpdateTaskRequest {
   status?: TaskStatus;
   priority?: TaskPriority;
+  workType?: WorkType | null;
   dueDate?: string | null;
   rejectReason?: string;
 }

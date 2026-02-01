@@ -14,6 +14,8 @@ import {
   type TaskSourceType,
   type TaskStatus,
   type VocabularySuggestionSourceType,
+  WORK_TYPE_LABELS,
+  type WorkType,
 } from "@repo/types";
 import {
   AlertTriangle,
@@ -1525,6 +1527,7 @@ function TaskList({
       title?: string;
       description?: string;
       priority?: "high" | "medium" | "low" | null;
+      workType?: WorkType | null;
       projectId?: number | null;
     },
   ) => Promise<void>;
@@ -1603,6 +1606,7 @@ function TaskItem({
       title?: string;
       description?: string;
       priority?: "high" | "medium" | "low" | null;
+      workType?: WorkType | null;
       projectId?: number | null;
     },
   ) => Promise<void>;
@@ -1996,6 +2000,40 @@ function TaskItem({
                   >
                     <X className="mr-2 h-4 w-4" />
                     プロジェクト解除
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* 業務パターン変更 */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={`gap-1 ${task.workType ? "text-purple-500 border-purple-200" : ""}`}
+                >
+                  {task.workType ? WORK_TYPE_LABELS[task.workType] : "パターン"}
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {(Object.entries(WORK_TYPE_LABELS) as [WorkType, string][]).map(([type, label]) => (
+                  <DropdownMenuItem
+                    key={type}
+                    onClick={() => onUpdateTask(task.id, { workType: type })}
+                    className={task.workType === type ? "bg-accent" : ""}
+                  >
+                    {label}
+                  </DropdownMenuItem>
+                ))}
+                {task.workType && (
+                  <DropdownMenuItem
+                    onClick={() => onUpdateTask(task.id, { workType: null })}
+                    className="text-muted-foreground"
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    パターン解除
                   </DropdownMenuItem>
                 )}
               </DropdownMenuContent>

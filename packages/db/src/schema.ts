@@ -499,6 +499,18 @@ export const tasks = sqliteTable("tasks", {
   priority: text("priority", {
     enum: ["high", "medium", "low"],
   }),
+  workType: text("work_type", {
+    enum: [
+      "create",
+      "investigate",
+      "review",
+      "communicate",
+      "operate",
+      "learn",
+      "plan",
+      "maintain",
+    ],
+  }), // 業務パターン
   confidence: real("confidence"), // AI の確信度 (0-1)
   dueDate: text("due_date"), // 期限 (YYYY-MM-DD)
   extractedAt: text("extracted_at")

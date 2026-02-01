@@ -140,9 +140,10 @@ export type {
   VocabularySuggestion,
   VocabularySuggestionSourceType,
   VocabularySuggestionStatus,
+  WorkType,
 } from "./adas";
 
-export { isApprovalOnlyTask, MEMO_TAGS } from "./adas";
+export { isApprovalOnlyTask, MEMO_TAGS, WORK_TYPE_LABELS, WORK_TYPES } from "./adas";
 // API型定義
 export type { ApiError, ApiResponse, Post } from "./api";
 // 環境変数の型定義

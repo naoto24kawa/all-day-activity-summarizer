@@ -21,6 +21,7 @@ import type {
   Task,
   TaskStats,
   TaskStatus,
+  WorkType,
 } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
 import { deleteAdasApi, fetchAdasApi, patchAdasApi, postAdasApi } from "@/lib/adas-api";
@@ -53,6 +54,7 @@ export function useTasks() {
       updates: {
         status?: TaskStatus;
         priority?: "high" | "medium" | "low" | null;
+        workType?: WorkType | null;
         dueDate?: string | null;
         rejectReason?: string;
         title?: string;

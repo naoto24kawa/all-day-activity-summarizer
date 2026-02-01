@@ -29,6 +29,7 @@ import {
   type Task,
   type TaskCompletionSuggestion,
   type TaskStatus,
+  type WorkType,
 } from "@repo/types";
 import consola from "consola";
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
@@ -57,6 +58,7 @@ interface ExtractedTask {
   title: string;
   description?: string;
   priority?: "high" | "medium" | "low";
+  workType?: WorkType;
   confidence?: number;
   dueDate?: string;
   similarTo?: {
@@ -118,6 +120,7 @@ interface TaskUpdates {
   updatedAt: string;
   projectId?: number | null;
   priority?: "high" | "medium" | "low" | null;
+  workType?: WorkType | null;
   status?: TaskStatus;
   acceptedAt?: string;
   rejectedAt?: string;
@@ -734,6 +737,7 @@ export function createTasksRouter(db: AdasDatabase) {
     const body = await c.req.json<{
       status?: TaskStatus;
       priority?: "high" | "medium" | "low";
+      workType?: WorkType | null;
       dueDate?: string | null;
       rejectReason?: string;
       pauseReason?: string;
@@ -834,6 +838,10 @@ export function createTasksRouter(db: AdasDatabase) {
 
     if (body.priority !== undefined) {
       updates.priority = body.priority;
+    }
+
+    if (body.workType !== undefined) {
+      updates.workType = body.workType;
     }
 
     if (body.dueDate !== undefined) {
@@ -959,6 +967,7 @@ export function createTasksRouter(db: AdasDatabase) {
                 title: extractedTask.title,
                 description: extractedTask.description ?? null,
                 priority: extractedTask.priority ?? null,
+                workType: extractedTask.workType ?? null,
                 confidence: extractedTask.confidence ?? null,
                 dueDate: extractedTask.dueDate ?? null,
                 similarToTitle: extractedTask.similarTo?.title ?? null,
@@ -1103,6 +1112,7 @@ export function createTasksRouter(db: AdasDatabase) {
               title,
               description: `${item.title}\n\n${item.url}`,
               priority: "high",
+              workType: "review",
               confidence: 1.0,
               dueDate: null,
             })
@@ -1127,6 +1137,7 @@ export function createTasksRouter(db: AdasDatabase) {
               title,
               description: `${item.title}\n\n${item.url}`,
               priority: "medium",
+              workType: "create",
               confidence: 1.0,
               dueDate: null,
             })
@@ -1262,6 +1273,7 @@ export function createTasksRouter(db: AdasDatabase) {
                   (extractedTask.description ?? "") +
                   `\n\n${comment.repoOwner}/${comment.repoName}#${comment.itemNumber}\n${comment.url}`,
                 priority: extractedTask.priority ?? null,
+                workType: extractedTask.workType ?? null,
                 confidence: extractedTask.confidence ?? null,
                 dueDate: extractedTask.dueDate ?? null,
                 similarToTitle: extractedTask.similarTo?.title ?? null,
@@ -1389,6 +1401,7 @@ export function createTasksRouter(db: AdasDatabase) {
                 title: extractedTask.title,
                 description: extractedTask.description ?? null,
                 priority: extractedTask.priority ?? null,
+                workType: extractedTask.workType ?? null,
                 confidence: extractedTask.confidence ?? null,
                 dueDate: extractedTask.dueDate ?? null,
                 similarToTitle: extractedTask.similarTo?.title ?? null,
@@ -1882,6 +1895,7 @@ export function createTasksRouter(db: AdasDatabase) {
             description,
             status: "pending",
             priority: task.priority,
+            workType: task.workType,
             parentId: id,
             stepNumber: childTask.stepNumber,
             confidence: 1.0,
@@ -2350,6 +2364,9 @@ export function createTasksRouter(db: AdasDatabase) {
 
     const date = getTodayDateString();
 
+    // workType は最初のソースタスクから継承
+    const workType = sourceTasks.find((t) => t.workType)?.workType ?? null;
+
     // マージタスクを作成 (pending として)
     const mergeTask = db
       .insert(schema.tasks)
@@ -2359,6 +2376,7 @@ export function createTasksRouter(db: AdasDatabase) {
         title: body.title,
         description: body.description ?? null,
         priority: priority ?? null,
+        workType,
         projectId,
         mergeSourceTaskIds: JSON.stringify(body.sourceTaskIds),
         confidence: 1.0,
