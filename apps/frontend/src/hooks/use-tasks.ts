@@ -5,8 +5,12 @@
 import type {
   ApplyElaborationRequest,
   ApplyElaborationResponse,
+  BulkElaborateStartResponse,
   BulkElaborateTasksRequest,
-  BulkElaborateTasksResponse,
+  BulkElaborationStatusResponse,
+  CheckSimilarityBatchRequest,
+  CheckSimilarityBatchResponse,
+  CheckTaskSimilarityResponse,
   ChildTasksResponse,
   CreateMergeTaskResponse,
   DetectDuplicatesResponse,
@@ -279,15 +283,55 @@ export function useTasks() {
     [startElaborate, getElaborationStatus],
   );
 
-  const bulkElaborateTasks = useCallback(
-    async (request: BulkElaborateTasksRequest): Promise<BulkElaborateTasksResponse> => {
-      const result = await postAdasApi<BulkElaborateTasksResponse>(
+  // 一括詳細化を非同期で開始
+  const startBulkElaborate = useCallback(
+    async (request: BulkElaborateTasksRequest): Promise<BulkElaborateStartResponse> => {
+      const result = await postAdasApi<BulkElaborateStartResponse>(
         "/api/tasks/bulk-elaborate",
         request,
       );
       return result;
     },
     [],
+  );
+
+  // 一括詳細化の状態を取得
+  const getBulkElaborationStatus = useCallback(
+    async (taskIds: number[]): Promise<BulkElaborationStatusResponse> => {
+      const params = new URLSearchParams();
+      params.set("taskIds", taskIds.join(","));
+      const result = await fetchAdasApi<BulkElaborationStatusResponse>(
+        `/api/tasks/bulk-elaboration-status?${params}`,
+      );
+      return result;
+    },
+    [],
+  );
+
+  // 個別タスクの類似チェック
+  const checkTaskSimilarity = useCallback(
+    async (taskId: number): Promise<CheckTaskSimilarityResponse> => {
+      const result = await postAdasApi<CheckTaskSimilarityResponse>(
+        `/api/tasks/${taskId}/check-similarity`,
+        {},
+      );
+      await fetchTasks(true);
+      return result;
+    },
+    [fetchTasks],
+  );
+
+  // 一括類似チェック
+  const checkSimilarityBatch = useCallback(
+    async (request?: CheckSimilarityBatchRequest): Promise<CheckSimilarityBatchResponse> => {
+      const result = await postAdasApi<CheckSimilarityBatchResponse>(
+        "/api/tasks/check-similarity-batch",
+        request ?? {},
+      );
+      await fetchTasks(true);
+      return result;
+    },
+    [fetchTasks],
   );
 
   return {
@@ -316,7 +360,12 @@ export function useTasks() {
     getChildTasks,
     // 後方互換性のため残す
     elaborateTask,
-    bulkElaborateTasks,
+    // 一括詳細化 (非同期)
+    startBulkElaborate,
+    getBulkElaborationStatus,
+    // 類似チェック
+    checkTaskSimilarity,
+    checkSimilarityBatch,
   };
 }
 

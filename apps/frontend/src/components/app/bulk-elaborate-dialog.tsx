@@ -3,14 +3,16 @@
  *
  * 複数タスクを一括で AI 詳細化するダイアログ
  * - 入力フェーズ: 追加指示の入力
- * - 処理中フェーズ: AI 処理中の進捗表示
+ * - ポーリングフェーズ: 非同期処理の進捗監視
  * - レビューフェーズ: 結果のレビュー・個別採用/却下
  */
 
 import type {
-  BulkElaborateTaskResult,
+  ApplyElaborationRequest,
+  BulkElaborateStartResponse,
   BulkElaborateTasksRequest,
-  BulkElaborateTasksResponse,
+  BulkElaborationStatusResponse,
+  ElaborationResult,
   Project,
   Task,
 } from "@repo/types";
@@ -27,7 +29,7 @@ import {
   Wand2,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -40,18 +42,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { fetchAdasApi } from "@/lib/adas-api";
 
-type DialogPhase = "input" | "processing" | "review";
+type DialogPhase = "input" | "polling" | "review";
 
 interface BulkElaborateDialogProps {
   open: boolean;
   tasks: Task[];
   projects: Project[];
-  onBulkElaborate: (request: BulkElaborateTasksRequest) => Promise<BulkElaborateTasksResponse>;
-  onApply: (taskId: number, description: string) => Promise<void>;
+  onStartBulkElaborate: (request: BulkElaborateTasksRequest) => Promise<BulkElaborateStartResponse>;
+  onGetBulkElaborationStatus: (taskIds: number[]) => Promise<BulkElaborationStatusResponse>;
+  onApplyElaboration: (taskId: number, request?: ApplyElaborationRequest) => Promise<unknown>;
+  onRefetch: () => Promise<void>;
   onClose: () => void;
 }
 
@@ -59,23 +65,34 @@ interface ReviewItem {
   taskId: number;
   taskTitle: string;
   elaboration: string;
+  childTasks?: Array<{ title: string; description: string | null; stepNumber: number }>;
   referencedFiles?: string[];
   selected: boolean;
+  status: "pending" | "completed" | "failed";
   error?: string;
 }
+
+const POLLING_INTERVAL = 3000; // 3秒間隔
 
 export function BulkElaborateDialog({
   open,
   tasks,
   projects,
-  onBulkElaborate,
-  onApply,
+  onStartBulkElaborate,
+  onGetBulkElaborationStatus,
+  onApplyElaboration,
+  onRefetch,
   onClose,
 }: BulkElaborateDialogProps) {
   const [phase, setPhase] = useState<DialogPhase>("input");
   const [userInstruction, setUserInstruction] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
+
+  // ポーリング用
+  const [pollingTaskIds, setPollingTaskIds] = useState<number[]>([]);
+  const [pollingStatus, setPollingStatus] = useState<BulkElaborationStatusResponse | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // レビュー結果
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
@@ -91,16 +108,27 @@ export function BulkElaborateDialog({
     onTranscriptChange: (transcript) => setUserInstruction(transcript),
   });
 
+  // ポーリングをクリーンアップ
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
   // ダイアログが閉じられたらリセット
   useEffect(() => {
     if (!open) {
+      stopPolling();
       setPhase("input");
       setUserInstruction("");
       setError(null);
+      setPollingTaskIds([]);
+      setPollingStatus(null);
       setReviewItems([]);
       setExpandedItems(new Set());
     }
-  }, [open]);
+  }, [open, stopPolling]);
 
   // プロジェクト名を取得
   const getProjectName = (projectId: number | null): string | null => {
@@ -109,44 +137,135 @@ export function BulkElaborateDialog({
     return project?.name ?? null;
   };
 
-  // 詳細化を実行
-  const handleElaborate = useCallback(async () => {
+  // 詳細化結果を取得してレビューアイテムに変換
+  const fetchElaborationResults = useCallback(
+    async (taskIds: number[]) => {
+      const items: ReviewItem[] = [];
+
+      for (const taskId of taskIds) {
+        try {
+          // タスクの詳細を取得
+          const taskData = await fetchAdasApi<Task>(`/api/tasks/${taskId}`);
+          const task = tasks.find((t) => t.id === taskId);
+
+          if (taskData.elaborationStatus === "completed" && taskData.pendingElaboration) {
+            const result: ElaborationResult = JSON.parse(taskData.pendingElaboration);
+            items.push({
+              taskId,
+              taskTitle: task?.title ?? `Task #${taskId}`,
+              elaboration: result.elaboration,
+              childTasks: result.childTasks,
+              referencedFiles: result.referencedFiles,
+              selected: true,
+              status: "completed",
+            });
+          } else if (taskData.elaborationStatus === "failed") {
+            items.push({
+              taskId,
+              taskTitle: task?.title ?? `Task #${taskId}`,
+              elaboration: "",
+              selected: false,
+              status: "failed",
+              error: "詳細化に失敗しました",
+            });
+          }
+        } catch {
+          const task = tasks.find((t) => t.id === taskId);
+          items.push({
+            taskId,
+            taskTitle: task?.title ?? `Task #${taskId}`,
+            elaboration: "",
+            selected: false,
+            status: "failed",
+            error: "詳細化結果の取得に失敗しました",
+          });
+        }
+      }
+
+      return items;
+    },
+    [tasks],
+  );
+
+  // ポーリング処理
+  const pollStatus = useCallback(async () => {
+    if (pollingTaskIds.length === 0) return;
+
+    try {
+      const status = await onGetBulkElaborationStatus(pollingTaskIds);
+      setPollingStatus(status);
+
+      if (status.allCompleted) {
+        stopPolling();
+
+        // 詳細化結果を取得
+        const items = await fetchElaborationResults(pollingTaskIds);
+        setReviewItems(items);
+        setExpandedItems(
+          new Set(items.filter((i) => i.status === "completed").map((i) => i.taskId)),
+        );
+        setPhase("review");
+      }
+    } catch (err) {
+      console.error("Failed to poll elaboration status:", err);
+      // エラーでもポーリングは継続
+    }
+  }, [pollingTaskIds, onGetBulkElaborationStatus, stopPolling, fetchElaborationResults]);
+
+  // ポーリング開始
+  useEffect(() => {
+    if (phase === "polling" && pollingTaskIds.length > 0 && !pollingIntervalRef.current) {
+      // 即座に1回実行
+      pollStatus();
+      // 定期ポーリング開始
+      pollingIntervalRef.current = setInterval(pollStatus, POLLING_INTERVAL);
+    }
+
+    return () => {
+      if (phase !== "polling") {
+        stopPolling();
+      }
+    };
+  }, [phase, pollingTaskIds, pollStatus, stopPolling]);
+
+  // 詳細化を開始
+  const handleStartElaborate = useCallback(async () => {
     if (listening) {
       stopListening();
     }
 
-    setPhase("processing");
+    setPhase("polling");
     setError(null);
 
     try {
-      const result = await onBulkElaborate({
+      const result = await onStartBulkElaborate({
         taskIds: tasks.map((t) => t.id),
         userInstruction: userInstruction.trim() || undefined,
       });
 
-      // 結果をレビューアイテムに変換
-      const items: ReviewItem[] = result.results.map((r: BulkElaborateTaskResult) => ({
-        taskId: r.taskId,
-        taskTitle: r.taskTitle,
-        elaboration: r.elaboration ?? "",
-        referencedFiles: r.referencedFiles,
-        selected: r.success,
-        error: r.error,
-      }));
+      setPollingTaskIds(result.taskIds);
 
-      setReviewItems(items);
-      // 成功したアイテムはデフォルトで展開
-      setExpandedItems(new Set(items.filter((i) => !i.error).map((i) => i.taskId)));
-      setPhase("review");
+      // 初期レビューアイテムを設定 (全て pending 状態)
+      setReviewItems(
+        tasks.map((task) => ({
+          taskId: task.id,
+          taskTitle: task.title,
+          elaboration: "",
+          selected: false,
+          status: "pending" as const,
+        })),
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "詳細化に失敗しました");
+      setError(err instanceof Error ? err.message : "詳細化の開始に失敗しました");
       setPhase("input");
     }
-  }, [tasks, userInstruction, listening, stopListening, onBulkElaborate]);
+  }, [tasks, userInstruction, listening, stopListening, onStartBulkElaborate]);
 
   // 適用
   const handleApply = useCallback(async () => {
-    const selectedItems = reviewItems.filter((item) => item.selected && !item.error);
+    const selectedItems = reviewItems.filter(
+      (item) => item.selected && item.status === "completed",
+    );
 
     if (selectedItems.length === 0) {
       setError("適用するタスクを選択してください");
@@ -158,15 +277,19 @@ export function BulkElaborateDialog({
 
     try {
       for (const item of selectedItems) {
-        await onApply(item.taskId, item.elaboration);
+        await onApplyElaboration(item.taskId, {
+          updateParentDescription: true,
+          createChildTasks: true,
+        });
       }
+      await onRefetch();
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "適用に失敗しました");
     } finally {
       setApplying(false);
     }
-  }, [reviewItems, onApply, onClose]);
+  }, [reviewItems, onApplyElaboration, onRefetch, onClose]);
 
   // 選択状態を切り替え
   const toggleItemSelection = (taskId: number) => {
@@ -177,7 +300,9 @@ export function BulkElaborateDialog({
 
   // 全て選択/解除
   const selectAll = () => {
-    setReviewItems((prev) => prev.map((item) => (item.error ? item : { ...item, selected: true })));
+    setReviewItems((prev) =>
+      prev.map((item) => (item.status === "completed" ? { ...item, selected: true } : item)),
+    );
   };
 
   const deselectAll = () => {
@@ -197,13 +322,6 @@ export function BulkElaborateDialog({
     });
   };
 
-  // 詳細化内容を編集
-  const updateElaboration = (taskId: number, elaboration: string) => {
-    setReviewItems((prev) =>
-      prev.map((item) => (item.taskId === taskId ? { ...item, elaboration } : item)),
-    );
-  };
-
   // Cmd+Enter で実行
   useEffect(() => {
     if (!open) return;
@@ -212,7 +330,7 @@ export function BulkElaborateDialog({
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
         if (phase === "input") {
-          handleElaborate();
+          handleStartElaborate();
         } else if (phase === "review" && !applying) {
           handleApply();
         }
@@ -221,15 +339,18 @@ export function BulkElaborateDialog({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, phase, applying, handleElaborate, handleApply]);
+  }, [open, phase, applying, handleStartElaborate, handleApply]);
 
   const handleClose = () => {
     if (listening) stopListening();
+    stopPolling();
     onClose();
   };
 
-  const selectedCount = reviewItems.filter((item) => item.selected && !item.error).length;
-  const successCount = reviewItems.filter((item) => !item.error).length;
+  const selectedCount = reviewItems.filter(
+    (item) => item.selected && item.status === "completed",
+  ).length;
+  const successCount = reviewItems.filter((item) => item.status === "completed").length;
 
   // 入力フェーズ
   if (phase === "input") {
@@ -301,7 +422,7 @@ export function BulkElaborateDialog({
             <Button variant="outline" onClick={handleClose}>
               キャンセル
             </Button>
-            <Button onClick={handleElaborate}>
+            <Button onClick={handleStartElaborate}>
               <Wand2 className="mr-2 h-4 w-4" />
               詳細化を実行
               <span className="ml-2 text-xs text-muted-foreground">(Cmd+Enter)</span>
@@ -312,8 +433,14 @@ export function BulkElaborateDialog({
     );
   }
 
-  // 処理中フェーズ
-  if (phase === "processing") {
+  // ポーリングフェーズ
+  if (phase === "polling") {
+    const progress = pollingStatus
+      ? ((pollingStatus.summary.completed + pollingStatus.summary.failed) /
+          pollingStatus.summary.total) *
+        100
+      : 0;
+
     return (
       <Dialog open={open} onOpenChange={() => {}}>
         <DialogContent className="sm:max-w-lg">
@@ -325,15 +452,55 @@ export function BulkElaborateDialog({
             <DialogDescription>{tasks.length} 件のタスクを処理しています</DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col items-center justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <p className="mt-4 text-sm text-muted-foreground">
-              コードベースを分析してタスクを詳細化しています...
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
+          <div className="space-y-4 py-4">
+            <Progress value={progress} className="h-2" />
+
+            <div className="text-center text-sm text-muted-foreground">
+              {pollingStatus ? (
+                <>
+                  <span className="font-medium">
+                    {pollingStatus.summary.completed + pollingStatus.summary.failed}
+                  </span>{" "}
+                  / {pollingStatus.summary.total} 件完了
+                  {pollingStatus.summary.failed > 0 && (
+                    <span className="ml-2 text-destructive">
+                      ({pollingStatus.summary.failed} 件失敗)
+                    </span>
+                  )}
+                </>
+              ) : (
+                "処理を開始しています..."
+              )}
+            </div>
+
+            <div className="space-y-2">
+              {reviewItems.map((item) => (
+                <div
+                  key={item.taskId}
+                  className="flex items-center gap-2 text-sm rounded-md border p-2"
+                >
+                  {item.status === "pending" ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : item.status === "completed" ? (
+                    <Check className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <XCircle className="h-4 w-4 text-red-500" />
+                  )}
+                  <span className="flex-1 truncate">{item.taskTitle}</span>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-xs text-center text-muted-foreground">
               1 タスクあたり 10-30 秒程度かかります
             </p>
           </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleClose}>
+              バックグラウンドで実行
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     );
@@ -372,7 +539,7 @@ export function BulkElaborateDialog({
               >
                 <div
                   className={`rounded-md border p-3 ${
-                    item.error
+                    item.status === "failed"
                       ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950"
                       : item.selected
                         ? "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950"
@@ -386,13 +553,13 @@ export function BulkElaborateDialog({
                       className="mt-0.5 p-0.5 rounded hover:bg-muted/50 transition-colors"
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (!item.error) {
+                        if (item.status === "completed") {
                           toggleItemSelection(item.taskId);
                         }
                       }}
-                      disabled={!!item.error}
+                      disabled={item.status !== "completed"}
                     >
-                      {item.error ? (
+                      {item.status === "failed" ? (
                         <XCircle className="h-5 w-5 text-red-500" />
                       ) : item.selected ? (
                         <CheckSquare className="h-5 w-5 text-blue-500" />
@@ -405,7 +572,7 @@ export function BulkElaborateDialog({
                     <CollapsibleTrigger className="flex-1 text-left">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm">{item.taskTitle}</span>
-                        {item.error ? (
+                        {item.status === "failed" ? (
                           <Badge variant="destructive" className="text-xs">
                             エラー
                           </Badge>
@@ -413,6 +580,11 @@ export function BulkElaborateDialog({
                           <Badge variant="secondary" className="text-xs">
                             <Check className="mr-1 h-3 w-3" />
                             成功
+                          </Badge>
+                        )}
+                        {item.childTasks && item.childTasks.length > 0 && (
+                          <Badge variant="outline" className="text-xs">
+                            {item.childTasks.length} ステップ
                           </Badge>
                         )}
                       </div>
@@ -434,15 +606,44 @@ export function BulkElaborateDialog({
                   </div>
 
                   {/* 展開コンテンツ */}
-                  {!item.error && (
+                  {item.status === "completed" && (
                     <CollapsibleContent>
-                      <div className="mt-3 space-y-2">
-                        <Textarea
-                          value={item.elaboration}
-                          onChange={(e) => updateElaboration(item.taskId, e.target.value)}
-                          rows={8}
-                          className="font-mono text-xs"
-                        />
+                      <div className="mt-3 space-y-3">
+                        {/* 詳細説明 */}
+                        <div>
+                          <Label className="text-xs text-muted-foreground">詳細説明</Label>
+                          <div className="mt-1 p-2 rounded border bg-muted/30 text-xs whitespace-pre-wrap max-h-40 overflow-y-auto">
+                            {item.elaboration}
+                          </div>
+                        </div>
+
+                        {/* 子タスク */}
+                        {item.childTasks && item.childTasks.length > 0 && (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">
+                              実装ステップ ({item.childTasks.length} 件)
+                            </Label>
+                            <ul className="mt-1 space-y-1">
+                              {item.childTasks.map((child) => (
+                                <li
+                                  key={child.stepNumber}
+                                  className="text-xs p-2 rounded border bg-muted/30"
+                                >
+                                  <span className="font-medium">
+                                    {child.stepNumber}. {child.title}
+                                  </span>
+                                  {child.description && (
+                                    <p className="mt-0.5 text-muted-foreground line-clamp-2">
+                                      {child.description}
+                                    </p>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* 参照ファイル */}
                         {item.referencedFiles && item.referencedFiles.length > 0 && (
                           <p className="text-xs text-muted-foreground">
                             参照ファイル: {item.referencedFiles.slice(0, 3).join(", ")}

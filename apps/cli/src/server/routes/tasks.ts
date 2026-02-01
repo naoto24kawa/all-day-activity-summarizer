@@ -9,18 +9,22 @@ import { getPromptFilePath, runClaude } from "@repo/core";
 import type { AdasDatabase, SlackMessage } from "@repo/db";
 import { schema } from "@repo/db";
 import {
-  type BulkElaborateTaskResult,
+  type BulkElaborateStartResponse,
   type BulkElaborateTasksRequest,
-  type BulkElaborateTasksResponse,
+  type BulkElaborationStatusResponse,
   type CheckCompletionRequest,
   type CheckCompletionResponse,
   type CheckDuplicatesResponse,
+  type CheckSimilarityBatchRequest,
+  type CheckSimilarityBatchResponse,
+  type CheckTaskSimilarityResponse,
   type CreateMergeTaskResponse,
   type DetectDuplicatesResponse,
   type ElaborateTaskRequest,
-  type ElaborationLevel,
+  type ElaborationStatus,
   isApprovalOnlyTask,
   type PromptTarget,
+  type SimilarityCheckResult,
   type SuggestCompletionsResponse,
   type Task,
   type TaskCompletionSuggestion,
@@ -35,54 +39,12 @@ import { getItemState } from "../../github/client";
 import { getTodayDateString } from "../../utils/date";
 import { hasExtractionLog, recordExtractionLog } from "../../utils/extraction-log.js";
 import { findOrCreateProjectByGitHub } from "../../utils/project-lookup.js";
+import {
+  formatChildTasksForCompletion,
+  getChildTasks,
+  getParentTask,
+} from "../../utils/task-hierarchy.js";
 import { buildVocabularySection } from "../../utils/vocabulary.js";
-
-/**
- * 詳細化レベルに応じた出力形式の指示を構築
- */
-function buildOutputFormatForLevel(level: ElaborationLevel): string {
-  switch (level) {
-    case "light":
-      return `
-
-## 出力形式の指示
-
-以下のセクション **のみ** を含めてください。それ以外のセクション (対象ファイル、実装手順、コード例等) は出力しないでください:
-
-### 1. 背景・目的
-- なぜこのタスクが必要なのか
-- 何を達成したいのか
-
-### 2. 完了条件
-- タスク完了とみなす具体的な基準をリストで記載`;
-
-    case "standard":
-      return `
-
-## 出力形式の指示
-
-以下のセクションを含めてください:
-
-### 1. 背景・目的
-- なぜこのタスクが必要なのか
-- 何を達成したいのか
-
-### 2. 対象ファイル
-- 変更が必要なファイルを簡潔にリスト
-
-### 3. 実装概要
-- 主要な変更点を箇条書きで簡潔に
-
-### 4. 完了条件
-- タスク完了とみなす具体的な基準をリストで記載
-
-※ 詳細な実装手順やコード例は不要です`;
-
-    case "detailed":
-      // 現状のプロンプトをそのまま使用 (制限なし)
-      return "";
-  }
-}
 
 interface ExtractedTaskDependency {
   type: "blocks" | "related";
@@ -1724,7 +1686,7 @@ export function createTasksRouter(db: AdasDatabase) {
       return c.json({ error: "Task not found" }, 404);
     }
 
-    const body = await c.req.json<ElaborateTaskRequest>().catch(() => ({}));
+    const body = await c.req.json<ElaborateTaskRequest>().catch((): ElaborateTaskRequest => ({}));
 
     // 既に詳細化中の場合はエラー
     if (task.elaborationStatus === "pending") {
@@ -1745,6 +1707,7 @@ export function createTasksRouter(db: AdasDatabase) {
     const jobId = enqueueJob(db, "task-elaborate", {
       taskId: id,
       userInstruction: body.userInstruction,
+      level: body.level,
     });
 
     consola.info(`[tasks/elaborate] Queued elaboration job ${jobId} for task ${id}`);
@@ -1857,7 +1820,14 @@ export function createTasksRouter(db: AdasDatabase) {
     const createChildTasks = body.createChildTasks ?? true;
 
     // 結果をパース
-    let elaborationResult;
+    let elaborationResult: {
+      elaboration?: string;
+      childTasks?: Array<{
+        stepNumber: number;
+        title: string;
+        description?: string;
+      }>;
+    };
     try {
       elaborationResult = JSON.parse(task.pendingElaboration);
     } catch {
@@ -2000,9 +1970,10 @@ export function createTasksRouter(db: AdasDatabase) {
   /**
    * POST /api/tasks/bulk-elaborate
    *
-   * 複数タスクを一括で AI 詳細化
-   * 最大 10 タスクまで、順次処理
+   * 複数タスクを非同期で一括 AI 詳細化
+   * 各タスクに個別の AI Job を登録して即座に返す
    * Body: BulkElaborateTasksRequest
+   * Returns: BulkElaborateStartResponse
    */
   router.post("/bulk-elaborate", async (c) => {
     const body = await c.req
@@ -2028,137 +1999,105 @@ export function createTasksRouter(db: AdasDatabase) {
       return c.json({ error: "No tasks found" }, 404);
     }
 
-    // プロジェクト情報を一括取得してマッピング
-    const projectIds = [...new Set(tasks.filter((t) => t.projectId).map((t) => t.projectId!))];
-    const projectsMap = new Map<number, typeof schema.projects.$inferSelect>();
+    const now = new Date().toISOString();
+    const jobIds: number[] = [];
+    const processedTaskIds: number[] = [];
 
-    if (projectIds.length > 0) {
-      const projectsData = db
-        .select()
-        .from(schema.projects)
-        .where(inArray(schema.projects.id, projectIds))
-        .all();
-
-      for (const project of projectsData) {
-        projectsMap.set(project.id, project);
-      }
-    }
-
-    // レベルを取得 (リクエスト > 設定 > デフォルト の優先順)
-    const config = loadConfig();
-    const level: ElaborationLevel =
-      body.level ?? config.taskElaboration?.defaultLevel ?? "standard";
-
-    // プロンプトを読み込み
-    const systemPrompt = readFileSync(getPromptFilePath("task-elaborate"), "utf-8");
-
-    // vocabulary セクションを事前に構築
-    const vocabularySection = buildVocabularySection(db);
-
-    // 出力形式の指示を事前に構築
-    const outputFormatInstruction = buildOutputFormatForLevel(level);
-
-    // 各タスクを順次処理
-    const results: BulkElaborateTaskResult[] = [];
-
+    // 各タスクに対して elaborationStatus を pending に設定し、AI Job を登録
     for (const task of tasks) {
-      try {
-        const project = task.projectId ? projectsMap.get(task.projectId) : null;
-
-        // プロンプトを構築
-        let userPrompt = `# タスク情報\n\n`;
-        userPrompt += `**タイトル**: ${task.title}\n\n`;
-
-        if (task.description) {
-          userPrompt += `**現在の説明**:\n${task.description}\n\n`;
-        }
-
-        if (project) {
-          userPrompt += `**プロジェクト**: ${project.name}\n`;
-          if (project.path) {
-            userPrompt += `**プロジェクトパス**: ${project.path}\n`;
-          }
-          userPrompt += "\n";
-        }
-
-        if (body.userInstruction) {
-          userPrompt += `## ユーザー指示\n${body.userInstruction}\n\n`;
-          userPrompt += `上記の指示を考慮してタスクを詳細化してください。\n`;
-        } else {
-          userPrompt += `このタスクを詳細化してください。\n`;
-        }
-
-        if (vocabularySection) {
-          userPrompt += `\n${vocabularySection}\n`;
-        }
-
-        // レベルに応じた出力形式の指示を追加
-        if (outputFormatInstruction) {
-          userPrompt += outputFormatInstruction;
-        }
-
-        const cwd = project?.path ?? undefined;
-        const allowedTools = cwd ? "Glob,Grep,Read" : undefined;
-        const disableTools = !cwd;
-
-        consola.info(
-          `[tasks/bulk-elaborate] Processing task ${task.id} (level: ${level}, cwd: ${cwd ?? "none"})`,
-        );
-
-        const response = await runClaude(userPrompt, {
-          model: "sonnet",
-          systemPrompt,
-          allowedTools,
-          disableTools,
-          cwd,
-          dangerouslySkipPermissions: true,
-        });
-
-        // レスポンスからファイルパスを抽出
-        const filePatterns = [/`([^`]+\.[a-z]{1,4})`/g, /- `([^`]+\.[a-z]{1,4})`/g];
-
-        const referencedFiles = new Set<string>();
-        for (const pattern of filePatterns) {
-          for (const match of response.matchAll(pattern)) {
-            const filePath = match[1];
-            if (filePath && !filePath.includes(" ") && filePath.includes("/")) {
-              referencedFiles.add(filePath);
-            }
-          }
-        }
-
-        results.push({
-          taskId: task.id,
-          taskTitle: task.title,
-          success: true,
-          elaboration: response,
-          referencedFiles: referencedFiles.size > 0 ? Array.from(referencedFiles) : undefined,
-        });
-
-        consola.success(`[tasks/bulk-elaborate] Task ${task.id} done (${response.length} chars)`);
-      } catch (error) {
-        consola.error(`[tasks/bulk-elaborate] Task ${task.id} failed:`, error);
-        results.push({
-          taskId: task.id,
-          taskTitle: task.title,
-          success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
+      // 既に詳細化中のタスクはスキップ
+      if (task.elaborationStatus === "pending") {
+        consola.info(`[tasks/bulk-elaborate] Task ${task.id} already pending, skipping`);
+        continue;
       }
+
+      // elaborationStatus を pending に設定
+      db.update(schema.tasks)
+        .set({
+          elaborationStatus: "pending",
+          pendingElaboration: null,
+          updatedAt: now,
+        })
+        .where(eq(schema.tasks.id, task.id))
+        .run();
+
+      // AI Job キューに登録
+      const jobId = enqueueJob(db, "task-elaborate", {
+        taskId: task.id,
+        userInstruction: body.userInstruction,
+        level: body.level,
+      });
+
+      jobIds.push(jobId);
+      processedTaskIds.push(task.id);
+      consola.info(`[tasks/bulk-elaborate] Queued job ${jobId} for task ${task.id}`);
     }
 
-    const totalSucceeded = results.filter((r) => r.success).length;
-    const totalFailed = results.filter((r) => !r.success).length;
+    const response: BulkElaborateStartResponse = {
+      taskIds: processedTaskIds,
+      jobIds,
+      status: "pending",
+      message: `${processedTaskIds.length} 件のタスクの詳細化を開始しました`,
+    };
 
-    consola.info(
-      `[tasks/bulk-elaborate] Completed: ${totalSucceeded} succeeded, ${totalFailed} failed`,
-    );
+    return c.json(response);
+  });
 
-    return c.json({
-      results,
-      totalSucceeded,
-      totalFailed,
-    } satisfies BulkElaborateTasksResponse);
+  /**
+   * GET /api/tasks/bulk-elaboration-status
+   *
+   * 複数タスクの詳細化状態を一括取得
+   * Query: taskIds (カンマ区切り)
+   * Returns: BulkElaborationStatusResponse
+   */
+  router.get("/bulk-elaboration-status", (c) => {
+    const taskIdsParam = c.req.query("taskIds");
+    if (!taskIdsParam) {
+      return c.json({ error: "taskIds query parameter is required" }, 400);
+    }
+
+    const taskIds = taskIdsParam
+      .split(",")
+      .map(Number)
+      .filter((id) => !Number.isNaN(id));
+    if (taskIds.length === 0) {
+      return c.json({ error: "Invalid taskIds" }, 400);
+    }
+
+    // タスク情報を一括取得
+    const tasks = db
+      .select({
+        id: schema.tasks.id,
+        elaborationStatus: schema.tasks.elaborationStatus,
+        pendingElaboration: schema.tasks.pendingElaboration,
+      })
+      .from(schema.tasks)
+      .where(inArray(schema.tasks.id, taskIds))
+      .all();
+
+    // ステータスを集計
+    const statuses = tasks.map((task) => ({
+      taskId: task.id,
+      status: task.elaborationStatus as ElaborationStatus | null,
+      hasResult: !!(task.elaborationStatus === "completed" && task.pendingElaboration),
+    }));
+
+    const summary = {
+      pending: tasks.filter((t) => t.elaborationStatus === "pending").length,
+      completed: tasks.filter((t) => t.elaborationStatus === "completed").length,
+      failed: tasks.filter((t) => t.elaborationStatus === "failed").length,
+      total: tasks.length,
+    };
+
+    const allCompleted = summary.pending === 0 && summary.total > 0;
+
+    const response: BulkElaborationStatusResponse = {
+      statuses,
+      summary,
+      allCompleted,
+    };
+
+    return c.json(response);
   });
 
   /**
@@ -2437,6 +2376,106 @@ export function createTasksRouter(db: AdasDatabase) {
     } satisfies CreateMergeTaskResponse);
   });
 
+  /**
+   * POST /api/tasks/:id/check-similarity
+   *
+   * 個別タスクの類似チェック
+   * - 過去の完了/却下タスクとの類似性を AI で判定
+   * - 類似があれば similarTo* フィールドを更新
+   */
+  router.post("/:id/check-similarity", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    // pending/accepted のタスクのみ対象
+    if (task.status !== "pending" && task.status !== "accepted") {
+      return c.json({
+        updated: false,
+        similarTo: null,
+      } satisfies CheckTaskSimilarityResponse);
+    }
+
+    const result = await checkTaskSimilarity(db, task);
+
+    return c.json(result satisfies CheckTaskSimilarityResponse);
+  });
+
+  /**
+   * POST /api/tasks/check-similarity-batch
+   *
+   * 一括類似チェック
+   * - pending タスクに対して一括で類似チェックを実行
+   */
+  router.post("/check-similarity-batch", async (c) => {
+    const body = await c.req.json<CheckSimilarityBatchRequest>();
+
+    // 対象タスクを取得
+    const conditions = [
+      eq(schema.tasks.status, "pending"),
+      isNull(schema.tasks.parentId), // 親タスクのみ
+    ];
+
+    if (body.date) {
+      conditions.push(eq(schema.tasks.date, body.date));
+    }
+
+    if (body.projectId) {
+      conditions.push(eq(schema.tasks.projectId, body.projectId));
+    }
+
+    let tasks: Task[];
+    if (body.taskIds && body.taskIds.length > 0) {
+      // 指定された ID のタスクのみ
+      tasks = db
+        .select()
+        .from(schema.tasks)
+        .where(and(inArray(schema.tasks.id, body.taskIds), eq(schema.tasks.status, "pending")))
+        .all();
+    } else {
+      tasks = db
+        .select()
+        .from(schema.tasks)
+        .where(and(...conditions))
+        .orderBy(desc(schema.tasks.extractedAt))
+        .limit(50) // 一度に処理するタスク数を制限
+        .all();
+    }
+
+    const results: SimilarityCheckResult[] = [];
+    let updated = 0;
+
+    for (const task of tasks) {
+      const result = await checkTaskSimilarity(db, task);
+      results.push({
+        taskId: task.id,
+        updated: result.updated,
+        similarToTitle: result.similarTo?.title ?? null,
+        similarToStatus: result.similarTo?.status ?? null,
+        similarToReason: result.similarTo?.reason ?? null,
+      });
+      if (result.updated) {
+        updated++;
+      }
+    }
+
+    consola.info(
+      `[tasks/check-similarity-batch] Checked ${tasks.length} tasks, ${updated} updated`,
+    );
+
+    return c.json({
+      checked: tasks.length,
+      updated,
+      results,
+    } satisfies CheckSimilarityBatchResponse);
+  });
+
   return router;
 }
 
@@ -2550,33 +2589,48 @@ function buildProcessedTasksSection(db: AdasDatabase): string {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split("T")[0] ?? "";
 
-  const completedTasks = db
+  // 完了済み親タスク (親を持たないタスク) を取得
+  const completedParentTasks = db
     .select({
+      id: schema.tasks.id,
       title: schema.tasks.title,
       description: schema.tasks.description,
       completedAt: schema.tasks.completedAt,
     })
     .from(schema.tasks)
-    .where(and(eq(schema.tasks.status, "completed"), gte(schema.tasks.date, thirtyDaysAgoStr)))
+    .where(
+      and(
+        eq(schema.tasks.status, "completed"),
+        gte(schema.tasks.date, thirtyDaysAgoStr),
+        isNull(schema.tasks.parentId),
+      ),
+    )
     .orderBy(desc(schema.tasks.completedAt))
     .limit(20)
     .all();
 
-  // 過去30日間の却下タスクを取得
-  const rejectedTasks = db
+  // 過去30日間の却下タスク (親を持たないタスク) を取得
+  const rejectedParentTasks = db
     .select({
+      id: schema.tasks.id,
       title: schema.tasks.title,
       description: schema.tasks.description,
       rejectReason: schema.tasks.rejectReason,
       rejectedAt: schema.tasks.rejectedAt,
     })
     .from(schema.tasks)
-    .where(and(eq(schema.tasks.status, "rejected"), gte(schema.tasks.date, thirtyDaysAgoStr)))
+    .where(
+      and(
+        eq(schema.tasks.status, "rejected"),
+        gte(schema.tasks.date, thirtyDaysAgoStr),
+        isNull(schema.tasks.parentId),
+      ),
+    )
     .orderBy(desc(schema.tasks.rejectedAt))
     .limit(20)
     .all();
 
-  if (completedTasks.length === 0 && rejectedTasks.length === 0) {
+  if (completedParentTasks.length === 0 && rejectedParentTasks.length === 0) {
     return "";
   }
 
@@ -2584,20 +2638,26 @@ function buildProcessedTasksSection(db: AdasDatabase): string {
   section +=
     "新しいタスクがこれらに類似している場合は、`similarTo` フィールドで報告してください。\n";
 
-  if (completedTasks.length > 0) {
+  if (completedParentTasks.length > 0) {
     section += "\n### 完了済みタスク:\n";
-    for (const task of completedTasks) {
+    for (const task of completedParentTasks) {
       section += `- ${task.title}`;
       if (task.description) {
         section += ` (${task.description.slice(0, 50)}...)`;
       }
       section += "\n";
+
+      // 子タスクを取得して表示
+      const childTasks = getChildTasks(db, task.id);
+      for (const child of childTasks) {
+        section += `  - Step ${child.stepNumber}: ${child.title} [完了]\n`;
+      }
     }
   }
 
-  if (rejectedTasks.length > 0) {
+  if (rejectedParentTasks.length > 0) {
     section += "\n### 却下されたタスク:\n";
-    for (const task of rejectedTasks) {
+    for (const task of rejectedParentTasks) {
       section += `- ${task.title}`;
       if (task.rejectReason) {
         section += ` (却下理由: ${task.rejectReason})`;
@@ -2607,6 +2667,112 @@ function buildProcessedTasksSection(db: AdasDatabase): string {
   }
 
   return section;
+}
+
+/**
+ * 類似チェック用のプロンプトを構築
+ */
+function buildSimilarityCheckPrompt(
+  task: { title: string; description: string | null },
+  processedTasksSection: string,
+): string {
+  return `あなたはタスクの類似性を判定するアシスタントです。
+
+以下のタスクが、過去の完了・却下タスクと類似しているかを判定してください。
+
+## 対象タスク
+タイトル: ${task.title}
+${task.description ? `説明: ${task.description}` : ""}
+
+${processedTasksSection}
+
+## 判定基準
+1. **同一タスクの再依頼**: タイトルや内容がほぼ同じ → 類似
+2. **関連タスク**: 同じ機能・モジュールに関する別の依頼 → 類似
+3. **無関係**: 全く異なる内容 → 類似なし
+
+## 出力形式
+
+JSON で出力してください。類似タスクがない場合は similarTo を null にしてください。
+
+\`\`\`json
+{
+  "similarTo": {
+    "title": "類似する過去タスクのタイトル",
+    "status": "completed" または "rejected",
+    "reason": "類似と判断した理由"
+  } | null
+}
+\`\`\``;
+}
+
+interface SimilarityCheckResultInternal {
+  similarTo: {
+    title: string;
+    status: "completed" | "rejected";
+    reason: string;
+  } | null;
+}
+
+/**
+ * 個別タスクの類似チェックを実行
+ */
+async function checkTaskSimilarity(
+  db: AdasDatabase,
+  task: Task,
+): Promise<CheckTaskSimilarityResponse> {
+  const processedTasksSection = buildProcessedTasksSection(db);
+
+  // 過去タスクがない場合はスキップ
+  if (!processedTasksSection) {
+    return { updated: false, similarTo: null };
+  }
+
+  const prompt = buildSimilarityCheckPrompt(task, processedTasksSection);
+
+  try {
+    const response = await runClaude({
+      model: "haiku",
+      prompt,
+      maxTokens: 1024,
+    });
+
+    // JSON をパース
+    const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
+    if (!jsonMatch?.[1]) {
+      consola.warn(`[tasks/check-similarity] Failed to parse response for task #${task.id}`);
+      return { updated: false, similarTo: null };
+    }
+
+    const result = JSON.parse(jsonMatch[1]) as SimilarityCheckResultInternal;
+
+    if (result.similarTo) {
+      // DB を更新
+      db.update(schema.tasks)
+        .set({
+          similarToTitle: result.similarTo.title,
+          similarToStatus: result.similarTo.status,
+          similarToReason: result.similarTo.reason,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(schema.tasks.id, task.id))
+        .run();
+
+      consola.info(
+        `[tasks/check-similarity] Task #${task.id} similar to "${result.similarTo.title}" (${result.similarTo.status})`,
+      );
+
+      return {
+        updated: true,
+        similarTo: result.similarTo,
+      };
+    }
+
+    return { updated: false, similarTo: null };
+  } catch (error) {
+    consola.error(`[tasks/check-similarity] Error checking task #${task.id}:`, error);
+    return { updated: false, similarTo: null };
+  }
 }
 
 /**
@@ -3061,10 +3227,12 @@ async function callWorkerCheckCompletion(
 async function checkClaudeCodeCompletion(
   db: AdasDatabase,
   task: {
+    id: number;
     projectId: number | null;
     title: string;
     description: string | null;
     acceptedAt: string | null;
+    parentId: number | null;
   },
 ): Promise<CompletionCheckResult | null> {
   if (!task.projectId) {
@@ -3127,9 +3295,18 @@ async function checkClaudeCodeCompletion(
 
     const context = contextParts.join("\n");
 
+    // 子タスク・親タスク情報を取得
+    const childTasks = getChildTasks(db, task.id);
+    const parentTask = task.parentId ? getParentTask(db, task) : null;
+
     // Worker で AI 判定
     const result = await callWorkerCheckCompletion({
-      task: { title: task.title, description: task.description },
+      task: {
+        title: task.title,
+        description: task.description,
+        childTasks: childTasks.length > 0 ? formatChildTasksForCompletion(childTasks) : undefined,
+        parentTask: parentTask ? { id: parentTask.id, title: parentTask.title } : undefined,
+      },
       context,
       source: "claude-code",
     });
@@ -3154,7 +3331,13 @@ async function checkClaudeCodeCompletion(
  */
 async function checkSlackCompletion(
   db: AdasDatabase,
-  task: { slackMessageId: number | null; title: string; description: string | null },
+  task: {
+    id: number;
+    slackMessageId: number | null;
+    title: string;
+    description: string | null;
+    parentId: number | null;
+  },
 ): Promise<CompletionCheckResult | null> {
   if (!task.slackMessageId) {
     return null;
@@ -3207,9 +3390,18 @@ async function checkSlackCompletion(
 
     const context = contextParts.join("\n");
 
+    // 子タスク・親タスク情報を取得
+    const childTasks = getChildTasks(db, task.id);
+    const parentTask = task.parentId ? getParentTask(db, task) : null;
+
     // Worker で AI 判定
     const result = await callWorkerCheckCompletion({
-      task: { title: task.title, description: task.description },
+      task: {
+        title: task.title,
+        description: task.description,
+        childTasks: childTasks.length > 0 ? formatChildTasksForCompletion(childTasks) : undefined,
+        parentTask: parentTask ? { id: parentTask.id, title: parentTask.title } : undefined,
+      },
       context,
       source: "slack",
     });
@@ -3234,7 +3426,14 @@ async function checkSlackCompletion(
  */
 async function checkTranscribeCompletion(
   db: AdasDatabase,
-  task: { date: string; title: string; description: string | null; acceptedAt: string | null },
+  task: {
+    id: number;
+    date: string;
+    title: string;
+    description: string | null;
+    acceptedAt: string | null;
+    parentId: number | null;
+  },
 ): Promise<CompletionCheckResult | null> {
   try {
     // タスクの日付以降の音声書き起こしを取得
@@ -3272,9 +3471,18 @@ async function checkTranscribeCompletion(
 
     const context = contextParts.join("\n");
 
+    // 子タスク・親タスク情報を取得
+    const childTasks = getChildTasks(db, task.id);
+    const parentTask = task.parentId ? getParentTask(db, task) : null;
+
     // Worker で AI 判定
     const result = await callWorkerCheckCompletion({
-      task: { title: task.title, description: task.description },
+      task: {
+        title: task.title,
+        description: task.description,
+        childTasks: childTasks.length > 0 ? formatChildTasksForCompletion(childTasks) : undefined,
+        parentTask: parentTask ? { id: parentTask.id, title: parentTask.title } : undefined,
+      },
       context,
       source: "transcribe",
     });

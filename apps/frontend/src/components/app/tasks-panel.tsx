@@ -32,6 +32,7 @@ import {
   FolderKanban,
   Github,
   GitMerge,
+  Loader2,
   MessageSquare,
   MessageSquareMore,
   Mic,
@@ -147,7 +148,12 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     getElaborationStatus,
     applyElaboration,
     discardElaboration,
-    bulkElaborateTasks,
+    // 一括詳細化 (非同期)
+    startBulkElaborate,
+    getBulkElaborationStatus,
+    // 類似チェック
+    checkTaskSimilarity,
+    checkSimilarityBatch,
   } = useTasks();
   const { stats } = useTaskStats(date);
   const {
@@ -192,6 +198,10 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const [detectingDuplicates, setDetectingDuplicates] = useState(false);
   const [duplicateSuggestions, setDuplicateSuggestions] = useState<DuplicateTaskPair[]>([]);
 
+  // 類似チェック
+  const [checkingSimilarity, setCheckingSimilarity] = useState(false);
+  const [checkingSimilarityTaskId, setCheckingSimilarityTaskId] = useState<number | null>(null);
+
   // タスク詳細化
   const [elaborateDialogOpen, setElaborateDialogOpen] = useState(false);
   const [elaborateTargetTask, setElaborateTargetTask] = useState<Task | null>(null);
@@ -213,9 +223,38 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     setBulkElaborateDialogOpen(false);
   };
 
-  const handleApplyBulkElaboration = async (taskId: number, description: string) => {
-    await updateTask(taskId, { description });
-    await refetch(true);
+  // 一括類似チェック
+  const handleCheckSimilarityBatch = async () => {
+    setCheckingSimilarity(true);
+    try {
+      const result = await checkSimilarityBatch({ date });
+      if (result.updated > 0) {
+        console.log(
+          `類似チェック完了: ${result.checked}件中${result.updated}件に類似タスクが見つかりました`,
+        );
+      }
+    } catch (err) {
+      console.error("類似チェックに失敗しました:", err);
+    } finally {
+      setCheckingSimilarity(false);
+    }
+  };
+
+  // 個別類似チェック
+  const handleCheckTaskSimilarity = async (taskId: number) => {
+    setCheckingSimilarityTaskId(taskId);
+    try {
+      const result = await checkTaskSimilarity(taskId);
+      if (result.updated && result.similarTo) {
+        console.log(
+          `タスク #${taskId} は「${result.similarTo.title}」(${result.similarTo.status}) に類似`,
+        );
+      }
+    } catch (err) {
+      console.error("類似チェックに失敗しました:", err);
+    } finally {
+      setCheckingSimilarityTaskId(null);
+    }
   };
 
   // Projects Popover handlers
@@ -1229,13 +1268,40 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 却下
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="pending" className="min-h-0 flex-1">
+            <TabsContent value="pending" className="min-h-0 flex-1 space-y-2">
+              {/* 一括類似チェックボタン */}
+              {pendingTasks.length > 0 && (
+                <div className="flex items-center justify-end gap-2 px-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCheckSimilarityBatch}
+                    disabled={checkingSimilarity}
+                    className="h-7 text-xs"
+                  >
+                    {checkingSimilarity ? (
+                      <>
+                        <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                        チェック中...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="mr-1 h-3 w-3" />
+                        一括類似チェック
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
               <TaskList
                 tasks={pendingTasks}
                 projects={projects}
+                allTasks={tasks}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 onElaborate={openElaborateDialog}
+                onCheckSimilarity={handleCheckTaskSimilarity}
+                checkingSimilarityTaskId={checkingSimilarityTaskId}
                 selectionMode={selectionMode}
                 selectedTaskIds={selectedTaskIds}
                 onToggleSelection={toggleTaskSelection}
@@ -1271,6 +1337,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               <TaskList
                 tasks={acceptedTasks}
                 projects={projects}
+                allTasks={tasks}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 onElaborate={openElaborateDialog}
@@ -1285,6 +1352,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               <TaskList
                 tasks={inProgressTasks}
                 projects={projects}
+                allTasks={tasks}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 onElaborate={openElaborateDialog}
@@ -1298,6 +1366,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               <TaskList
                 tasks={pausedTasks}
                 projects={projects}
+                allTasks={tasks}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 onElaborate={openElaborateDialog}
@@ -1311,6 +1380,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               <TaskList
                 tasks={completedTasks}
                 projects={projects}
+                allTasks={tasks}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 selectionMode={selectionMode}
@@ -1323,6 +1393,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               <TaskList
                 tasks={rejectedTasks}
                 projects={projects}
+                allTasks={tasks}
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 selectionMode={selectionMode}
@@ -1354,8 +1425,10 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
         open={bulkElaborateDialogOpen}
         tasks={tasks.filter((t) => selectedTaskIds.has(t.id))}
         projects={projects}
-        onBulkElaborate={bulkElaborateTasks}
-        onApply={handleApplyBulkElaboration}
+        onStartBulkElaborate={startBulkElaborate}
+        onGetBulkElaborationStatus={getBulkElaborationStatus}
+        onApplyElaboration={applyElaboration}
+        onRefetch={() => refetch(true)}
         onClose={closeBulkElaborateDialog}
       />
     </Card>
@@ -1428,9 +1501,12 @@ function CompletionSuggestionItem({
 function TaskList({
   tasks,
   projects,
+  allTasks,
   onUpdateTask,
   onDeleteTask,
   onElaborate,
+  onCheckSimilarity,
+  checkingSimilarityTaskId,
   suggestionTaskIds,
   selectionMode = false,
   selectedTaskIds,
@@ -1439,6 +1515,8 @@ function TaskList({
 }: {
   tasks: Task[];
   projects: Project[];
+  /** 全タスク (子タスク・親タスク情報の取得用、TaskItem に渡される) */
+  allTasks?: Task[];
   onUpdateTask: (
     id: number,
     updates: {
@@ -1452,6 +1530,8 @@ function TaskList({
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
   onElaborate?: (task: Task) => void;
+  onCheckSimilarity?: (taskId: number) => Promise<void>;
+  checkingSimilarityTaskId?: number | null;
   suggestionTaskIds?: Set<number>;
   selectionMode?: boolean;
   selectedTaskIds?: Set<number>;
@@ -1479,9 +1559,12 @@ function TaskList({
             key={task.id}
             task={task}
             projects={projects}
+            allTasks={allTasks}
             onUpdateTask={onUpdateTask}
             onDeleteTask={onDeleteTask}
             onElaborate={onElaborate}
+            onCheckSimilarity={onCheckSimilarity}
+            checkingSimilarity={checkingSimilarityTaskId === task.id}
             isSuggested={suggestionTaskIds?.has(task.id)}
             selectionMode={selectionMode}
             isSelected={selectedTaskIds?.has(task.id) ?? false}
@@ -1497,9 +1580,12 @@ function TaskList({
 function TaskItem({
   task,
   projects,
+  allTasks,
   onUpdateTask,
   onDeleteTask,
   onElaborate,
+  onCheckSimilarity,
+  checkingSimilarity = false,
   isSuggested,
   selectionMode = false,
   isSelected = false,
@@ -1507,6 +1593,8 @@ function TaskItem({
 }: {
   task: Task;
   projects: Project[];
+  /** 全タスク (子タスク・親タスク情報の取得用) */
+  allTasks?: Task[];
   onUpdateTask: (
     id: number,
     updates: {
@@ -1520,6 +1608,8 @@ function TaskItem({
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
   onElaborate?: (task: Task) => void;
+  onCheckSimilarity?: (taskId: number) => Promise<void>;
+  checkingSimilarity?: boolean;
   isSuggested?: boolean;
   selectionMode?: boolean;
   isSelected?: boolean;
@@ -1610,6 +1700,27 @@ function TaskItem({
     let text = `## ${task.title}`;
     if (task.description) {
       text += `\n\n${task.description}`;
+    }
+
+    // 子タスク情報を追加 (親タスクの場合)
+    if (allTasks && task.parentId === null) {
+      const childTasks = allTasks
+        .filter((t) => t.parentId === task.id)
+        .sort((a, b) => (a.stepNumber ?? 0) - (b.stepNumber ?? 0));
+      if (childTasks.length > 0) {
+        text += `\n\n### 子タスク (${childTasks.length}件)\n`;
+        for (const child of childTasks) {
+          text += `${child.stepNumber ?? 0}. [${child.status}] ${child.title}\n`;
+        }
+      }
+    }
+
+    // 親タスク情報を追加 (子タスクの場合)
+    if (allTasks && task.parentId !== null) {
+      const parentTask = allTasks.find((t) => t.id === task.parentId);
+      if (parentTask) {
+        text += `\n\n### 親タスク\n- #${parentTask.id} ${parentTask.title}`;
+      }
     }
 
     // ステータスに応じたアクションコマンドを生成
@@ -1746,12 +1857,49 @@ function TaskItem({
                     統合
                   </Badge>
                 )}
+                {/* 詳細化ステータスインジケーター */}
+                {task.elaborationStatus === "pending" && (
+                  <Badge variant="outline" className="text-xs text-purple-600 border-purple-300">
+                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                    詳細化中
+                  </Badge>
+                )}
+                {task.elaborationStatus === "completed" && task.pendingElaboration && (
+                  <Badge
+                    variant="default"
+                    className="text-xs bg-purple-500 cursor-pointer hover:bg-purple-600"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onElaborate?.(task);
+                    }}
+                  >
+                    <Wand2 className="mr-1 h-3 w-3" />
+                    詳細化結果を確認
+                  </Badge>
+                )}
               </div>
               {task.dueDate && (
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <Badge variant="outline" className="text-xs">
                     Due: {task.dueDate}
                   </Badge>
+                </div>
+              )}
+              {/* 類似タスク警告 */}
+              {task.similarToTitle && (
+                <div className="mt-1 flex items-start gap-1 rounded bg-yellow-50 p-1.5 text-xs text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                  <div>
+                    <span className="font-medium">
+                      類似: {task.similarToTitle} (
+                      {task.similarToStatus === "completed" ? "完了" : "却下"})
+                    </span>
+                    {task.similarToReason && (
+                      <span className="ml-1 text-yellow-600 dark:text-yellow-400">
+                        - {task.similarToReason}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1978,6 +2126,29 @@ function TaskItem({
                 </>
               )}
             </Button>
+            {/* 類似チェックボタン (pending/accepted のみ) */}
+            {(task.status === "pending" || task.status === "accepted") &&
+              onCheckSimilarity &&
+              !task.similarToTitle && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onCheckSimilarity(task.id)}
+                  disabled={checkingSimilarity}
+                >
+                  {checkingSimilarity ? (
+                    <>
+                      <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                      チェック中...
+                    </>
+                  ) : (
+                    <>
+                      <Search className="mr-1 h-3 w-3" />
+                      類似チェック
+                    </>
+                  )}
+                </Button>
+              )}
             <Button
               variant="ghost"
               size="sm"

@@ -106,6 +106,11 @@ export interface EvaluatorLog {
 /** 要約生成レスポンス */
 export interface GenerateSummaryResponse {
   success: boolean;
+  /** 単一ジョブの場合 */
+  jobId?: number;
+  /** 複数ジョブの場合 */
+  jobIds?: number[];
+  message?: string;
   content?: string | null;
   hourlyCount?: number;
   dailyGenerated?: boolean;
@@ -778,6 +783,17 @@ export interface CheckCompletionRequest {
   task: {
     title: string;
     description: string | null;
+    /** 子タスク情報 (親タスクの完了判定時) */
+    childTasks?: {
+      stepNumber: number;
+      title: string;
+      status: TaskStatus;
+    }[];
+    /** 親タスク情報 (子タスクの完了判定時) */
+    parentTask?: {
+      id: number;
+      title: string;
+    };
   };
   context: string;
   source: "claude-code" | "slack" | "transcribe";
@@ -869,6 +885,47 @@ export interface CheckDuplicatesRequest {
 export interface CheckDuplicatesResponse {
   /** 検出された重複ペア */
   duplicates: DuplicateTaskPair[];
+}
+
+// ========== タスク類似チェック 型定義 ==========
+
+/** 類似チェック結果 */
+export interface SimilarityCheckResult {
+  taskId: number;
+  updated: boolean;
+  similarToTitle: string | null;
+  similarToStatus: "completed" | "rejected" | null;
+  similarToReason: string | null;
+}
+
+/** 個別タスク類似チェックレスポンス */
+export interface CheckTaskSimilarityResponse {
+  updated: boolean;
+  similarTo: {
+    title: string;
+    status: "completed" | "rejected";
+    reason: string;
+  } | null;
+}
+
+/** 一括類似チェックリクエスト */
+export interface CheckSimilarityBatchRequest {
+  /** 対象日付 (省略時は全 pending タスク) */
+  date?: string;
+  /** 対象プロジェクト ID */
+  projectId?: number;
+  /** 対象タスク ID 一覧 (省略時は全 pending タスク) */
+  taskIds?: number[];
+}
+
+/** 一括類似チェックレスポンス */
+export interface CheckSimilarityBatchResponse {
+  /** チェックしたタスク数 */
+  checked: number;
+  /** 更新したタスク数 (類似が見つかった数) */
+  updated: number;
+  /** 各タスクの結果 */
+  results: SimilarityCheckResult[];
 }
 
 // ========== User Profile 型定義 ==========
@@ -1123,6 +1180,33 @@ export interface BulkElaborateTasksResponse {
   totalFailed: number;
 }
 
+/** 一括詳細化開始レスポンス (非同期) */
+export interface BulkElaborateStartResponse {
+  taskIds: number[];
+  jobIds: number[];
+  status: "pending";
+  message: string;
+}
+
+/** 一括詳細化状態の個別ステータス */
+export interface BulkElaborationTaskStatus {
+  taskId: number;
+  status: ElaborationStatus | null;
+  hasResult: boolean;
+}
+
+/** 一括詳細化状態レスポンス */
+export interface BulkElaborationStatusResponse {
+  statuses: BulkElaborationTaskStatus[];
+  summary: {
+    pending: number;
+    completed: number;
+    failed: number;
+    total: number;
+  };
+  allCompleted: boolean;
+}
+
 // ========== 非同期タスク詳細化 型定義 ==========
 
 /** 詳細化ステータス */
@@ -1302,4 +1386,70 @@ export interface RpcMatchSlackChannelsRequest {
 /** RPC Match Slack Channels レスポンス */
 export interface RpcMatchSlackChannelsResponse {
   matches: ChannelProjectMatch[];
+}
+
+// ========== Rate Limit 型定義 ==========
+
+/** レート制限優先度 */
+export type RateLimitPriority = "high" | "medium" | "low" | "lowest";
+
+/** レート制限設定 */
+export interface RateLimitConfig {
+  enabled: boolean;
+  limits: RateLimitLimits;
+  priorityMultipliers: RateLimitPriorityMultipliers;
+}
+
+/** レート制限値 */
+export interface RateLimitLimits {
+  requestsPerMinute: number;
+  requestsPerHour: number;
+  requestsPerDay: number;
+  tokensPerMinute: number;
+  tokensPerHour: number;
+  tokensPerDay: number;
+}
+
+/** 優先度別の制限係数 */
+export interface RateLimitPriorityMultipliers {
+  high: number;
+  medium: number;
+  low: number;
+  lowest: number;
+}
+
+/** 現在の使用状況 */
+export interface RateLimitCurrentUsage {
+  requestsPerMinute: number;
+  requestsPerHour: number;
+  requestsPerDay: number;
+  tokensPerMinute: number;
+  tokensPerHour: number;
+  tokensPerDay: number;
+}
+
+/** 使用状況の制限に対する割合 (%) */
+export interface RateLimitUsagePercent {
+  requestsPerMinute: number;
+  requestsPerHour: number;
+  requestsPerDay: number;
+  tokensPerMinute: number;
+  tokensPerHour: number;
+  tokensPerDay: number;
+}
+
+/** レート制限ステータス */
+export interface RateLimitStatus {
+  enabled: boolean;
+  currentUsage: RateLimitCurrentUsage;
+  limits: RateLimitLimits;
+  usagePercent: RateLimitUsagePercent;
+}
+
+/** レート制限チェック結果 */
+export interface RateLimitCheckResult {
+  allowed: boolean;
+  reason?: string;
+  retryAfterMs?: number;
+  currentUsage: RateLimitCurrentUsage;
 }
