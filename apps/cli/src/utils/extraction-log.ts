@@ -17,7 +17,8 @@ export type ExtractionSourceType =
   | "memo"
   | "claude-code"
   | "transcription"
-  | "git-scan";
+  | "git-scan"
+  | "server-log";
 
 /**
  * Check if extraction has already been attempted for this source

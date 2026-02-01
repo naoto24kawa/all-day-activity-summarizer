@@ -18,6 +18,7 @@ Slack/GitHub/メモから AI でタスクを自動抽出し、フィードバッ
 | GitHub Items | `POST /api/tasks/extract-github` | `github.username` |
 | GitHub Comments | `POST /api/tasks/extract-github-comments` | `github.username` |
 | Memos | `POST /api/tasks/extract-memos` | - |
+| Server Logs | `POST /api/tasks/extract-logs` | - |
 
 ## タスクライフサイクル
 
@@ -81,3 +82,34 @@ pending → accepted → in_progress → completed
 | Claude Code | セッションログから AI 判定 | 中 |
 | Slack | スレッド後続メッセージから AI 判定 | 中 |
 | Transcribe | 音声書き起こしから AI 判定 | 低 |
+
+## サーバーログからのタスク抽出
+
+サーバーログ (serve/worker) から ERROR/WARN レベルのエントリを AI で解析し、対応すべきタスクを自動抽出。
+
+**エンドポイント**: `POST /api/tasks/extract-logs`
+
+**リクエスト**:
+```json
+{
+  "source": "serve" | "worker",
+  "date": "YYYY-MM-DD",     // 省略時: 今日
+  "levels": ["ERROR", "WARN"], // 省略時: ["ERROR", "WARN"]
+  "limit": 50               // 省略時: 50 (最大 50)
+}
+```
+
+**処理フロー**:
+1. ログファイルを読み込み
+2. レベルでフィルタ
+3. 処理済みエントリを除外 (extraction_logs でチェック)
+4. 類似エラーをグループ化
+5. Claude Haiku でタスク抽出
+6. DB 保存 + 抽出ログ記録
+
+**ログエントリ識別子**: `{source}-{date}-{hash}`
+- hash: timestamp + level + message (正規化済み) の MD5 先頭 8 文字
+
+**プロンプト**: `packages/core/prompts/task-extract-logs.md`
+
+**workType**: `investigate` / `operate` / `maintain`

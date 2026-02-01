@@ -15,7 +15,7 @@
 | カラム | 型 | 説明 |
 |--------|-----|------|
 | `extraction_type` | TEXT | `"task"` \| `"learning"` |
-| `source_type` | TEXT | `"slack"` \| `"github"` \| `"github-comment"` \| `"memo"` \| `"claude-code"` \| `"transcription"` |
+| `source_type` | TEXT | `"slack"` \| `"github"` \| `"github-comment"` \| `"memo"` \| `"claude-code"` \| `"transcription"` \| `"server-log"` |
 | `source_id` | TEXT | ソースの識別子 |
 | `extracted_count` | INTEGER | 抽出された件数 |
 | `extracted_at` | TEXT | 処理日時 |
@@ -47,5 +47,6 @@ recordExtractionLog(db, "task", "slack", String(messageId), extractedCount);
 | `task` | Slack | メッセージID (数値) |
 | `task` | GitHub Comment | コメントID (数値) |
 | `task` | Memo | メモID (数値) |
+| `task` | Server Log | `{source}-{date}-{hash}` (例: `serve-2026-02-01-abc123`) |
 | `learning` | Claude Code | セッションID (UUID) |
 | `learning` | Transcription | `transcription-YYYY-MM-DD` |

@@ -485,6 +485,7 @@ export const tasks = sqliteTable("tasks", {
       "vocabulary",
       "merge",
       "project-suggestion",
+      "server-log",
     ],
   })
     .notNull()
@@ -534,7 +535,9 @@ export const tasks = sqliteTable("tasks", {
   mergedAt: text("merged_at"), // 統合された日時 (統合された側に設定)
   // 親子タスク・詳細化関連
   parentId: integer("parent_id"), // 親タスク FK (子タスクの場合のみ)
-  elaborationStatus: text("elaboration_status", { enum: ["pending", "completed", "failed"] }), // 詳細化ステータス
+  elaborationStatus: text("elaboration_status", {
+    enum: ["pending", "completed", "failed", "applied"],
+  }), // 詳細化ステータス
   pendingElaboration: text("pending_elaboration"), // JSON: 詳細化結果 (適用前)
   stepNumber: integer("step_number"), // 子タスクの順序 (1, 2, 3...)
   createdAt: text("created_at")
@@ -593,7 +596,16 @@ export const extractionLogs = sqliteTable("extraction_logs", {
     enum: ["task", "learning", "vocabulary", "project"],
   }).notNull(), // 抽出の種類
   sourceType: text("source_type", {
-    enum: ["slack", "github", "github-comment", "memo", "claude-code", "transcription", "git-scan"],
+    enum: [
+      "slack",
+      "github",
+      "github-comment",
+      "memo",
+      "claude-code",
+      "transcription",
+      "git-scan",
+      "server-log",
+    ],
   }).notNull(), // ソースの種類
   sourceId: text("source_id").notNull(), // 各ソースの ID (message_id, session_id など)
   extractedCount: integer("extracted_count").notNull().default(0), // 抽出された件数

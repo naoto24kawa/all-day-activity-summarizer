@@ -57,6 +57,13 @@
       "when": 1769867893291,
       "tag": "0007_steady_inertia",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1769906736348,
+      "tag": "0008_light_gorgon",
+      "breakpoints": true
     }
   ]
 }

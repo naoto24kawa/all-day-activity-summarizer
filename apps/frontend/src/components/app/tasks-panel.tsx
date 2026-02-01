@@ -79,6 +79,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -153,8 +160,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     // 一括詳細化 (非同期)
     startBulkElaborate,
     getBulkElaborationStatus,
-    // 類似チェック
-    checkTaskSimilarity,
+    // 重複チェック
     checkSimilarityBatch,
   } = useTasks();
   const { stats } = useTaskStats(date);
@@ -200,9 +206,8 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const [detectingDuplicates, setDetectingDuplicates] = useState(false);
   const [duplicateSuggestions, setDuplicateSuggestions] = useState<DuplicateTaskPair[]>([]);
 
-  // 類似チェック
+  // 重複チェック
   const [checkingSimilarity, setCheckingSimilarity] = useState(false);
-  const [checkingSimilarityTaskId, setCheckingSimilarityTaskId] = useState<number | null>(null);
 
   // タスク詳細化
   const [elaborateDialogOpen, setElaborateDialogOpen] = useState(false);
@@ -223,40 +228,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
 
   const closeBulkElaborateDialog = () => {
     setBulkElaborateDialogOpen(false);
-  };
-
-  // 一括類似チェック
-  const handleCheckSimilarityBatch = async () => {
-    setCheckingSimilarity(true);
-    try {
-      const result = await checkSimilarityBatch({ date });
-      if (result.updated > 0) {
-        console.log(
-          `類似チェック完了: ${result.checked}件中${result.updated}件に類似タスクが見つかりました`,
-        );
-      }
-    } catch (err) {
-      console.error("類似チェックに失敗しました:", err);
-    } finally {
-      setCheckingSimilarity(false);
-    }
-  };
-
-  // 個別類似チェック
-  const handleCheckTaskSimilarity = async (taskId: number) => {
-    setCheckingSimilarityTaskId(taskId);
-    try {
-      const result = await checkTaskSimilarity(taskId);
-      if (result.updated && result.similarTo) {
-        console.log(
-          `タスク #${taskId} は「${result.similarTo.title}」(${result.similarTo.status}) に類似`,
-        );
-      }
-    } catch (err) {
-      console.error("類似チェックに失敗しました:", err);
-    } finally {
-      setCheckingSimilarityTaskId(null);
-    }
   };
 
   // Projects Popover handlers
@@ -348,43 +319,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   };
 
   // 非同期版: ジョブをキューに登録 (結果はSSE通知で受け取る)
-  const handleExtractSlack = async () => {
-    setExtracting(true);
-    try {
-      await extractTasksAsync({ date });
-      // ジョブ登録完了 - 実際の結果はSSE通知で受け取る
-    } finally {
-      setExtracting(false);
-    }
-  };
-
-  const handleExtractGitHub = async () => {
-    setExtracting(true);
-    try {
-      await extractGitHubTasksAsync({ date });
-    } finally {
-      setExtracting(false);
-    }
-  };
-
-  const handleExtractGitHubComments = async () => {
-    setExtracting(true);
-    try {
-      await extractGitHubCommentTasksAsync({ date });
-    } finally {
-      setExtracting(false);
-    }
-  };
-
-  const handleExtractMemos = async () => {
-    setExtracting(true);
-    try {
-      await extractMemoTasksAsync({ date });
-    } finally {
-      setExtracting(false);
-    }
-  };
-
   const handleExtractAll = async () => {
     setExtracting(true);
     try {
@@ -421,16 +355,28 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     setCompletionSuggestions((prev) => prev.filter((s) => s.taskId !== taskId));
   };
 
-  const handleDetectDuplicates = async () => {
+  // 重複チェック (pending の類似チェック + accepted の重複検出)
+  const handleBulkDuplicateCheck = async () => {
     setDetectingDuplicates(true);
+    setCheckingSimilarity(true);
     setDuplicateSuggestions([]);
     try {
-      const result = await detectDuplicates({ date });
-      setDuplicateSuggestions(result.duplicates);
+      // 両方を並列実行
+      const [similarityResult, duplicatesResult] = await Promise.all([
+        checkSimilarityBatch({ date }),
+        detectDuplicates({ date }),
+      ]);
+      setDuplicateSuggestions(duplicatesResult.duplicates);
+      if (similarityResult.updated > 0) {
+        console.log(
+          `重複チェック完了: ${similarityResult.checked}件中${similarityResult.updated}件に類似タスクが見つかりました`,
+        );
+      }
     } catch (err) {
-      console.error("Failed to detect duplicates:", err);
+      console.error("Failed to check duplicates:", err);
     } finally {
       setDetectingDuplicates(false);
+      setCheckingSimilarity(false);
     }
   };
 
@@ -590,12 +536,12 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
             )}
           </CardTitle>
           <div className="flex items-center gap-1">
-            {/* 一括操作モードトグル */}
+            {/* 編集モードトグル */}
             <Button
               variant={selectionMode ? "default" : "outline"}
               size="sm"
               onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
-              title={selectionMode ? "一括操作モードを終了" : "一括操作モードを開始"}
+              title={selectionMode ? "編集モードを終了" : "編集モードを開始"}
             >
               {selectionMode ? (
                 <>
@@ -605,7 +551,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               ) : (
                 <>
                   <CheckSquare className="mr-1 h-3 w-3" />
-                  一括
+                  編集
                 </>
               )}
             </Button>
@@ -618,62 +564,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
             >
               <Sparkles className={`mr-1 h-3 w-3 ${extracting ? "animate-pulse" : ""}`} />
               {extracting ? "..." : "Extract"}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleExtractSlack}
-              disabled={extracting}
-              title="Extract from Slack"
-            >
-              <MessageSquare className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleExtractGitHub}
-              disabled={extracting}
-              title="Extract from GitHub Items"
-            >
-              <Github className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleExtractGitHubComments}
-              disabled={extracting}
-              title="Extract from GitHub Comments"
-            >
-              <MessageSquareMore className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleExtractMemos}
-              disabled={extracting}
-              title="Extract from Memos"
-            >
-              <FileText className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCheckCompletions}
-              disabled={checkingCompletion || stats.accepted === 0}
-              title="Check task completions"
-            >
-              <Search className={`mr-1 h-3 w-3 ${checkingCompletion ? "animate-pulse" : ""}`} />
-              {checkingCompletion ? "..." : "完了チェック"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDetectDuplicates}
-              disabled={detectingDuplicates || stats.accepted < 2}
-              title="Detect duplicate tasks"
-            >
-              <GitMerge className={`mr-1 h-3 w-3 ${detectingDuplicates ? "animate-pulse" : ""}`} />
-              {detectingDuplicates ? "..." : "重複検出"}
             </Button>
             {permission === "default" && (
               <Button
@@ -901,117 +791,71 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
         </p>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col">
-        {/* Source Filter Buttons */}
+        {/* Filters */}
         {tasks.length > 0 && (
-          <div className="mb-3 flex shrink-0 items-center gap-1">
-            <Filter className="mr-1 h-3 w-3 text-muted-foreground" />
-            <Button
-              variant={sourceFilter === "all" ? "default" : "outline"}
-              size="sm"
-              className="h-6 px-2 text-xs"
-              onClick={() => setSourceFilter("all")}
+          <div className="mb-3 flex shrink-0 items-center gap-2">
+            <Filter className="h-3 w-3 text-muted-foreground" />
+            {/* Source Filter */}
+            <Select
+              value={sourceFilter}
+              onValueChange={(value) => setSourceFilter(value as TaskSourceType | "all")}
             >
-              全て {sourceCount.all > 0 && `(${sourceCount.all})`}
-            </Button>
-            {sourceCount.slack > 0 && (
-              <Button
-                variant={sourceFilter === "slack" ? "default" : "outline"}
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => setSourceFilter("slack")}
+              <SelectTrigger className="h-7 w-auto min-w-[100px] text-xs">
+                <SelectValue placeholder="ソース" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全て ({sourceCount.all})</SelectItem>
+                {sourceCount.slack > 0 && (
+                  <SelectItem value="slack">Slack ({sourceCount.slack})</SelectItem>
+                )}
+                {sourceCount.github > 0 && (
+                  <SelectItem value="github">GitHub ({sourceCount.github})</SelectItem>
+                )}
+                {sourceCount["prompt-improvement"] > 0 && (
+                  <SelectItem value="prompt-improvement">
+                    改善 ({sourceCount["prompt-improvement"]})
+                  </SelectItem>
+                )}
+                {sourceCount.memo > 0 && (
+                  <SelectItem value="memo">Memo ({sourceCount.memo})</SelectItem>
+                )}
+                {sourceCount.vocabulary > 0 && (
+                  <SelectItem value="vocabulary">用語 ({sourceCount.vocabulary})</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+            {/* Project Filter */}
+            {projectsWithTasks.length > 0 && (
+              <Select
+                value={String(projectFilter)}
+                onValueChange={(value) => {
+                  if (value === "all" || value === "none") {
+                    setProjectFilter(value);
+                  } else {
+                    setProjectFilter(Number(value));
+                  }
+                }}
               >
-                <MessageSquare className="mr-1 h-3 w-3" />
-                Slack ({sourceCount.slack})
-              </Button>
-            )}
-            {sourceCount.github > 0 && (
-              <Button
-                variant={
-                  sourceFilter === "github" || sourceFilter === "github-comment"
-                    ? "default"
-                    : "outline"
-                }
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => setSourceFilter("github")}
-              >
-                <Github className="mr-1 h-3 w-3" />
-                GitHub ({sourceCount.github})
-              </Button>
-            )}
-            {sourceCount["prompt-improvement"] > 0 && (
-              <Button
-                variant={sourceFilter === "prompt-improvement" ? "default" : "outline"}
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => setSourceFilter("prompt-improvement")}
-              >
-                <Wand2 className="mr-1 h-3 w-3" />
-                改善 ({sourceCount["prompt-improvement"]})
-              </Button>
-            )}
-            {sourceCount.memo > 0 && (
-              <Button
-                variant={sourceFilter === "memo" ? "default" : "outline"}
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => setSourceFilter("memo")}
-              >
-                <FileText className="mr-1 h-3 w-3" />
-                Memo ({sourceCount.memo})
-              </Button>
-            )}
-            {sourceCount.vocabulary > 0 && (
-              <Button
-                variant={sourceFilter === "vocabulary" ? "default" : "outline"}
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => setSourceFilter("vocabulary")}
-              >
-                <BookOpen className="mr-1 h-3 w-3" />
-                用語 ({sourceCount.vocabulary})
-              </Button>
+                <SelectTrigger className="h-7 w-auto min-w-[120px] text-xs">
+                  <SelectValue placeholder="プロジェクト" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全プロジェクト</SelectItem>
+                  {projectsWithTasks.map((project) => (
+                    <SelectItem key={project.id} value={String(project.id)}>
+                      {project.name} ({projectCount.get(project.id) ?? 0})
+                    </SelectItem>
+                  ))}
+                  {(projectCount.get("none") ?? 0) > 0 && (
+                    <SelectItem value="none">未分類 ({projectCount.get("none")})</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
             )}
           </div>
         )}
 
-        {/* Project Filter Buttons */}
-        {tasks.length > 0 && projectsWithTasks.length > 0 && (
-          <div className="mb-3 flex shrink-0 flex-wrap items-center gap-1">
-            <FolderGit2 className="mr-1 h-3 w-3 text-muted-foreground" />
-            <Button
-              variant={projectFilter === "all" ? "default" : "outline"}
-              size="sm"
-              className="h-6 px-2 text-xs"
-              onClick={() => setProjectFilter("all")}
-            >
-              全プロジェクト
-            </Button>
-            {projectsWithTasks.map((project) => (
-              <Button
-                key={project.id}
-                variant={projectFilter === project.id ? "default" : "outline"}
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => setProjectFilter(project.id)}
-              >
-                {project.name} ({projectCount.get(project.id) ?? 0})
-              </Button>
-            ))}
-            {(projectCount.get("none") ?? 0) > 0 && (
-              <Button
-                variant={projectFilter === "none" ? "default" : "outline"}
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => setProjectFilter("none")}
-              >
-                未分類 ({projectCount.get("none")})
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/* 一括操作バー */}
+        {/* 編集モードバー */}
         {selectionMode && (
           <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2 rounded-md border bg-blue-50 p-2 dark:bg-blue-950">
             <div className="flex items-center gap-2">
@@ -1126,7 +970,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <div className="h-4 w-px bg-border" />
-                {/* 一括詳細化ボタン */}
+                {/* 詳細化ボタン */}
                 <Button
                   variant="outline"
                   size="sm"
@@ -1138,11 +982,38 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                   title={
                     selectedTaskIds.size > 10
                       ? "最大10件まで選択可能"
-                      : "選択したタスクを一括で AI 詳細化"
+                      : "選択したタスクを AI 詳細化"
                   }
                 >
                   <Wand2 className="mr-1 h-3 w-3" />
-                  一括詳細化
+                  詳細化
+                </Button>
+                <div className="h-4 w-px bg-border" />
+                {/* 完了チェック */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  onClick={handleCheckCompletions}
+                  disabled={checkingCompletion}
+                  title="完了チェック"
+                >
+                  <Search className={`mr-1 h-3 w-3 ${checkingCompletion ? "animate-pulse" : ""}`} />
+                  {checkingCompletion ? "チェック中..." : "完了チェック"}
+                </Button>
+                {/* 重複チェック */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  onClick={handleBulkDuplicateCheck}
+                  disabled={detectingDuplicates || checkingSimilarity}
+                  title="重複チェック"
+                >
+                  <Search
+                    className={`mr-1 h-3 w-3 ${detectingDuplicates || checkingSimilarity ? "animate-pulse" : ""}`}
+                  />
+                  {detectingDuplicates || checkingSimilarity ? "チェック中..." : "重複チェック"}
                 </Button>
                 <div className="h-4 w-px bg-border" />
                 <Button
@@ -1271,30 +1142,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="pending" className="min-h-0 flex-1 space-y-2">
-              {/* 一括類似チェックボタン */}
-              {pendingTasks.length > 0 && (
-                <div className="flex items-center justify-end gap-2 px-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCheckSimilarityBatch}
-                    disabled={checkingSimilarity}
-                    className="h-7 text-xs"
-                  >
-                    {checkingSimilarity ? (
-                      <>
-                        <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
-                        チェック中...
-                      </>
-                    ) : (
-                      <>
-                        <Search className="mr-1 h-3 w-3" />
-                        一括類似チェック
-                      </>
-                    )}
-                  </Button>
-                </div>
-              )}
               <TaskList
                 tasks={pendingTasks}
                 projects={projects}
@@ -1302,8 +1149,6 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                 onUpdateTask={updateTask}
                 onDeleteTask={deleteTask}
                 onElaborate={openElaborateDialog}
-                onCheckSimilarity={handleCheckTaskSimilarity}
-                checkingSimilarityTaskId={checkingSimilarityTaskId}
                 selectionMode={selectionMode}
                 selectedTaskIds={selectedTaskIds}
                 onToggleSelection={toggleTaskSelection}
@@ -1507,8 +1352,6 @@ function TaskList({
   onUpdateTask,
   onDeleteTask,
   onElaborate,
-  onCheckSimilarity,
-  checkingSimilarityTaskId,
   suggestionTaskIds,
   selectionMode = false,
   selectedTaskIds,
@@ -1533,8 +1376,6 @@ function TaskList({
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
   onElaborate?: (task: Task) => void;
-  onCheckSimilarity?: (taskId: number) => Promise<void>;
-  checkingSimilarityTaskId?: number | null;
   suggestionTaskIds?: Set<number>;
   selectionMode?: boolean;
   selectedTaskIds?: Set<number>;
@@ -1566,8 +1407,6 @@ function TaskList({
             onUpdateTask={onUpdateTask}
             onDeleteTask={onDeleteTask}
             onElaborate={onElaborate}
-            onCheckSimilarity={onCheckSimilarity}
-            checkingSimilarity={checkingSimilarityTaskId === task.id}
             isSuggested={suggestionTaskIds?.has(task.id)}
             selectionMode={selectionMode}
             isSelected={selectedTaskIds?.has(task.id) ?? false}
@@ -1587,8 +1426,6 @@ function TaskItem({
   onUpdateTask,
   onDeleteTask,
   onElaborate,
-  onCheckSimilarity,
-  checkingSimilarity = false,
   isSuggested,
   selectionMode = false,
   isSelected = false,
@@ -1612,8 +1449,6 @@ function TaskItem({
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
   onElaborate?: (task: Task) => void;
-  onCheckSimilarity?: (taskId: number) => Promise<void>;
-  checkingSimilarity?: boolean;
   isSuggested?: boolean;
   selectionMode?: boolean;
   isSelected?: boolean;
@@ -1727,8 +1562,19 @@ function TaskItem({
       }
     }
 
-    // ステータスに応じたアクションコマンドを生成
+    // タスク更新API
     const baseUrl = ADAS_API_URL;
+    const updateUrl = `${baseUrl}/api/tasks/${task.id}`;
+    text += "\n\n---\n";
+    text += "### タスク更新API\n";
+    text += "タイトルや説明を変更する場合:\n";
+    text += "```bash\n";
+    text += `curl -X PATCH ${updateUrl} -H "Content-Type: application/json" -d '{"title": "新しいタイトル", "description": "新しい説明"}'\n`;
+    text += "```\n";
+    text +=
+      "更新可能なフィールド: `title`, `description`, `priority` (high/medium/low), `workType`, `dueDate`, `projectId`\n";
+
+    // ステータスに応じたアクションコマンドを生成
     const startUrl = `${baseUrl}/api/tasks/${task.id}/start`;
     const completeUrl = `${baseUrl}/api/tasks/${task.id}/complete`;
     const pauseUrl = `${baseUrl}/api/tasks/${task.id}/pause`;
@@ -1879,6 +1725,12 @@ function TaskItem({
                   >
                     <Wand2 className="mr-1 h-3 w-3" />
                     詳細化結果を確認
+                  </Badge>
+                )}
+                {task.elaborationStatus === "applied" && (
+                  <Badge variant="outline" className="text-xs text-purple-600 border-purple-400">
+                    <Wand2 className="mr-1 h-3 w-3" />
+                    詳細化済み
                   </Badge>
                 )}
               </div>
@@ -2042,6 +1894,7 @@ function TaskItem({
             {/* 承認・修正して承認・却下ボタン (承認待ちのみ) */}
             {task.status === "pending" && (
               <>
+                <div className="h-4 w-px bg-border" />
                 {/* プロンプト改善タスクの場合は差分ボタンを表示 */}
                 {task.sourceType === "prompt-improvement" && task.promptImprovementId && (
                   <Button variant="outline" size="sm" onClick={() => setDiffDialogOpen(true)}>
@@ -2079,127 +1932,110 @@ function TaskItem({
             {task.status !== "pending" &&
               task.status !== "rejected" &&
               !isApprovalOnlyTask(task.sourceType) && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={`gap-1 ${
-                        task.status === "accepted"
-                          ? ""
-                          : task.status === "in_progress"
-                            ? "border-green-200 text-green-600"
-                            : task.status === "paused"
-                              ? "border-yellow-200 text-yellow-600"
-                              : "border-gray-200 text-gray-600"
-                      }`}
-                    >
-                      {task.status === "accepted" && <Circle className="h-3 w-3" />}
-                      {task.status === "in_progress" && <Play className="h-3 w-3" />}
-                      {task.status === "paused" && <Pause className="h-3 w-3" />}
-                      {task.status === "completed" && <CheckCircle2 className="h-3 w-3" />}
-                      {task.status === "accepted" && "未着手"}
-                      {task.status === "in_progress" && "進行中"}
-                      {task.status === "paused" && "中断"}
-                      {task.status === "completed" && "完了"}
-                      <ChevronDown className="h-3 w-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem
-                      onClick={() => onUpdateTask(task.id, { status: "accepted" })}
-                      className={task.status === "accepted" ? "bg-accent" : ""}
-                    >
-                      <Circle className="mr-2 h-4 w-4" />
-                      未着手
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => onUpdateTask(task.id, { status: "in_progress" })}
-                      className={task.status === "in_progress" ? "bg-accent" : ""}
-                    >
-                      <Play className="mr-2 h-4 w-4 text-green-500" />
-                      進行中
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => onUpdateTask(task.id, { status: "paused" })}
-                      className={task.status === "paused" ? "bg-accent" : ""}
-                    >
-                      <Pause className="mr-2 h-4 w-4 text-yellow-500" />
-                      中断
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => onUpdateTask(task.id, { status: "completed" })}
-                      className={task.status === "completed" ? "bg-accent" : ""}
-                    >
-                      <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
-                      完了
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <>
+                  <div className="h-4 w-px bg-border" />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={`gap-1 ${
+                          task.status === "accepted"
+                            ? ""
+                            : task.status === "in_progress"
+                              ? "border-green-200 text-green-600"
+                              : task.status === "paused"
+                                ? "border-yellow-200 text-yellow-600"
+                                : "border-gray-200 text-gray-600"
+                        }`}
+                      >
+                        {task.status === "accepted" && <Circle className="h-3 w-3" />}
+                        {task.status === "in_progress" && <Play className="h-3 w-3" />}
+                        {task.status === "paused" && <Pause className="h-3 w-3" />}
+                        {task.status === "completed" && <CheckCircle2 className="h-3 w-3" />}
+                        {task.status === "accepted" && "未着手"}
+                        {task.status === "in_progress" && "進行中"}
+                        {task.status === "paused" && "中断"}
+                        {task.status === "completed" && "完了"}
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem
+                        onClick={() => onUpdateTask(task.id, { status: "accepted" })}
+                        className={task.status === "accepted" ? "bg-accent" : ""}
+                      >
+                        <Circle className="mr-2 h-4 w-4" />
+                        未着手
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => onUpdateTask(task.id, { status: "in_progress" })}
+                        className={task.status === "in_progress" ? "bg-accent" : ""}
+                      >
+                        <Play className="mr-2 h-4 w-4 text-green-500" />
+                        進行中
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => onUpdateTask(task.id, { status: "paused" })}
+                        className={task.status === "paused" ? "bg-accent" : ""}
+                      >
+                        <Pause className="mr-2 h-4 w-4 text-yellow-500" />
+                        中断
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => onUpdateTask(task.id, { status: "completed" })}
+                        className={task.status === "completed" ? "bg-accent" : ""}
+                      >
+                        <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
+                        完了
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
               )}
 
-            {/* 補助アクション */}
-            {/* 詳細化ボタン (承認のみタスク以外で表示) */}
-            {onElaborate && !isApprovalOnlyTask(task.sourceType) && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onElaborate(task)}
-                title="AI でタスクを詳細化"
-              >
-                <Wand2 className="mr-1 h-3 w-3" />
-                詳細化
-              </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={copyToClipboard}>
-              {copied ? (
-                <>
-                  <Check className="mr-1 h-3 w-3" />
-                  コピー済み
-                </>
-              ) : (
-                <>
-                  <ClipboardCopy className="mr-1 h-3 w-3" />
-                  AIに渡す
-                </>
-              )}
-            </Button>
-            {/* 類似チェックボタン (pending/accepted のみ) */}
-            {(task.status === "pending" || task.status === "accepted") &&
-              onCheckSimilarity &&
-              !task.similarToTitle && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onCheckSimilarity(task.id)}
-                  disabled={checkingSimilarity}
-                >
-                  {checkingSimilarity ? (
-                    <>
-                      <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
-                      チェック中...
-                    </>
-                  ) : (
-                    <>
-                      <Search className="mr-1 h-3 w-3" />
-                      類似チェック
-                    </>
-                  )}
-                </Button>
-              )}
+            {/* 削除ボタン (右端) */}
             <Button
               variant="ghost"
-              size="sm"
-              className="text-destructive"
+              size="icon"
+              className="ml-auto h-7 w-7 text-destructive"
               onClick={() => onDeleteTask(task.id)}
+              title="削除"
             >
-              <Trash2 className="mr-1 h-3 w-3" />
-              削除
+              <Trash2 className="h-4 w-4" />
             </Button>
           </div>
 
           {/* 詳細 (展開時のみ) */}
           <CollapsibleContent className="mt-3 space-y-3">
+            {/* AI関連アクション */}
+            <div className="flex items-center gap-2">
+              {onElaborate && !isApprovalOnlyTask(task.sourceType) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onElaborate(task)}
+                  title="AI でタスクを詳細化"
+                >
+                  <Wand2 className="mr-1 h-3 w-3" />
+                  詳細化
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={copyToClipboard}>
+                {copied ? (
+                  <>
+                    <Check className="mr-1 h-3 w-3" />
+                    コピー済み
+                  </>
+                ) : (
+                  <>
+                    <ClipboardCopy className="mr-1 h-3 w-3" />
+                    AIに渡す
+                  </>
+                )}
+              </Button>
+            </div>
+
             {/* 詳細: インライン編集 or マークダウン表示 */}
             {inlineEditing ? (
               <div className="space-y-2">

@@ -4,8 +4,9 @@
  * Slack メッセージから抽出したタスクの管理
  */
 
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
-import { getPromptFilePath, runClaude } from "@repo/core";
+import { getPromptFilePath, type LogEntry, readLogFile, runClaude } from "@repo/core";
 import type { AdasDatabase, SlackMessage } from "@repo/db";
 import { schema } from "@repo/db";
 import {
@@ -1854,17 +1855,17 @@ export function createTasksRouter(db: AdasDatabase) {
       db.update(schema.tasks)
         .set({
           description: elaborationResult.elaboration,
-          elaborationStatus: null, // 適用済みなのでクリア
+          elaborationStatus: "applied", // 適用済みマークを設定
           pendingElaboration: null,
           updatedAt: now,
         })
         .where(eq(schema.tasks.id, id))
         .run();
     } else {
-      // 説明を更新しない場合でも、elaboration をクリア
+      // 説明を更新しない場合でも、適用済みマークを設定
       db.update(schema.tasks)
         .set({
-          elaborationStatus: null,
+          elaborationStatus: "applied", // 適用済みマークを設定
           pendingElaboration: null,
           updatedAt: now,
         })
@@ -2492,6 +2493,140 @@ export function createTasksRouter(db: AdasDatabase) {
       updated,
       results,
     } satisfies CheckSimilarityBatchResponse);
+  });
+
+  /**
+   * POST /api/tasks/extract-logs
+   *
+   * サーバーログから ERROR/WARN レベルのエントリを分析し、対応タスクを抽出
+   * Body: ExtractTasksFromLogsRequest
+   */
+  router.post("/extract-logs", async (c) => {
+    const body = await c.req.json<{
+      source: "serve" | "worker";
+      date?: string;
+      levels?: string[];
+      limit?: number;
+    }>();
+
+    if (!body.source || (body.source !== "serve" && body.source !== "worker")) {
+      return c.json({ error: "source must be 'serve' or 'worker'" }, 400);
+    }
+
+    const date = body.date ?? getTodayDateString();
+    const levels = body.levels ?? ["ERROR", "WARN"];
+    const limit = Math.min(body.limit ?? 50, 50);
+
+    // ログファイルを読み込み
+    const allEntries = readLogFile(body.source, date, { limit: 1000 }); // 一旦多めに読む
+
+    // レベルでフィルタ
+    const filteredEntries = allEntries.filter((entry) => levels.includes(entry.level));
+
+    if (filteredEntries.length === 0) {
+      return c.json({
+        extracted: 0,
+        processed: 0,
+        skipped: 0,
+        grouped: 0,
+        tasks: [],
+        message: `No ${levels.join("/")} entries found in ${body.source} logs for ${date}`,
+      });
+    }
+
+    // 各エントリに一意な ID を付与
+    const entriesWithIds = filteredEntries.map((entry) => ({
+      ...entry,
+      entryId: generateLogEntryId(body.source, date, entry),
+    }));
+
+    // 処理済みエントリを除外
+    const unprocessedEntries = entriesWithIds.filter(
+      (entry) => !hasExtractionLog(db, "task", "server-log", entry.entryId),
+    );
+
+    const skipped = entriesWithIds.length - unprocessedEntries.length;
+
+    if (unprocessedEntries.length === 0) {
+      return c.json({
+        extracted: 0,
+        processed: 0,
+        skipped,
+        grouped: 0,
+        tasks: [],
+        message: "All log entries already processed",
+      });
+    }
+
+    // 上限適用
+    const targetEntries = unprocessedEntries.slice(0, limit);
+
+    // 類似エラーをグループ化
+    const groupedEntries = groupSimilarLogEntries(targetEntries);
+
+    // プロンプト読み込み
+    const systemPrompt = readFileSync(getPromptFilePath("task-extract-logs"), "utf-8");
+
+    // ユーザープロンプトを構築
+    const userPrompt = buildLogExtractionPrompt(groupedEntries, date, body.source);
+
+    try {
+      const response = await runClaude(userPrompt, {
+        model: "haiku",
+        systemPrompt,
+        disableTools: true,
+      });
+
+      const parsed = parseLogExtractResult(response);
+
+      const createdTasks: (typeof schema.tasks.$inferSelect)[] = [];
+
+      for (const extractedTask of parsed.tasks) {
+        const task = db
+          .insert(schema.tasks)
+          .values({
+            date,
+            sourceType: "server-log",
+            title: extractedTask.title,
+            description: extractedTask.description ?? null,
+            priority: extractedTask.priority ?? null,
+            workType: extractedTask.workType ?? null,
+            confidence: extractedTask.confidence ?? null,
+          })
+          .returning()
+          .get();
+
+        createdTasks.push(task);
+
+        // 関連するログエントリを処理済みとして記録
+        for (const entryId of extractedTask.logEntryIds ?? []) {
+          recordExtractionLog(db, "task", "server-log", entryId, 1);
+        }
+      }
+
+      // タスク抽出されなかったエントリも処理済みとして記録 (再処理防止)
+      const processedEntryIds = new Set(parsed.tasks.flatMap((t) => t.logEntryIds ?? []));
+      for (const entry of targetEntries) {
+        if (!processedEntryIds.has(entry.entryId)) {
+          recordExtractionLog(db, "task", "server-log", entry.entryId, 0);
+        }
+      }
+
+      consola.info(
+        `[tasks/extract-logs] Extracted ${createdTasks.length} tasks from ${targetEntries.length} log entries (${groupedEntries.length} groups)`,
+      );
+
+      return c.json({
+        extracted: createdTasks.length,
+        processed: targetEntries.length,
+        skipped,
+        grouped: groupedEntries.length,
+        tasks: createdTasks,
+      });
+    } catch (error) {
+      consola.error("[tasks/extract-logs] Failed to extract tasks:", error);
+      return c.json({ error: "Failed to extract tasks from logs", details: String(error) }, 500);
+    }
   });
 
   return router;
@@ -3717,4 +3852,153 @@ async function executeMerge(
   }
 
   consola.info(`[executeMerge] Successfully merged tasks into #${mergeTask.id}`);
+}
+
+// ---------------------------------------------------------------------------
+// Server Log Task Extraction Helpers
+// ---------------------------------------------------------------------------
+
+interface LogEntryWithId extends LogEntry {
+  entryId: string;
+}
+
+interface GroupedLogEntry {
+  pattern: string;
+  count: number;
+  entries: LogEntryWithId[];
+  firstTimestamp: string;
+  lastTimestamp: string;
+  sampleMessage: string;
+}
+
+interface ExtractedLogTask {
+  title: string;
+  description?: string;
+  priority?: "high" | "medium" | "low";
+  workType?: "investigate" | "operate" | "maintain";
+  confidence?: number;
+  logEntryIds?: string[];
+}
+
+interface LogExtractResult {
+  tasks: ExtractedLogTask[];
+}
+
+/**
+ * ログエントリの一意な識別子を生成
+ * フォーマット: {source}-{date}-{hash}
+ * hash は timestamp + level + message (正規化済み) の MD5 先頭 8 文字
+ */
+function generateLogEntryId(source: string, date: string, entry: LogEntry): string {
+  const normalized = normalizeLogMessage(entry.message);
+  const input = `${entry.timestamp}|${entry.level}|${normalized}`;
+  const hash = createHash("md5").update(input).digest("hex").slice(0, 8);
+  return `${source}-${date}-${hash}`;
+}
+
+/**
+ * ログメッセージを正規化 (動的な値をプレースホルダに置換)
+ */
+function normalizeLogMessage(message: string): string {
+  return (
+    message
+      // UUID
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<UUID>")
+      // ISO 8601 タイムスタンプ
+      .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?/g, "<TIMESTAMP>")
+      // 数値 (3桁以上)
+      .replace(/\b\d{3,}\b/g, "<NUM>")
+      // IP アドレス
+      .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, "<IP>")
+      // ファイルパス (絶対パス)
+      .replace(/\/[^\s:]+/g, "<PATH>")
+  );
+}
+
+/**
+ * 類似したログエントリをグループ化
+ */
+function groupSimilarLogEntries(entries: LogEntryWithId[]): GroupedLogEntry[] {
+  const groups = new Map<string, GroupedLogEntry>();
+
+  for (const entry of entries) {
+    const pattern = normalizeLogMessage(entry.message);
+
+    if (groups.has(pattern)) {
+      const group = groups.get(pattern)!;
+      group.count++;
+      group.entries.push(entry);
+      if (entry.timestamp < group.firstTimestamp) {
+        group.firstTimestamp = entry.timestamp;
+      }
+      if (entry.timestamp > group.lastTimestamp) {
+        group.lastTimestamp = entry.timestamp;
+      }
+    } else {
+      groups.set(pattern, {
+        pattern,
+        count: 1,
+        entries: [entry],
+        firstTimestamp: entry.timestamp,
+        lastTimestamp: entry.timestamp,
+        sampleMessage: entry.message,
+      });
+    }
+  }
+
+  // 発生回数の多い順にソート
+  return Array.from(groups.values()).sort((a, b) => b.count - a.count);
+}
+
+/**
+ * ログ抽出用のユーザープロンプトを構築
+ */
+function buildLogExtractionPrompt(groups: GroupedLogEntry[], date: string, source: string): string {
+  const lines: string[] = [];
+  lines.push(`## ログ分析対象`);
+  lines.push(`- ソース: ${source}`);
+  lines.push(`- 日付: ${date}`);
+  lines.push(`- グループ数: ${groups.length}`);
+  lines.push(`- 総エントリ数: ${groups.reduce((sum, g) => sum + g.count, 0)}`);
+  lines.push("");
+  lines.push("## エラー/警告グループ");
+  lines.push("");
+
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    lines.push(`### グループ ${i + 1} (発生回数: ${group.count})`);
+    lines.push(`- 初回発生: ${group.firstTimestamp}`);
+    lines.push(`- 最終発生: ${group.lastTimestamp}`);
+    lines.push(`- レベル: ${group.entries[0].level}`);
+    lines.push(`- サンプルメッセージ:`);
+    lines.push("```");
+    lines.push(group.sampleMessage);
+    lines.push("```");
+    lines.push(`- エントリID一覧: ${group.entries.map((e) => e.entryId).join(", ")}`);
+    lines.push("");
+  }
+
+  lines.push("## 指示");
+  lines.push("上記のログエントリを分析し、対応すべきタスクを抽出してください。");
+  lines.push("各タスクには関連するエントリIDを `logEntryIds` に含めてください。");
+
+  return lines.join("\n");
+}
+
+/**
+ * ログ抽出結果のパース
+ */
+function parseLogExtractResult(response: string): LogExtractResult {
+  const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
+  const jsonStr = jsonMatch ? jsonMatch[1] : response;
+
+  try {
+    const parsed = JSON.parse(jsonStr.trim());
+    return {
+      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+    };
+  } catch {
+    consola.warn("[parseLogExtractResult] Failed to parse JSON:", jsonStr.slice(0, 200));
+    return { tasks: [] };
+  }
 }

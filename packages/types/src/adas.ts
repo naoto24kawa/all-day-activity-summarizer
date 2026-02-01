@@ -590,7 +590,8 @@ export type TaskSourceType =
   | "profile-suggestion"
   | "vocabulary"
   | "merge"
-  | "project-suggestion";
+  | "project-suggestion"
+  | "server-log";
 
 /** 承認のみで完了するタスクのソース種別 */
 export const APPROVAL_ONLY_SOURCE_TYPES: TaskSourceType[] = [
@@ -708,6 +709,32 @@ export interface ExtractTasksRequest {
 /** タスク抽出レスポンス */
 export interface ExtractTasksResponse {
   extracted: number;
+  tasks: Task[];
+}
+
+/** サーバーログからのタスク抽出リクエスト */
+export interface ExtractTasksFromLogsRequest {
+  /** ログソース ("serve" | "worker") */
+  source: "serve" | "worker";
+  /** 対象日付 (YYYY-MM-DD、省略時は今日) */
+  date?: string;
+  /** 対象ログレベル (省略時は ["ERROR", "WARN"]) */
+  levels?: string[];
+  /** 処理上限 (省略時は 50) */
+  limit?: number;
+}
+
+/** サーバーログからのタスク抽出レスポンス */
+export interface ExtractTasksFromLogsResponse {
+  /** 抽出されたタスク数 */
+  extracted: number;
+  /** 処理したログエントリ数 */
+  processed: number;
+  /** スキップしたエントリ数 (処理済み) */
+  skipped: number;
+  /** グループ化されたエラー数 */
+  grouped: number;
+  /** 抽出されたタスク */
   tasks: Task[];
 }
 
@@ -1247,7 +1274,7 @@ export interface BulkElaborationStatusResponse {
 // ========== 非同期タスク詳細化 型定義 ==========
 
 /** 詳細化ステータス */
-export type ElaborationStatus = "pending" | "completed" | "failed";
+export type ElaborationStatus = "pending" | "completed" | "failed" | "applied";
 
 /** 詳細化開始レスポンス (非同期) */
 export interface StartElaborationResponse {
