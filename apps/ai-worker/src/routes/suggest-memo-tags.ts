@@ -1,14 +1,15 @@
 /**
  * Suggest Memo Tags Route
  *
- * Uses Haiku to suggest appropriate tags for a memo based on its content.
+ * Uses Haiku (or LM Studio) to suggest appropriate tags for a memo based on its content.
+ * Provider can be switched via ~/.adas/config.json aiProvider.providers.suggestTags
  */
 
-import { runClaude } from "@repo/core";
 import type { MemoTag, RpcSuggestMemoTagsRequest, RpcSuggestMemoTagsResponse } from "@repo/types";
 import { MEMO_TAGS } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
+import { getLLMProviderForProcess, getProviderInfo } from "../utils/llm-config.js";
 import { withProcessingLog } from "../utils/log-processing.js";
 
 const SUGGEST_TAGS_MODEL = "haiku";
@@ -27,7 +28,7 @@ export function createSuggestMemoTagsRouter() {
       const result = await withProcessingLog(
         "suggest-tags",
         SUGGEST_TAGS_MODEL,
-        () => suggestTagsWithClaude(body.content),
+        () => suggestTagsWithLLM(body.content),
         (res) => ({
           inputSize: body.content.length,
           metadata: {
@@ -45,7 +46,7 @@ export function createSuggestMemoTagsRouter() {
   return router;
 }
 
-async function suggestTagsWithClaude(content: string): Promise<RpcSuggestMemoTagsResponse> {
+async function suggestTagsWithLLM(content: string): Promise<RpcSuggestMemoTagsResponse> {
   const tagDescriptions = [
     "完了: 完了報告、終了したタスク",
     "重要: 緊急、優先度高、期限あり",
@@ -74,11 +75,18 @@ JSON のみ (マークダウンなし):
 - 該当なしの場合は空配列 []
 - タグは上記リストから選択`;
 
-  consola.info(`[worker/suggest-memo-tags] Suggesting tags for memo (${content.length} chars)`);
+  // LLM Provider を取得 (設定で claude/lmstudio を切り替え)
+  const provider = getLLMProviderForProcess("suggestTags", SUGGEST_TAGS_MODEL);
+  const providerInfo = getProviderInfo("suggestTags");
 
-  const result = await runClaude(prompt, {
+  consola.info(
+    `[worker/suggest-memo-tags] Suggesting tags (${content.length} chars, provider: ${providerInfo.provider})`,
+  );
+
+  const result = await provider.generate(prompt, {
     model: SUGGEST_TAGS_MODEL,
     disableTools: true,
+    temperature: 0.3, // 低めの temperature で安定した出力
   });
 
   if (!result) {

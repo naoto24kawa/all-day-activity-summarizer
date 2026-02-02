@@ -1,7 +1,8 @@
-import { getPromptFilePath, runClaude } from "@repo/core";
+import { getPromptFilePath } from "@repo/core";
 import type { RpcEvaluateRequest, RpcEvaluateResponse } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
+import { getLLMProviderForProcess, getProviderInfo } from "../utils/llm-config.js";
 import { withProcessingLog } from "../utils/log-processing.js";
 
 const EVALUATOR_MODEL = "haiku";
@@ -20,7 +21,7 @@ export function createEvaluateRouter() {
       const result = await withProcessingLog(
         "evaluate",
         EVALUATOR_MODEL,
-        () => evaluateWithClaude(body.text, body.segments),
+        () => evaluateWithLLM(body.text, body.segments),
         (res) => ({
           inputSize: body.segments.length,
           metadata: {
@@ -40,7 +41,7 @@ export function createEvaluateRouter() {
   return router;
 }
 
-async function evaluateWithClaude(
+async function evaluateWithLLM(
   text: string,
   segments: RpcEvaluateRequest["segments"],
 ): Promise<RpcEvaluateResponse> {
@@ -82,14 +83,19 @@ Rules:
 - "judgment" should be "hallucination" if ALL segments are hallucinations, "legitimate" if ALL are legitimate, "mixed" otherwise
 - Include an evaluation for EVERY segment in segmentEvaluations array`;
 
+  // LLM Provider を取得 (設定で claude/lmstudio を切り替え)
+  const provider = getLLMProviderForProcess("evaluate", EVALUATOR_MODEL);
+  const providerInfo = getProviderInfo("evaluate");
+
   consola.info(
-    `[worker/evaluate] Evaluating transcription (${text.length} chars, ${segments.length} segments)...`,
+    `[worker/evaluate] Evaluating transcription (${text.length} chars, ${segments.length} segments, provider: ${providerInfo.provider})...`,
   );
 
-  const result = await runClaude(prompt, {
+  const result = await provider.generate(prompt, {
     model: EVALUATOR_MODEL,
     appendSystemPromptFile: getPromptFilePath("evaluate"),
     disableTools: true,
+    temperature: 0.3, // 安定した判定のため低めに
   });
 
   if (!result) {

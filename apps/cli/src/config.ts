@@ -2,6 +2,40 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+/** LLM プロバイダーの種類 */
+export type LLMProviderType = "claude" | "lmstudio";
+
+/** 各処理ごとの LLM プロバイダー設定 */
+export interface AIProviderConfig {
+  /** LM Studio の接続設定 */
+  lmstudio: {
+    url: string;
+    model: string;
+    timeout: number;
+  };
+  /** 各処理で使用する provider (未指定は claude) */
+  providers: {
+    /** サマリ生成 (times/daily) */
+    summarize: LLMProviderType;
+    /** メモタグ提案 */
+    suggestTags: LLMProviderType;
+    /** ハルシネーション評価 */
+    evaluate: LLMProviderType;
+    /** 音声テキスト解釈 */
+    interpret: LLMProviderType;
+    /** タスク完了判定 */
+    checkCompletion: LLMProviderType;
+    /** プロフィール分析 */
+    analyzeProfile: LLMProviderType;
+    /** 学び抽出 */
+    extractLearnings: LLMProviderType;
+    /** タスク抽出 */
+    taskExtract: LLMProviderType;
+  };
+  /** フォールバック有効化 (LM Studio 失敗時に Claude へ) */
+  enableFallback: boolean;
+}
+
 export interface AdasConfig {
   recordingsDir: string;
   dbPath: string;
@@ -64,6 +98,9 @@ export interface AdasConfig {
     gitScanPaths: string[]; // 探索対象ディレクトリ: ["~/projects"]
     excludePatterns: string[]; // 除外パターン: ["node_modules", ".cache", ...]
   };
+  /** AI プロバイダー設定 (Claude / LM Studio 切り替え) */
+  aiProvider: AIProviderConfig;
+  /** @deprecated summarizer.provider は aiProvider.providers.summarize に移行 */
   summarizer: {
     provider: "claude" | "lmstudio";
     dailyScheduleHour: number; // Daily サマリ自動生成時間 (0-23)
@@ -177,6 +214,24 @@ const defaultConfig: AdasConfig = {
       "venv",
     ],
   },
+  aiProvider: {
+    lmstudio: {
+      url: "http://192.168.1.17:1234",
+      model: "",
+      timeout: 300000,
+    },
+    providers: {
+      summarize: "claude",
+      suggestTags: "claude",
+      evaluate: "claude",
+      interpret: "claude",
+      checkCompletion: "claude",
+      analyzeProfile: "claude",
+      extractLearnings: "claude",
+      taskExtract: "claude",
+    },
+    enableFallback: true,
+  },
   summarizer: {
     provider: "claude",
     dailyScheduleHour: 23,
@@ -245,6 +300,12 @@ export function loadConfig(): AdasConfig {
     claudeCode: { ...defaultConfig.claudeCode, ...userConfig.claudeCode },
     github: { ...defaultConfig.github, ...userConfig.github },
     projects: { ...defaultConfig.projects, ...userConfig.projects },
+    aiProvider: {
+      ...defaultConfig.aiProvider,
+      ...userConfig.aiProvider,
+      lmstudio: { ...defaultConfig.aiProvider.lmstudio, ...userConfig.aiProvider?.lmstudio },
+      providers: { ...defaultConfig.aiProvider.providers, ...userConfig.aiProvider?.providers },
+    },
     summarizer: {
       ...defaultConfig.summarizer,
       ...userConfig.summarizer,

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { AdasConfig } from "../../config.js";
+import type { AdasConfig, AIProviderConfig, LLMProviderType } from "../../config.js";
 import { loadConfig, saveConfig } from "../../config.js";
 
 interface IntegrationsUpdateBody {
@@ -31,6 +31,15 @@ interface IntegrationsUpdateBody {
       tokensPerHour?: number;
       tokensPerDay?: number;
     };
+  };
+  aiProvider?: {
+    lmstudio?: {
+      url?: string;
+      model?: string;
+      timeout?: number;
+    };
+    providers?: Partial<AIProviderConfig["providers"]>;
+    enableFallback?: boolean;
   };
 }
 
@@ -170,6 +179,53 @@ function updateRateLimitConfig(
 }
 
 /**
+ * aiProvider 設定を更新
+ */
+function updateAIProviderConfig(
+  config: AdasConfig,
+  aiProvider: IntegrationsUpdateBody["aiProvider"],
+): boolean {
+  if (!aiProvider) return false;
+
+  let updated = false;
+
+  // LM Studio 設定
+  if (aiProvider.lmstudio) {
+    if (aiProvider.lmstudio.url !== undefined) {
+      config.aiProvider.lmstudio.url = aiProvider.lmstudio.url;
+      updated = true;
+    }
+    if (aiProvider.lmstudio.model !== undefined) {
+      config.aiProvider.lmstudio.model = aiProvider.lmstudio.model;
+      updated = true;
+    }
+    if (aiProvider.lmstudio.timeout !== undefined) {
+      config.aiProvider.lmstudio.timeout = Math.max(1000, aiProvider.lmstudio.timeout);
+      updated = true;
+    }
+  }
+
+  // 各処理ごとの provider 設定
+  if (aiProvider.providers) {
+    const validProviders: LLMProviderType[] = ["claude", "lmstudio"];
+    for (const [key, value] of Object.entries(aiProvider.providers)) {
+      if (value && validProviders.includes(value)) {
+        (config.aiProvider.providers as Record<string, LLMProviderType>)[key] = value;
+        updated = true;
+      }
+    }
+  }
+
+  // フォールバック設定
+  if (aiProvider.enableFallback !== undefined) {
+    config.aiProvider.enableFallback = aiProvider.enableFallback;
+    updated = true;
+  }
+
+  return updated;
+}
+
+/**
  * 連携機能の有効/無効設定を管理するAPI
  * トークンなどの機密情報は返さない
  */
@@ -231,6 +287,15 @@ export function createConfigRouter() {
         limits: config.rateLimit.limits,
         priorityMultipliers: config.rateLimit.priorityMultipliers,
       },
+      aiProvider: {
+        lmstudio: {
+          url: config.aiProvider.lmstudio.url,
+          model: config.aiProvider.lmstudio.model,
+          timeout: config.aiProvider.lmstudio.timeout,
+        },
+        providers: config.aiProvider.providers,
+        enableFallback: config.aiProvider.enableFallback,
+      },
     };
 
     return c.json({ integrations });
@@ -245,8 +310,13 @@ export function createConfigRouter() {
     const summarizerUpdated = updateSummarizerConfig(config, body.summarizer);
     const taskElaborationUpdated = updateTaskElaborationConfig(config, body.taskElaboration);
     const rateLimitUpdated = updateRateLimitConfig(config, body.rateLimit);
+    const aiProviderUpdated = updateAIProviderConfig(config, body.aiProvider);
     const updated =
-      enabledUpdated || summarizerUpdated || taskElaborationUpdated || rateLimitUpdated;
+      enabledUpdated ||
+      summarizerUpdated ||
+      taskElaborationUpdated ||
+      rateLimitUpdated ||
+      aiProviderUpdated;
 
     if (updated) {
       saveConfig(config);
@@ -278,6 +348,15 @@ export function createConfigRouter() {
         rateLimit: {
           enabled: config.rateLimit.enabled,
           limits: config.rateLimit.limits,
+        },
+        aiProvider: {
+          lmstudio: {
+            url: config.aiProvider.lmstudio.url,
+            model: config.aiProvider.lmstudio.model,
+            timeout: config.aiProvider.lmstudio.timeout,
+          },
+          providers: config.aiProvider.providers,
+          enableFallback: config.aiProvider.enableFallback,
         },
       },
     });
