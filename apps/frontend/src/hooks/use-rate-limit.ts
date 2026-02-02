@@ -6,8 +6,8 @@
 
 import type { RateLimitStatus } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
+import { fetchAdasApi } from "@/lib/adas-api";
 
-const API_BASE = "/api/rate-limit";
 const POLL_INTERVAL_MS = 30 * 1000; // 30秒
 
 export function useRateLimit() {
@@ -17,11 +17,7 @@ export function useRateLimit() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/status`);
-      if (!res.ok) {
-        throw new Error(`Failed to fetch rate limit status: ${res.status}`);
-      }
-      const data = (await res.json()) as RateLimitStatus;
+      const data = await fetchAdasApi<RateLimitStatus>("/api/rate-limit/status");
       setStatus(data);
       setError(null);
     } catch (err) {

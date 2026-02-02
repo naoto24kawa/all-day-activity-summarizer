@@ -50,6 +50,32 @@ export interface RateLimitConfig {
   priorityMultipliers: RateLimitPriorityMultipliers;
 }
 
+/** LLM プロバイダーの種類 */
+export type LLMProviderType = "claude" | "lmstudio";
+
+/** 各処理で使用する provider の設定 */
+export interface AIProviderProviders {
+  summarize: LLMProviderType;
+  suggestTags: LLMProviderType;
+  evaluate: LLMProviderType;
+  interpret: LLMProviderType;
+  checkCompletion: LLMProviderType;
+  analyzeProfile: LLMProviderType;
+  extractLearnings: LLMProviderType;
+  taskExtract: LLMProviderType;
+}
+
+/** AI プロバイダー設定 */
+export interface AIProviderConfig {
+  lmstudio: {
+    url: string;
+    model: string;
+    timeout: number;
+  };
+  providers: AIProviderProviders;
+  enableFallback: boolean;
+}
+
 export interface IntegrationsConfig {
   whisper: IntegrationStatus & {
     engine: "whisperx" | "whisper-cpp";
@@ -79,6 +105,7 @@ export interface IntegrationsConfig {
   summarizer: SummarizerConfig;
   taskElaboration: TaskElaborationConfig;
   rateLimit: RateLimitConfig;
+  aiProvider: AIProviderConfig;
 }
 
 interface ConfigResponse {
@@ -98,6 +125,7 @@ interface UpdateIntegrationsResponse {
     summarizer: SummarizerConfig;
     taskElaboration: TaskElaborationConfig;
     rateLimit: { enabled: boolean; limits: RateLimitLimits };
+    aiProvider: AIProviderConfig;
   };
 }
 
@@ -240,6 +268,42 @@ export function useConfig() {
     [],
   );
 
+  const updateAIProviderConfig = useCallback(
+    async (config: {
+      lmstudio?: { url?: string; model?: string; timeout?: number };
+      providers?: Partial<AIProviderProviders>;
+      enableFallback?: boolean;
+    }) => {
+      try {
+        setUpdating(true);
+        setError(null);
+        const body = { aiProvider: config };
+        const data = await patchAdasApi<UpdateIntegrationsResponse>(
+          "/api/config/integrations",
+          body,
+        );
+
+        // ローカル状態を更新
+        setIntegrations((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            aiProvider: data.integrations.aiProvider,
+          };
+        });
+
+        return data;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "設定の更新に失敗しました";
+        setError(message);
+        throw err;
+      } finally {
+        setUpdating(false);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     fetchConfig();
   }, [fetchConfig]);
@@ -253,5 +317,6 @@ export function useConfig() {
     updateIntegration,
     updateSummarizerConfig,
     updateRateLimitConfig,
+    updateAIProviderConfig,
   };
 }

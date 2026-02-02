@@ -7,6 +7,7 @@ import { getTodayDateString } from "@/lib/date";
 import { TAB_GROUPS, type TabGroupId, type TabId } from "@/lib/tab-groups";
 import { ActivityFeed } from "./activity-feed";
 import { AiProcessingLogPanel } from "./ai-processing-log-panel";
+import { AISettingsPanel } from "./ai-settings-panel";
 import { ClaudeChatPanel } from "./claude-chat-panel";
 import { ClaudeCodeFeed } from "./claude-code-feed";
 import { EvaluatorLogPanel } from "./evaluator-log-panel";
@@ -17,7 +18,6 @@ import { LearningsFeed } from "./learnings-feed";
 import { MemoFloatingChat } from "./memo-floating-chat";
 import { MonitoringPanel } from "./monitoring-panel";
 import { ProfilePanel } from "./profile-panel";
-import { RateLimitPanel } from "./rate-limit-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
 import { SummaryView } from "./summary-view";
@@ -176,8 +176,8 @@ export function Dashboard() {
                     <ProfilePanel />
                   </div>
                   <div className="space-y-4">
+                    <AISettingsPanel />
                     <MonitoringPanel />
-                    <RateLimitPanel />
                   </div>
                 </div>
               </TabsContent>
