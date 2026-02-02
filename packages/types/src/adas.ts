@@ -1362,6 +1362,7 @@ export type AIJobType =
   | "task-extract-github-comment"
   | "task-extract-memo"
   | "task-elaborate"
+  | "task-check-completion"
   | "learning-extract"
   | "vocabulary-extract"
   | "profile-analyze"

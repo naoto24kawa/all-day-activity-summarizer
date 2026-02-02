@@ -2400,6 +2400,70 @@ export function createTasksRouter(db: AdasDatabase) {
   });
 
   /**
+   * POST /api/tasks/suggest-completions/async
+   *
+   * 完了候補チェックを非同期ジョブとして登録
+   * Body: { date?: string }
+   */
+  router.post("/suggest-completions/async", async (c) => {
+    const body = await c.req.json<{ date?: string }>().catch(() => ({ date: undefined }));
+
+    const jobId = enqueueJob(db, "task-check-completion", {
+      date: body.date,
+    });
+
+    consola.info(`[tasks/suggest-completions/async] Enqueued job #${jobId}`);
+
+    return c.json({
+      jobId,
+      status: "pending",
+    });
+  });
+
+  /**
+   * GET /api/tasks/suggest-completions/result/:jobId
+   *
+   * 完了候補チェックの結果を取得
+   */
+  router.get("/suggest-completions/result/:jobId", (c) => {
+    const jobId = Number(c.req.param("jobId"));
+    if (Number.isNaN(jobId)) {
+      return c.json({ error: "Invalid jobId" }, 400);
+    }
+
+    const job = db.select().from(schema.aiJobQueue).where(eq(schema.aiJobQueue.id, jobId)).get();
+
+    if (!job) {
+      return c.json({ error: "Job not found" }, 404);
+    }
+
+    if (job.status !== "completed") {
+      return c.json({
+        jobId,
+        status: job.status,
+        message: "Job is not completed yet",
+      });
+    }
+
+    // 結果を取得
+    let result: SuggestCompletionsResponse | null = null;
+    if (job.result) {
+      try {
+        const parsed = JSON.parse(job.result);
+        result = parsed.data as SuggestCompletionsResponse;
+      } catch {
+        consola.warn(`[suggest-completions/result] Failed to parse job result for #${jobId}`);
+      }
+    }
+
+    return c.json({
+      jobId,
+      status: job.status,
+      result,
+    });
+  });
+
+  /**
    * POST /api/tasks/detect-duplicates
    *
    * 承認済みタスク間の重複を検出

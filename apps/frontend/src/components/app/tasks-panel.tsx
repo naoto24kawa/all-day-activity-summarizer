@@ -93,6 +93,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { useJobProgress } from "@/hooks/use-job-progress";
 import { useNotifications } from "@/hooks/use-notifications";
 import { getProjectName, useProjects } from "@/hooks/use-projects";
 import {
@@ -101,7 +102,7 @@ import {
   usePromptImprovementStats,
 } from "@/hooks/use-prompt-improvements";
 import { useTaskStats, useTasks } from "@/hooks/use-tasks";
-import { ADAS_API_URL, postAdasApi } from "@/lib/adas-api";
+import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 import { BulkElaborateDialog } from "./bulk-elaborate-dialog";
 import { DuplicateSuggestionsPanel } from "./duplicate-suggestions-panel";
 import { TaskElaborateDialog } from "./task-elaborate-dialog";
@@ -241,6 +242,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const [sourceFilter, setSourceFilter] = useState<TaskSourceType | "all">("all");
   const [projectFilter, setProjectFilter] = useState<number | "all" | "none">("all");
   const [checkingCompletion, setCheckingCompletion] = useState(false);
+  const [completionCheckJobId, setCompletionCheckJobId] = useState<number | null>(null);
 
   // Projects Popover state
   const [projectsPopoverOpen, setProjectsPopoverOpen] = useState(false);
@@ -424,17 +426,53 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     }
   };
 
+  // 完了チェックジョブの追跡
+  const fetchCompletionResult = async (jobId: number) => {
+    try {
+      const result = await fetchAdasApi<{
+        jobId: number;
+        status: string;
+        result?: SuggestCompletionsResponse;
+      }>(`/api/tasks/suggest-completions/result/${jobId}`);
+
+      if (result.result) {
+        setCompletionSuggestions(result.result.suggestions);
+        if (result.result.suggestions.length > 0) {
+          toast.success(`${result.result.suggestions.length}件の完了候補を検出しました`);
+        } else {
+          toast.info("完了候補はありませんでした");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch completion result:", err);
+      toast.error("完了チェック結果の取得に失敗しました");
+    }
+  };
+
+  const { trackJob: trackCompletionJob, isProcessing: isCompletionJobProcessing } = useJobProgress({
+    onJobCompleted: (jobId) => {
+      if (jobId === completionCheckJobId) {
+        fetchCompletionResult(jobId);
+        setCompletionCheckJobId(null);
+        setCheckingCompletion(false);
+      }
+    },
+  });
+
   const handleCheckCompletions = async () => {
     setCheckingCompletion(true);
     setCompletionSuggestions([]);
     try {
-      const data = await postAdasApi<SuggestCompletionsResponse>("/api/tasks/suggest-completions", {
-        date,
-      });
-      setCompletionSuggestions(data.suggestions);
+      // 非同期ジョブとして登録
+      const response = await postAdasApi<{ jobId: number; status: string }>(
+        "/api/tasks/suggest-completions/async",
+        { date },
+      );
+      setCompletionCheckJobId(response.jobId);
+      trackCompletionJob(response.jobId);
     } catch (err) {
-      console.error("Failed to check completions:", err);
-    } finally {
+      console.error("Failed to start completion check:", err);
+      toast.error("完了チェックの開始に失敗しました");
       setCheckingCompletion(false);
     }
   };
@@ -473,9 +511,9 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
           description: duplicateCount > 0 ? "「承認済み」タブで重複候補を確認できます" : undefined,
         });
 
-        // 重複が見つかった場合は「承認済み」タブに切り替え
+        // 重複が見つかった場合は「承認済み」フィルターに切り替え
         if (duplicateCount > 0) {
-          setActiveTab("accepted");
+          setStatusFilter("accepted");
         }
       } else {
         toast.info("重複・類似タスクは見つかりませんでした");
@@ -1249,13 +1287,15 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
                       size="sm"
                       className="h-7"
                       onClick={handleCheckCompletions}
-                      disabled={checkingCompletion}
+                      disabled={checkingCompletion || isCompletionJobProcessing}
                       title="完了チェック"
                     >
                       <Search
-                        className={`mr-1 h-3 w-3 ${checkingCompletion ? "animate-pulse" : ""}`}
+                        className={`mr-1 h-3 w-3 ${checkingCompletion || isCompletionJobProcessing ? "animate-pulse" : ""}`}
                       />
-                      {checkingCompletion ? "チェック中..." : "完了チェック"}
+                      {checkingCompletion || isCompletionJobProcessing
+                        ? "チェック中..."
+                        : "完了チェック"}
                     </Button>
                     {/* 重複チェック */}
                     <Button

@@ -792,6 +792,7 @@ export const aiJobQueue = sqliteTable("ai_job_queue", {
       "task-extract-github-comment",
       "task-extract-memo",
       "task-elaborate",
+      "task-check-completion",
       "learning-extract",
       "vocabulary-extract",
       "profile-analyze",

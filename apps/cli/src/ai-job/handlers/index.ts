@@ -8,6 +8,7 @@ import { registerJobHandler } from "../worker.js";
 import { handleLearningExtract } from "./learning-extract.js";
 import { handleProfileAnalyze } from "./profile-analyze.js";
 import { handleSummarizeDaily, handleSummarizeTimes } from "./summarize.js";
+import { handleTaskCheckCompletion } from "./task-check-completion.js";
 import { handleTaskElaborate } from "./task-elaborate.js";
 import {
   handleTaskExtractGitHub,
@@ -28,6 +29,8 @@ export function registerAllHandlers(): void {
   registerJobHandler("task-extract-memo", handleTaskExtractMemo);
   // タスク詳細化
   registerJobHandler("task-elaborate", handleTaskElaborate);
+  // タスク完了チェック
+  registerJobHandler("task-check-completion", handleTaskCheckCompletion);
   // 学び抽出 (claude-code/transcription/github-comment/slack-message)
   registerJobHandler("learning-extract", handleLearningExtract);
   // 用語抽出 (slack/github/claude-code/memo)

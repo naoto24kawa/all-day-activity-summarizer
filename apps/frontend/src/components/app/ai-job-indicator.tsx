@@ -33,6 +33,7 @@ const JOB_TYPE_LABELS: Record<AIJobType, string> = {
   "task-extract-github-comment": "GitHub コメント抽出",
   "task-extract-memo": "メモ タスク抽出",
   "task-elaborate": "タスク詳細化",
+  "task-check-completion": "タスク完了チェック",
   "learning-extract": "学び抽出",
   "vocabulary-extract": "用語抽出",
   "profile-analyze": "プロフィール分析",
