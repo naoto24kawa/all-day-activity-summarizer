@@ -477,3 +477,60 @@ export async function getItemState(
 
   return null;
 }
+
+/**
+ * Create Issue request
+ */
+export interface CreateIssueRequest {
+  owner: string;
+  repo: string;
+  title: string;
+  body?: string;
+  labels?: string[];
+}
+
+/**
+ * Create Issue response
+ */
+export interface CreateIssueResponse {
+  number: number;
+  url: string;
+  title: string;
+}
+
+/**
+ * Create a new Issue using gh CLI
+ */
+export async function createIssue(request: CreateIssueRequest): Promise<CreateIssueResponse> {
+  const { owner, repo, title, body, labels } = request;
+
+  const args = [
+    "issue",
+    "create",
+    "--repo",
+    `${owner}/${repo}`,
+    "--title",
+    title,
+    "--json",
+    "number,url,title",
+  ];
+
+  if (body) {
+    args.push("--body", body);
+  }
+
+  if (labels && labels.length > 0) {
+    for (const label of labels) {
+      args.push("--label", label);
+    }
+  }
+
+  try {
+    const result = await rateLimitedExecGh<CreateIssueResponse>(args);
+    consola.success(`Created issue #${result.number}: ${result.url}`);
+    return result;
+  } catch (err) {
+    consola.error(`Failed to create issue in ${owner}/${repo}:`, err);
+    throw err;
+  }
+}

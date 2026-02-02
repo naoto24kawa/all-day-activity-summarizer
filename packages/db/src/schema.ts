@@ -540,6 +540,9 @@ export const tasks = sqliteTable("tasks", {
   }), // 詳細化ステータス
   pendingElaboration: text("pending_elaboration"), // JSON: 詳細化結果 (適用前)
   stepNumber: integer("step_number"), // 子タスクの順序 (1, 2, 3...)
+  // GitHub Issue 連携
+  githubIssueNumber: integer("github_issue_number"), // 作成した Issue の番号
+  githubIssueUrl: text("github_issue_url"), // 作成した Issue の URL
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),

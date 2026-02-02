@@ -19,6 +19,8 @@ import {
   type CheckSimilarityBatchRequest,
   type CheckSimilarityBatchResponse,
   type CheckTaskSimilarityResponse,
+  type CreateGitHubIssueRequest,
+  type CreateGitHubIssueResponse,
   type CreateMergeTaskResponse,
   type DetectDuplicatesResponse,
   type ElaborateTaskRequest,
@@ -37,7 +39,7 @@ import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { enqueueJob } from "../../ai-job/queue.js";
 import { loadConfig } from "../../config";
-import { getItemState } from "../../github/client";
+import { createIssue, getItemState } from "../../github/client";
 import { getTodayDateString } from "../../utils/date";
 import { hasExtractionLog, recordExtractionLog } from "../../utils/extraction-log.js";
 import { findOrCreateProjectByGitHub } from "../../utils/project-lookup.js";
@@ -640,6 +642,174 @@ export function createTasksRouter(db: AdasDatabase) {
       .get();
 
     return c.json({ message: "Task completed", task: result });
+  });
+
+  /**
+   * POST /api/tasks/:id/create-issue
+   *
+   * タスクから GitHub Issue を作成する
+   * - タスクに紐づくプロジェクトの githubOwner/githubRepo を使用
+   * - 子タスクがある場合はチェックリストとして本文に含める
+   * - priority と workType はラベルとして追加
+   */
+  router.post("/:id/create-issue", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const body = await c.req.json<CreateGitHubIssueRequest>().catch(() => ({}));
+
+    // タスク取得
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    // 既に Issue が作成されている場合はエラー
+    if (task.githubIssueNumber) {
+      return c.json(
+        {
+          error: `Issue already created: #${task.githubIssueNumber}`,
+          issueUrl: task.githubIssueUrl,
+        },
+        400,
+      );
+    }
+
+    // プロジェクトから GitHub owner/repo を取得
+    let owner: string | undefined = body.owner;
+    let repo: string | undefined = body.repo;
+
+    if (!owner || !repo) {
+      if (!task.projectId) {
+        return c.json(
+          { error: "Task has no project. Please assign a project with GitHub repo settings." },
+          400,
+        );
+      }
+
+      const project = db
+        .select()
+        .from(schema.projects)
+        .where(eq(schema.projects.id, task.projectId))
+        .get();
+
+      if (!project) {
+        return c.json({ error: "Project not found" }, 404);
+      }
+
+      if (!project.githubOwner || !project.githubRepo) {
+        return c.json(
+          { error: `Project "${project.name}" has no GitHub repository configured.` },
+          400,
+        );
+      }
+
+      owner = project.githubOwner;
+      repo = project.githubRepo;
+    }
+
+    // Issue 本文を構築
+    let issueBody = "";
+
+    // 説明
+    if (task.description) {
+      issueBody += task.description;
+      issueBody += "\n\n";
+    }
+
+    // 期限
+    if (task.dueDate) {
+      issueBody += `**期限**: ${task.dueDate}\n\n`;
+    }
+
+    // 子タスクをチェックリストとして追加
+    const childTasks = getChildTasks(db, id);
+    if (childTasks.length > 0) {
+      issueBody += "## 子タスク\n";
+      for (const child of childTasks) {
+        const checked = child.status === "completed" ? "x" : " ";
+        issueBody += `- [${checked}] ${child.title}\n`;
+      }
+      issueBody += "\n";
+    }
+
+    // タスク情報リンク
+    issueBody += "---\n";
+    issueBody += `*このIssueは ADAS タスク #${task.id} から作成されました*\n`;
+
+    // ラベルを構築
+    const labels: string[] = [];
+    if (task.priority) {
+      labels.push(`priority-${task.priority}`);
+    }
+    if (task.workType) {
+      labels.push(`work-${task.workType}`);
+    }
+
+    try {
+      // Issue 作成
+      const result = await createIssue({
+        owner,
+        repo,
+        title: task.title,
+        body: issueBody.trim() || undefined,
+        labels: labels.length > 0 ? labels : undefined,
+      });
+
+      const now = new Date().toISOString();
+      const todayDate = getTodayDateString();
+
+      // タスクレコードを更新
+      const updatedTask = db
+        .update(schema.tasks)
+        .set({
+          githubIssueNumber: result.number,
+          githubIssueUrl: result.url,
+          updatedAt: now,
+        })
+        .where(eq(schema.tasks.id, id))
+        .returning()
+        .get();
+
+      // github_items テーブルにも記録 (双方向同期のため)
+      db.insert(schema.githubItems)
+        .values({
+          date: todayDate,
+          itemType: "issue",
+          repoOwner: owner,
+          repoName: repo,
+          number: result.number,
+          title: result.title,
+          state: "open",
+          url: result.url,
+          body: issueBody.trim() || null,
+          labels: labels.length > 0 ? JSON.stringify(labels) : null,
+          projectId: task.projectId,
+          githubCreatedAt: now,
+          githubUpdatedAt: now,
+        })
+        .run();
+
+      consola.success(`Created GitHub Issue #${result.number} for task #${id}`);
+
+      const response: CreateGitHubIssueResponse = {
+        issueNumber: result.number,
+        issueUrl: result.url,
+        task: updatedTask as Task,
+      };
+
+      return c.json(response, 201);
+    } catch (err) {
+      consola.error("Failed to create GitHub Issue:", err);
+      return c.json(
+        {
+          error: `Failed to create GitHub Issue: ${err instanceof Error ? err.message : String(err)}`,
+        },
+        500,
+      );
+    }
   });
 
   /**

@@ -12,6 +12,8 @@ import type {
   CheckSimilarityBatchResponse,
   CheckTaskSimilarityResponse,
   ChildTasksResponse,
+  CreateGitHubIssueRequest,
+  CreateGitHubIssueResponse,
   CreateMergeTaskResponse,
   DetectDuplicatesResponse,
   ElaborateTaskRequest,
@@ -336,6 +338,22 @@ export function useTasks() {
     [fetchTasks],
   );
 
+  // GitHub Issue 作成
+  const createGitHubIssue = useCallback(
+    async (
+      taskId: number,
+      request?: CreateGitHubIssueRequest,
+    ): Promise<CreateGitHubIssueResponse> => {
+      const result = await postAdasApi<CreateGitHubIssueResponse>(
+        `/api/tasks/${taskId}/create-issue`,
+        request ?? {},
+      );
+      await fetchTasks(true);
+      return result;
+    },
+    [fetchTasks],
+  );
+
   return {
     tasks,
     error,
@@ -368,6 +386,8 @@ export function useTasks() {
     // 類似チェック
     checkTaskSimilarity,
     checkSimilarityBatch,
+    // GitHub Issue 作成
+    createGitHubIssue,
   };
 }
 

@@ -64,6 +64,13 @@
       "when": 1769906736348,
       "tag": "0008_light_gorgon",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1769954760390,
+      "tag": "0009_supreme_madame_web",
+      "breakpoints": true
     }
   ]
 }

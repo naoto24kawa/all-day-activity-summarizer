@@ -694,6 +694,9 @@ export interface Task {
   elaborationStatus: ElaborationStatus | null; // 詳細化ステータス
   pendingElaboration: string | null; // JSON: 詳細化結果 (適用前)
   stepNumber: number | null; // 子タスクの順序 (1, 2, 3...)
+  // GitHub Issue 連携
+  githubIssueNumber: number | null; // 作成した Issue の番号
+  githubIssueUrl: string | null; // 作成した Issue の URL
   createdAt: string;
   updatedAt: string;
   // 用語タスク用: 抽出元ソース種別 (vocabulary suggestion から取得)
@@ -1516,4 +1519,25 @@ export interface RateLimitCheckResult {
   reason?: string;
   retryAfterMs?: number;
   currentUsage: RateLimitCurrentUsage;
+}
+
+// ========== GitHub Issue 作成 型定義 ==========
+
+/** GitHub Issue 作成リクエスト */
+export interface CreateGitHubIssueRequest {
+  /** タスクに紐づくプロジェクトのリポジトリを使用 (デフォルト) */
+  useProjectRepo?: boolean;
+  /** 手動で owner/repo を指定する場合 */
+  owner?: string;
+  repo?: string;
+}
+
+/** GitHub Issue 作成レスポンス */
+export interface CreateGitHubIssueResponse {
+  /** 作成された Issue 番号 */
+  issueNumber: number;
+  /** Issue の URL */
+  issueUrl: string;
+  /** 更新されたタスク */
+  task: Task;
 }

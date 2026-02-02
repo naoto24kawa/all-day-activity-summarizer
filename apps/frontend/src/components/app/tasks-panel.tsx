@@ -34,17 +34,20 @@ import {
   FolderKanban,
   Github,
   GitMerge,
+  ListTree,
   Loader2,
   MessageSquare,
   MessageSquareMore,
   Mic,
   Minus,
+  MoreHorizontal,
   Pause,
   Pencil,
   Play,
   Plus,
   RefreshCw,
   Search,
+  Send,
   Signal,
   Sparkles,
   Square,
@@ -213,6 +216,8 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     getBulkElaborationStatus,
     // 重複チェック
     checkSimilarityBatch,
+    // GitHub Issue 作成
+    createGitHubIssue,
   } = useTasks();
   const { stats } = useTaskStats(date);
   const {
@@ -260,10 +265,8 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   // 重複チェック
   const [checkingSimilarity, setCheckingSimilarity] = useState(false);
 
-  // ステータスフィルター (複数選択可能)
-  const [statusFilters, setStatusFilters] = useState<Set<TaskStatus>>(
-    new Set(["pending", "accepted", "in_progress"]),
-  );
+  // ステータスフィルター (単一選択)
+  const [statusFilter, setStatusFilter] = useState<TaskStatus>("pending");
 
   // タスク詳細化
   const [elaborateDialogOpen, setElaborateDialogOpen] = useState(false);
@@ -284,6 +287,35 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
 
   const closeBulkElaborateDialog = () => {
     setBulkElaborateDialogOpen(false);
+  };
+
+  // GitHub Issue 作成
+  const [creatingIssue, setCreatingIssue] = useState(false);
+
+  const handleCreateIssue = async (task: Task) => {
+    if (creatingIssue) return;
+    setCreatingIssue(true);
+    try {
+      const result = await createGitHubIssue(task.id);
+      toast.success(`GitHub Issue を作成しました: #${result.issueNumber}`, {
+        description: (
+          <a
+            href={result.issueUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:underline"
+          >
+            Issue を開く
+          </a>
+        ),
+      });
+    } catch (err) {
+      toast.error("Issue 作成に失敗しました", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setCreatingIssue(false);
+    }
   };
 
   // Projects Popover handlers
@@ -548,20 +580,9 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
 
   const suggestionTaskIds = new Set(completionSuggestions.map((s) => s.taskId));
 
-  // ステータスフィルターのトグル
-  const toggleStatusFilter = (status: TaskStatus) => {
-    setStatusFilters((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(status)) {
-        // 最低1つは選択されている必要がある
-        if (newSet.size > 1) {
-          newSet.delete(status);
-        }
-      } else {
-        newSet.add(status);
-      }
-      return newSet;
-    });
+  // ステータスフィルターの選択
+  const selectStatusFilter = (status: TaskStatus) => {
+    setStatusFilter(status);
   };
 
   if (loading) {
@@ -601,35 +622,25 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const completedTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "completed")));
   const rejectedTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "rejected")));
 
-  // 選択されたステータスでフィルタリングし、ステータス順でソート
-  const statusOrder: TaskStatus[] = [
-    "pending",
-    "accepted",
-    "in_progress",
-    "paused",
-    "completed",
-    "rejected",
-  ];
-  const filteredTasksByStatus = statusOrder
-    .filter((status) => statusFilters.has(status))
-    .flatMap((status) => {
-      switch (status) {
-        case "pending":
-          return pendingTasks;
-        case "accepted":
-          return acceptedTasks;
-        case "in_progress":
-          return inProgressTasks;
-        case "paused":
-          return pausedTasks;
-        case "completed":
-          return completedTasks;
-        case "rejected":
-          return rejectedTasks;
-        default:
-          return [];
-      }
-    });
+  // 選択されたステータスでフィルタリング
+  const filteredTasksByStatus = (() => {
+    switch (statusFilter) {
+      case "pending":
+        return pendingTasks;
+      case "accepted":
+        return acceptedTasks;
+      case "in_progress":
+        return inProgressTasks;
+      case "paused":
+        return pausedTasks;
+      case "completed":
+        return completedTasks;
+      case "rejected":
+        return rejectedTasks;
+      default:
+        return [];
+    }
+  })();
 
   // Count tasks by source for filter badges
   const sourceCount = {
@@ -1055,13 +1066,13 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
             <div className="mb-3 flex shrink-0 flex-wrap items-center gap-1.5">
               <span className="mr-1 text-xs text-muted-foreground">表示:</span>
               {STATUS_FILTER_CONFIG.map(({ status, label, icon: Icon, activeClass }) => {
-                const isActive = statusFilters.has(status);
+                const isActive = statusFilter === status;
                 const count = stats[status] ?? 0;
                 return (
                   <button
                     type="button"
                     key={status}
-                    onClick={() => toggleStatusFilter(status)}
+                    onClick={() => selectStatusFilter(status)}
                     className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
                       isActive
                         ? activeClass
@@ -1275,7 +1286,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
             )}
 
             {/* 特殊パネル (acceptedフィルターが有効な場合のみ表示) */}
-            {statusFilters.has("accepted") && (
+            {statusFilter === "accepted" && (
               <div className="space-y-2">
                 {/* 重複候補パネル */}
                 <DuplicateSuggestionsPanel
@@ -1312,6 +1323,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               onUpdateTask={updateTask}
               onDeleteTask={deleteTask}
               onElaborate={openElaborateDialog}
+              onCreateIssue={handleCreateIssue}
               suggestionTaskIds={suggestionTaskIds}
               selectionMode={selectionMode}
               selectedTaskIds={selectedTaskIds}
@@ -1425,6 +1437,7 @@ function TaskList({
   onUpdateTask,
   onDeleteTask,
   onElaborate,
+  onCreateIssue,
   suggestionTaskIds,
   selectionMode = false,
   selectedTaskIds,
@@ -1450,6 +1463,7 @@ function TaskList({
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
   onElaborate?: (task: Task) => void;
+  onCreateIssue?: (task: Task) => Promise<void>;
   suggestionTaskIds?: Set<number>;
   selectionMode?: boolean;
   selectedTaskIds?: Set<number>;
@@ -1490,6 +1504,7 @@ function TaskList({
             onUpdateTask={onUpdateTask}
             onDeleteTask={onDeleteTask}
             onElaborate={onElaborate}
+            onCreateIssue={onCreateIssue}
             isSuggested={suggestionTaskIds?.has(task.id)}
             selectionMode={selectionMode}
             isSelected={selectedTaskIds?.has(task.id) ?? false}
@@ -1509,6 +1524,7 @@ function TaskItem({
   onUpdateTask,
   onDeleteTask,
   onElaborate,
+  onCreateIssue,
   isSuggested,
   selectionMode = false,
   isSelected = false,
@@ -1532,6 +1548,7 @@ function TaskItem({
   ) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
   onElaborate?: (task: Task) => void;
+  onCreateIssue?: (task: Task) => Promise<void>;
   isSuggested?: boolean;
   selectionMode?: boolean;
   isSelected?: boolean;
@@ -1550,6 +1567,10 @@ function TaskItem({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // コピー状態
   const [copied, setCopied] = useState(false);
+  // シンプルコピー状態 (タスク情報のみ)
+  const [simpleCopied, setSimpleCopied] = useState(false);
+  // Claude に送信中フラグ
+  const [sendingToClaude, setSendingToClaude] = useState(false);
   // プロンプト改善の差分表示
   const [diffDialogOpen, setDiffDialogOpen] = useState(false);
   const { improvement } = usePromptImprovement(
@@ -1617,7 +1638,40 @@ function TaskItem({
     setInlineEditing(false);
   };
 
-  // クリップボードにコピー (AIに渡す用)
+  // シンプルコピー (タスク情報のみ)
+  const simpleCopyToClipboard = async () => {
+    let text = `## ${task.title}`;
+    if (task.description) {
+      text += `\n\n${task.description}`;
+    }
+
+    // 子タスク情報を追加 (親タスクの場合)
+    if (allTasks && task.parentId === null) {
+      const childTasks = allTasks
+        .filter((t) => t.parentId === task.id)
+        .sort((a, b) => (a.stepNumber ?? 0) - (b.stepNumber ?? 0));
+      if (childTasks.length > 0) {
+        text += `\n\n### 子タスク (${childTasks.length}件)\n`;
+        for (const child of childTasks) {
+          text += `${child.stepNumber ?? 0}. [${child.status}] ${child.title}\n`;
+        }
+      }
+    }
+
+    // 親タスク情報を追加 (子タスクの場合)
+    if (allTasks && task.parentId !== null) {
+      const parentTask = allTasks.find((t) => t.id === task.parentId);
+      if (parentTask) {
+        text += `\n\n### 親タスク\n- #${parentTask.id} ${parentTask.title}`;
+      }
+    }
+
+    await navigator.clipboard.writeText(text);
+    setSimpleCopied(true);
+    setTimeout(() => setSimpleCopied(false), 2000);
+  };
+
+  // クリップボードにコピー (タスク情報 + API コマンド)
   const copyToClipboard = async () => {
     let text = `## ${task.title}`;
     if (task.description) {
@@ -1705,6 +1759,160 @@ function TaskItem({
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Claude Code にタスク情報を送信
+  const sendToClaude = async () => {
+    if (sendingToClaude) return;
+
+    let prompt = `## ${task.title}`;
+    if (task.description) {
+      prompt += `\n\n${task.description}`;
+    }
+
+    // 子タスク情報を追加 (親タスクの場合)
+    if (allTasks && task.parentId === null) {
+      const childTasks = allTasks
+        .filter((t) => t.parentId === task.id)
+        .sort((a, b) => (a.stepNumber ?? 0) - (b.stepNumber ?? 0));
+      if (childTasks.length > 0) {
+        prompt += `\n\n### 子タスク (${childTasks.length}件)\n`;
+        for (const child of childTasks) {
+          prompt += `${child.stepNumber ?? 0}. [${child.status}] ${child.title}\n`;
+        }
+      }
+    }
+
+    // 親タスク情報を追加 (子タスクの場合)
+    if (allTasks && task.parentId !== null) {
+      const parentTask = allTasks.find((t) => t.id === task.parentId);
+      if (parentTask) {
+        prompt += `\n\n### 親タスク\n- #${parentTask.id} ${parentTask.title}`;
+      }
+    }
+
+    // タスク更新API
+    const baseUrl = ADAS_API_URL;
+    const updateUrl = `${baseUrl}/api/tasks/${task.id}`;
+    prompt += "\n\n---\n";
+    prompt += "### タスク更新API\n";
+    prompt += "タイトルや説明を変更する場合:\n";
+    prompt += "```bash\n";
+    prompt += `curl -X PATCH ${updateUrl} -H "Content-Type: application/json" -d '{"title": "新しいタイトル", "description": "新しい説明"}'\n`;
+    prompt += "```\n";
+    prompt +=
+      "更新可能なフィールド: `title`, `description`, `priority` (high/medium/low), `workType`, `dueDate`, `projectId`\n";
+
+    // ステータスに応じたアクションコマンドを生成
+    const startUrl = `${baseUrl}/api/tasks/${task.id}/start`;
+    const completeUrl = `${baseUrl}/api/tasks/${task.id}/complete`;
+    const pauseUrl = `${baseUrl}/api/tasks/${task.id}/pause`;
+
+    if (task.status === "accepted") {
+      prompt += "\n\n---\n";
+      prompt += "作業開始前に以下を実行してください:\n";
+      prompt += "```bash\n";
+      prompt += `curl -X POST ${startUrl}\n`;
+      prompt += "```\n\n";
+      prompt += "タスク完了時は以下を実行してください:\n";
+      prompt += "```bash\n";
+      prompt += `curl -X POST ${completeUrl}\n`;
+      prompt += "```\n\n";
+      prompt += "中断する場合は、中断理由を確認してから以下を実行してください:\n";
+      prompt += "```bash\n";
+      prompt += `curl -X POST ${pauseUrl} -H "Content-Type: application/json" -d '{"reason": "中断理由をここに記入"}'\n`;
+      prompt += "```";
+    } else if (task.status === "in_progress") {
+      prompt += "\n\n---\n";
+      prompt += "タスク完了時は以下を実行してください:\n";
+      prompt += "```bash\n";
+      prompt += `curl -X POST ${completeUrl}\n`;
+      prompt += "```\n\n";
+      prompt += "中断する場合は、中断理由を確認してから以下を実行してください:\n";
+      prompt += "```bash\n";
+      prompt += `curl -X POST ${pauseUrl} -H "Content-Type: application/json" -d '{"reason": "中断理由をここに記入"}'\n`;
+      prompt += "```";
+    } else if (task.status === "paused") {
+      prompt += "\n\n---\n";
+      prompt += "作業再開時は以下を実行してください:\n";
+      prompt += "```bash\n";
+      prompt += `curl -X POST ${startUrl}\n`;
+      prompt += "```\n\n";
+      prompt += "タスク完了時は以下を実行してください:\n";
+      prompt += "```bash\n";
+      prompt += `curl -X POST ${completeUrl}\n`;
+      prompt += "```";
+    }
+
+    setSendingToClaude(true);
+    const toastId = toast.loading("Claude Code に送信中...");
+
+    try {
+      const response = await fetch(`${ADAS_API_URL}/api/claude-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, sessionId: `task-${task.id}` }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error: ${response.status}`);
+      }
+
+      // SSE でレスポンスを受け取る
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Response body is not readable");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE イベントをパース
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+
+        for (const eventStr of events) {
+          if (!eventStr.trim()) continue;
+
+          const lines = eventStr.split("\n");
+          let eventType = "";
+          let data = "";
+
+          for (const line of lines) {
+            if (line.startsWith("event:")) {
+              eventType = line.slice(6).trim();
+            } else if (line.startsWith("data:")) {
+              data = line.slice(5).trim();
+            }
+          }
+
+          if (eventType === "done") {
+            toast.success("Claude Code への送信が完了しました", { id: toastId });
+            return;
+          } else if (eventType === "error") {
+            try {
+              const parsed = JSON.parse(data);
+              throw new Error(parsed.error);
+            } catch {
+              throw new Error("Unknown error");
+            }
+          }
+        }
+      }
+
+      toast.success("Claude Code への送信が完了しました", { id: toastId });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "An error occurred";
+      toast.error(`送信に失敗しました: ${errorMessage}`, { id: toastId });
+    } finally {
+      setSendingToClaude(false);
+    }
   };
 
   return (
@@ -2092,7 +2300,7 @@ function TaskItem({
           {/* 詳細 (展開時のみ) */}
           <CollapsibleContent className="mt-3 space-y-3">
             {/* AI関連アクション */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {onElaborate && !isApprovalOnlyTask(task.sourceType) && (
                 <Button
                   variant="outline"
@@ -2104,19 +2312,94 @@ function TaskItem({
                   詳細化
                 </Button>
               )}
-              <Button variant="outline" size="sm" onClick={copyToClipboard}>
-                {copied ? (
-                  <>
-                    <Check className="mr-1 h-3 w-3" />
-                    コピー済み
-                  </>
-                ) : (
-                  <>
-                    <ClipboardCopy className="mr-1 h-3 w-3" />
-                    AIに渡す
-                  </>
+              {/* GitHub Issue 作成ボタン */}
+              {onCreateIssue &&
+                !isApprovalOnlyTask(task.sourceType) &&
+                task.projectId &&
+                !task.githubIssueNumber && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onCreateIssue(task)}
+                    title="GitHub Issue を作成"
+                  >
+                    <Github className="mr-1 h-3 w-3" />
+                    Issue 作成
+                  </Button>
                 )}
-              </Button>
+              {/* 既に Issue が作成されている場合はリンクを表示 */}
+              {task.githubIssueUrl && (
+                <a
+                  href={task.githubIssueUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  <Github className="h-3 w-3" />
+                  Issue #{task.githubIssueNumber}
+                </a>
+              )}
+              {!isApprovalOnlyTask(task.sourceType) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={simpleCopyToClipboard}
+                  title="タスク情報をクリップボードにコピー"
+                >
+                  {simpleCopied ? (
+                    <>
+                      <Check className="mr-1 h-3 w-3" />
+                      コピー済み
+                    </>
+                  ) : (
+                    <>
+                      <ClipboardCopy className="mr-1 h-3 w-3" />
+                      コピー
+                    </>
+                  )}
+                </Button>
+              )}
+              {!isApprovalOnlyTask(task.sourceType) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={copyToClipboard}
+                  title="タスク情報 + API コマンドをコピー"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="mr-1 h-3 w-3" />
+                      コピー済み
+                    </>
+                  ) : (
+                    <>
+                      <ClipboardCopy className="mr-1 h-3 w-3" />
+                      API付きコピー
+                    </>
+                  )}
+                </Button>
+              )}
+              {!isApprovalOnlyTask(task.sourceType) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={sendToClaude}
+                  disabled={sendingToClaude}
+                  title="Claude Code にタスク情報を送信"
+                >
+                  {sendingToClaude ? (
+                    <>
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                      送信中...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="mr-1 h-3 w-3" />
+                      Claudeに送信
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
 
             {/* 詳細: インライン編集 or マークダウン表示 */}
@@ -2177,6 +2460,107 @@ function TaskItem({
                 <span className="font-medium">却下理由:</span> {task.rejectReason}
               </p>
             )}
+
+            {/* 子タスク一覧 (親タスクの場合のみ) */}
+            {allTasks &&
+              task.parentId === null &&
+              (() => {
+                const childTasks = allTasks
+                  .filter((t) => t.parentId === task.id)
+                  .sort((a, b) => (a.stepNumber ?? 0) - (b.stepNumber ?? 0));
+                if (childTasks.length === 0) return null;
+                return (
+                  <div className="mt-3 rounded-md border bg-muted/30 p-3">
+                    <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                      <ListTree className="h-4 w-4" />
+                      子タスク ({childTasks.length}件)
+                    </div>
+                    <div className="space-y-1.5">
+                      {childTasks.map((child) => (
+                        <div
+                          key={child.id}
+                          className="flex items-center gap-2 rounded-md bg-background p-2 text-sm"
+                        >
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                            {child.stepNumber ?? "-"}
+                          </span>
+                          <span className="flex-1 truncate">{child.title}</span>
+                          <Badge
+                            variant={
+                              child.status === "completed"
+                                ? "default"
+                                : child.status === "in_progress"
+                                  ? "secondary"
+                                  : "outline"
+                            }
+                            className={`text-xs ${
+                              child.status === "completed"
+                                ? "bg-green-500"
+                                : child.status === "in_progress"
+                                  ? "bg-blue-500 text-white"
+                                  : ""
+                            }`}
+                          >
+                            {child.status === "pending"
+                              ? "未承認"
+                              : child.status === "accepted"
+                                ? "承認済"
+                                : child.status === "in_progress"
+                                  ? "進行中"
+                                  : child.status === "completed"
+                                    ? "完了"
+                                    : child.status === "paused"
+                                      ? "中断"
+                                      : "却下"}
+                          </Badge>
+                          {/* ステータス変更ボタン */}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-6 w-6">
+                                <MoreHorizontal className="h-3 w-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {child.status === "pending" && (
+                                <DropdownMenuItem
+                                  onClick={() => onUpdateTask(child.id, { status: "accepted" })}
+                                >
+                                  <Check className="mr-2 h-4 w-4 text-green-500" />
+                                  承認
+                                </DropdownMenuItem>
+                              )}
+                              {(child.status === "accepted" || child.status === "paused") && (
+                                <DropdownMenuItem
+                                  onClick={() => onUpdateTask(child.id, { status: "in_progress" })}
+                                >
+                                  <Play className="mr-2 h-4 w-4 text-blue-500" />
+                                  開始
+                                </DropdownMenuItem>
+                              )}
+                              {child.status === "in_progress" && (
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() => onUpdateTask(child.id, { status: "paused" })}
+                                  >
+                                    <Pause className="mr-2 h-4 w-4 text-yellow-500" />
+                                    中断
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => onUpdateTask(child.id, { status: "completed" })}
+                                  >
+                                    <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
+                                    完了
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
           </CollapsibleContent>
         </div>
       </Collapsible>

@@ -1352,5 +1352,9 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_rate_limit_usage_process_type ON rate_limit_usage(process_type);
   `);
 
+  // Migration: add GitHub Issue columns to tasks
+  addColumnIfNotExists(sqlite, "tasks", "github_issue_number", "INTEGER");
+  addColumnIfNotExists(sqlite, "tasks", "github_issue_url", "TEXT");
+
   return db;
 }

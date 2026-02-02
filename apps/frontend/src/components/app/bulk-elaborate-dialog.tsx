@@ -93,6 +93,8 @@ export function BulkElaborateDialog({
   const [pollingTaskIds, setPollingTaskIds] = useState<number[]>([]);
   const [pollingStatus, setPollingStatus] = useState<BulkElaborationStatusResponse | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [pollingErrorCount, setPollingErrorCount] = useState(0);
+  const MAX_POLLING_ERRORS = 5;
 
   // レビュー結果
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
@@ -125,6 +127,7 @@ export function BulkElaborateDialog({
       setError(null);
       setPollingTaskIds([]);
       setPollingStatus(null);
+      setPollingErrorCount(0);
       setReviewItems([]);
       setExpandedItems(new Set());
     }
@@ -194,6 +197,7 @@ export function BulkElaborateDialog({
     try {
       const status = await onGetBulkElaborationStatus(pollingTaskIds);
       setPollingStatus(status);
+      setPollingErrorCount(0); // 成功したらエラーカウントをリセット
 
       if (status.allCompleted) {
         stopPolling();
@@ -208,7 +212,14 @@ export function BulkElaborateDialog({
       }
     } catch (err) {
       console.error("Failed to poll elaboration status:", err);
-      // エラーでもポーリングは継続
+      setPollingErrorCount((prev) => {
+        const newCount = prev + 1;
+        if (newCount >= MAX_POLLING_ERRORS) {
+          stopPolling();
+          setError("サーバーとの接続に失敗しました。ページをリロードしてください。");
+        }
+        return newCount;
+      });
     }
   }, [pollingTaskIds, onGetBulkElaborationStatus, stopPolling, fetchElaborationResults]);
 
@@ -433,6 +444,17 @@ export function BulkElaborateDialog({
     );
   }
 
+  // 再試行ハンドラー
+  const handleRetryPolling = useCallback(() => {
+    setError(null);
+    setPollingErrorCount(0);
+    // ポーリングを再開
+    if (pollingTaskIds.length > 0 && !pollingIntervalRef.current) {
+      pollStatus();
+      pollingIntervalRef.current = setInterval(pollStatus, POLLING_INTERVAL);
+    }
+  }, [pollingTaskIds, pollStatus]);
+
   // ポーリングフェーズ
   if (phase === "polling") {
     const progress = pollingStatus
@@ -441,22 +463,36 @@ export function BulkElaborateDialog({
         100
       : 0;
 
+    const hasPollingError = pollingErrorCount >= MAX_POLLING_ERRORS;
+
     return (
-      <Dialog open={open} onOpenChange={() => {}}>
+      <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Loader2 className="h-5 w-5 animate-spin text-purple-500" />
-              一括詳細化中...
+              {hasPollingError ? (
+                <AlertCircle className="h-5 w-5 text-destructive" />
+              ) : (
+                <Loader2 className="h-5 w-5 animate-spin text-purple-500" />
+              )}
+              {hasPollingError ? "接続エラー" : "一括詳細化中..."}
             </DialogTitle>
-            <DialogDescription>{tasks.length} 件のタスクを処理しています</DialogDescription>
+            <DialogDescription>
+              {hasPollingError
+                ? "サーバーとの接続に問題が発生しました"
+                : `${tasks.length} 件のタスクを処理しています`}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <Progress value={progress} className="h-2" />
 
             <div className="text-center text-sm text-muted-foreground">
-              {pollingStatus ? (
+              {hasPollingError ? (
+                <span className="text-destructive">
+                  ステータスの取得に失敗しました。バックグラウンドで処理は継続している可能性があります。
+                </span>
+              ) : pollingStatus ? (
                 <>
                   <span className="font-medium">
                     {pollingStatus.summary.completed + pollingStatus.summary.failed}
@@ -491,15 +527,18 @@ export function BulkElaborateDialog({
               ))}
             </div>
 
-            <p className="text-xs text-center text-muted-foreground">
-              1 タスクあたり 10-30 秒程度かかります
-            </p>
+            {!hasPollingError && (
+              <p className="text-xs text-center text-muted-foreground">
+                1 タスクあたり 10-30 秒程度かかります
+              </p>
+            )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={handleClose}>
-              バックグラウンドで実行
+              {hasPollingError ? "閉じる" : "バックグラウンドで実行"}
             </Button>
+            {hasPollingError && <Button onClick={handleRetryPolling}>再試行</Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>

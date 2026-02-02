@@ -83,24 +83,38 @@ export function createSummariesRouter(db: AdasDatabase) {
       });
     }
 
-    // デフォルト: Daily と (自動インターバル設定があれば) Times を生成
+    // デフォルト: Daily と (自動インターバル設定があれば) Times を一括生成
     const dailyJobId = enqueueJob(db, "summarize-daily", { date });
-    const jobIds = [dailyJobId];
+    const jobIds: string[] = [dailyJobId];
 
     const timesIntervalMinutes = config.summarizer.timesIntervalMinutes;
     if (timesIntervalMinutes > 0) {
-      const currentHour = new Date().getHours();
-      const hoursToSummarize = Math.max(1, Math.ceil(timesIntervalMinutes / 60));
-      const endHour = currentHour;
-      const startHour = Math.max(0, endHour - hoursToSummarize + 1);
+      const hoursPerInterval = Math.max(1, Math.ceil(timesIntervalMinutes / 60));
 
-      const timesJobId = enqueueJob(db, "summarize-times", { date, startHour, endHour });
-      jobIds.push(timesJobId);
+      // 今日の場合は現在時刻まで、過去の日付は23時まで
+      const today = getTodayDateString();
+      const maxEndHour = date === today ? new Date().getHours() : 23;
+
+      // 0時から maxEndHour まで、指定間隔で区切って複数の times サマリを生成
+      const timeRanges: { startHour: number; endHour: number }[] = [];
+      for (let hour = 0; hour <= maxEndHour; hour += hoursPerInterval) {
+        const startHour = hour;
+        const endHour = Math.min(hour + hoursPerInterval - 1, maxEndHour);
+        timeRanges.push({ startHour, endHour });
+      }
+
+      // 各時間範囲のジョブをキューに追加
+      for (const { startHour, endHour } of timeRanges) {
+        const timesJobId = enqueueJob(db, "summarize-times", { date, startHour, endHour });
+        jobIds.push(timesJobId);
+      }
+
+      const rangeDesc = timeRanges.map((r) => `${r.startHour}時〜${r.endHour}時`).join(", ");
 
       return c.json({
         success: true,
         jobIds,
-        message: `日次サマリと ${startHour}時〜${endHour}時のTimesサマリ生成をキューに追加しました`,
+        message: `日次サマリと ${timeRanges.length} 件の Times サマリ生成をキューに追加しました (${rangeDesc})`,
       });
     }
 
