@@ -28,14 +28,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSegmentFeedbacks } from "@/hooks/use-segment-feedback";
 import { useTranscriptions } from "@/hooks/use-transcriptions";
 import { useVocabulary } from "@/hooks/use-vocabulary";
-import { formatTimeJST } from "@/lib/date";
+import { formatTimeJST, getTodayDateString } from "@/lib/date";
 
 interface ActivityFeedProps {
-  date: string;
   className?: string;
 }
 
-export function ActivityFeed({ date, className }: ActivityFeedProps) {
+export function ActivityFeed({ className }: ActivityFeedProps) {
+  const date = getTodayDateString();
   const { segments, loading, error, refetch } = useTranscriptions(date);
   const { getFeedback, postFeedback } = useSegmentFeedbacks(date);
   const [pendingFeedback, setPendingFeedback] = useState<{

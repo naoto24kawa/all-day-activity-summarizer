@@ -21,7 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { type MemoWithPending, useMemos } from "@/hooks/use-memos";
 import { useTasks } from "@/hooks/use-tasks";
-import { formatTimeJST } from "@/lib/date";
+import { formatTimeJST, getTodayDateString } from "@/lib/date";
 
 /** タグごとの色定義 */
 const TAG_COLORS: Record<MemoTag, string> = {
@@ -117,7 +117,6 @@ function saveOpenState(isOpen: boolean): void {
 }
 
 interface MemoFloatingChatProps {
-  date: string;
   /** サイドバーモードで開始するか */
   initialSidebar?: boolean;
   onSidebarChange?: (isSidebar: boolean) => void;
@@ -129,12 +128,12 @@ interface MemoFloatingChatProps {
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: PTT logic adds complexity, will refactor later
 export function MemoFloatingChat({
-  date,
   initialSidebar = false,
   onSidebarChange,
   onOpenChange,
   onHeightChange,
 }: MemoFloatingChatProps) {
+  const date = getTodayDateString();
   const { memos, loading, error, postMemo, updateMemo, deleteMemo, refetch } = useMemos(date);
   const { extractMemoTasks } = useTasks();
   const [isOpen, setIsOpen] = useState(loadOpenState);

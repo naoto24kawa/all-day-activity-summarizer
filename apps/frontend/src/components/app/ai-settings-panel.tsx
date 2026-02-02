@@ -5,14 +5,13 @@
  */
 
 import type { RateLimitStatus } from "@repo/types";
-import { Activity, Bot, Check, Clock, Gauge, Loader2, RefreshCw, X, Zap } from "lucide-react";
+import { Activity, Bot, BrainCircuit, Clock, Gauge, RefreshCw, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -26,7 +25,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import type { IntegrationsConfig } from "@/hooks/use-config";
 import { useConfig } from "@/hooks/use-config";
 import { useRateLimit } from "@/hooks/use-rate-limit";
-import { fetchAdasApi, postAdasApi } from "@/lib/adas-api";
+import { fetchAdasApi } from "@/lib/adas-api";
 import { cn } from "@/lib/utils";
 
 /** 時間選択用の定数配列 (0-23時) */
@@ -88,143 +87,34 @@ function UsageRow({ label, current, limit, percent, icon }: UsageRowProps) {
   );
 }
 
-/** Summarizer 設定セクション */
-interface SummarizerSectionProps {
-  integrations: IntegrationsConfig;
+/** Summarizer スケジュール設定セクション */
+interface SummarizerScheduleSectionProps {
   updating: boolean;
-  onProviderChange: (provider: "claude" | "lmstudio") => Promise<void>;
-  onLmStudioUrlBlur: () => Promise<void>;
-  onLmStudioModelChange: (model: string) => Promise<void>;
   onDailyScheduleHourChange: (value: string) => Promise<void>;
   onTimesIntervalChange: (value: string) => Promise<void>;
-  lmStudioUrl: string;
-  setLmStudioUrl: (url: string) => void;
-  lmStudioModels: string[];
-  lmStudioModel: string;
-  loadingModels: boolean;
-  testingConnection: boolean;
-  connectionStatus: "idle" | "success" | "error";
-  onTestConnection: () => Promise<void>;
   dailyScheduleHour: string;
   timesIntervalMinutes: string;
 }
 
-function SummarizerSection({
-  integrations,
+function SummarizerScheduleSection({
   updating,
-  onProviderChange,
-  onLmStudioUrlBlur,
-  onLmStudioModelChange,
   onDailyScheduleHourChange,
   onTimesIntervalChange,
-  lmStudioUrl,
-  setLmStudioUrl,
-  lmStudioModels,
-  lmStudioModel,
-  loadingModels,
-  testingConnection,
-  connectionStatus,
-  onTestConnection,
   dailyScheduleHour,
   timesIntervalMinutes,
-}: SummarizerSectionProps) {
+}: SummarizerScheduleSectionProps) {
   return (
     <div className="space-y-4">
       <h3 className="flex items-center gap-2 text-sm font-medium">
-        <Bot className="h-4 w-4" />
-        Summarizer
+        <Clock className="h-4 w-4" />
+        サマリ スケジュール
       </h3>
-
-      <RadioGroup
-        value={integrations.summarizer.provider}
-        onValueChange={onProviderChange}
-        className="flex gap-4"
-      >
-        <div className="flex items-center space-x-2">
-          <RadioGroupItem value="claude" id="provider-claude" disabled={updating} />
-          <Label htmlFor="provider-claude" className="cursor-pointer">
-            Claude (Worker経由)
-          </Label>
-        </div>
-        <div className="flex items-center space-x-2">
-          <RadioGroupItem value="lmstudio" id="provider-lmstudio" disabled={updating} />
-          <Label htmlFor="provider-lmstudio" className="cursor-pointer">
-            LM Studio
-          </Label>
-        </div>
-      </RadioGroup>
-
-      {integrations.summarizer.provider === "lmstudio" && (
-        <div className="space-y-3 pl-4 border-l-2 border-muted">
-          <div className="space-y-1.5">
-            <Label htmlFor="lmstudio-url" className="text-sm">
-              URL
-            </Label>
-            <div className="flex gap-2">
-              <Input
-                id="lmstudio-url"
-                value={lmStudioUrl}
-                onChange={(e) => setLmStudioUrl(e.target.value)}
-                onBlur={onLmStudioUrlBlur}
-                placeholder="http://192.168.1.17:1234"
-                className="flex-1"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onTestConnection}
-                disabled={testingConnection || !lmStudioUrl}
-              >
-                {testingConnection ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : connectionStatus === "success" ? (
-                  <Check className="h-4 w-4 text-green-500" />
-                ) : connectionStatus === "error" ? (
-                  <X className="h-4 w-4 text-destructive" />
-                ) : (
-                  "Test"
-                )}
-              </Button>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="lmstudio-model" className="text-sm">
-              Model
-            </Label>
-            <Select
-              value={lmStudioModel}
-              onValueChange={onLmStudioModelChange}
-              disabled={loadingModels || lmStudioModels.length === 0}
-            >
-              <SelectTrigger id="lmstudio-model">
-                <SelectValue placeholder={loadingModels ? "Loading..." : "Select a model"} />
-              </SelectTrigger>
-              <SelectContent>
-                {lmStudioModels.map((model) => (
-                  <SelectItem key={model} value={model}>
-                    {model}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {lmStudioModels.length === 0 && !loadingModels && (
-              <p className="text-xs text-muted-foreground">
-                接続テストを実行してモデル一覧を取得してください
-              </p>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Schedule Settings */}
       <div className="grid gap-4 sm:grid-cols-2">
         {/* Daily サマリ自動実行時間 */}
         <div className="space-y-2">
-          <Label className="flex items-center gap-1.5 text-sm">
-            <Clock className="h-3.5 w-3.5" />
-            Daily サマリ
-          </Label>
+          <Label className="flex items-center gap-1.5 text-sm">Daily サマリ</Label>
           <Select
             value={dailyScheduleHour}
             onValueChange={onDailyScheduleHourChange}
@@ -245,10 +135,7 @@ function SummarizerSection({
 
         {/* Times サマリ自動生成間隔 */}
         <div className="space-y-2">
-          <Label className="flex items-center gap-1.5 text-sm">
-            <Clock className="h-3.5 w-3.5" />
-            Times サマリ
-          </Label>
+          <Label className="flex items-center gap-1.5 text-sm">Times サマリ</Label>
           <Select
             value={timesIntervalMinutes}
             onValueChange={onTimesIntervalChange}
@@ -383,6 +270,172 @@ function RateLimitSection({
   );
 }
 
+/** AI Provider 設定セクション */
+interface AIProviderSectionProps {
+  integrations: IntegrationsConfig;
+  updating: boolean;
+  onUpdate: (config: {
+    lmstudio?: { url?: string; model?: string; timeout?: number };
+    providers?: Partial<IntegrationsConfig["aiProvider"]["providers"]>;
+    enableFallback?: boolean;
+  }) => Promise<unknown>;
+}
+
+/** 処理別プロバイダー設定の定義 */
+const PROVIDER_SETTINGS = [
+  { key: "summarize", label: "サマリ生成" },
+  { key: "suggestTags", label: "タグ提案" },
+  { key: "evaluate", label: "品質評価" },
+  { key: "interpret", label: "音声解釈" },
+  { key: "checkCompletion", label: "完了判定" },
+  { key: "analyzeProfile", label: "プロフィール" },
+  { key: "extractLearnings", label: "学び抽出" },
+  { key: "taskExtract", label: "タスク抽出" },
+] as const;
+
+function AIProviderSection({ integrations, updating, onUpdate }: AIProviderSectionProps) {
+  const [models, setModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [urlInput, setUrlInput] = useState(integrations.aiProvider?.lmstudio.url ?? "");
+
+  // URL変更時にモデル一覧を取得
+  const fetchModels = useCallback(async (url: string) => {
+    if (!url) {
+      setModels([]);
+      return;
+    }
+    setLoadingModels(true);
+    try {
+      const data = await fetchAdasApi<{ models: string[] }>(
+        `/api/config/lmstudio/models?url=${encodeURIComponent(url)}`,
+      );
+      setModels(data.models);
+    } catch {
+      setModels([]);
+    } finally {
+      setLoadingModels(false);
+    }
+  }, []);
+
+  // 初期ロード時にモデル一覧を取得
+  useEffect(() => {
+    if (integrations.aiProvider?.lmstudio.url) {
+      fetchModels(integrations.aiProvider.lmstudio.url);
+    }
+  }, [integrations.aiProvider?.lmstudio.url, fetchModels]);
+
+  if (!integrations.aiProvider) return null;
+
+  return (
+    <div className="border-t pt-4">
+      <div className="space-y-4">
+        <h3 className="flex items-center gap-2 text-sm font-medium">
+          <BrainCircuit className="h-4 w-4" />
+          AI Provider
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          各処理で使用する LLM プロバイダーを個別に設定
+        </p>
+
+        {/* LM Studio 接続設定 */}
+        <div className="space-y-3 pl-4 border-l-2 border-muted">
+          <div className="space-y-1.5">
+            <Label htmlFor="ai-lmstudio-url" className="text-sm">
+              LM Studio URL
+            </Label>
+            <Input
+              id="ai-lmstudio-url"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onBlur={(e) => {
+                if (e.target.value !== integrations.aiProvider.lmstudio.url) {
+                  onUpdate({ lmstudio: { url: e.target.value } });
+                  fetchModels(e.target.value);
+                }
+              }}
+              placeholder="http://192.168.1.17:1234"
+            />
+          </div>
+
+          {/* モデル選択 */}
+          <div className="space-y-1.5">
+            <Label htmlFor="ai-lmstudio-model" className="text-sm">
+              Model
+            </Label>
+            <Select
+              value={integrations.aiProvider.lmstudio.model || ""}
+              onValueChange={(value) => onUpdate({ lmstudio: { model: value } })}
+              disabled={updating || loadingModels || models.length === 0}
+            >
+              <SelectTrigger id="ai-lmstudio-model">
+                <SelectValue placeholder={loadingModels ? "Loading..." : "Select model"} />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((model) => (
+                  <SelectItem key={model} value={model}>
+                    {model}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!loadingModels && models.length === 0 && urlInput && (
+              <p className="text-xs text-muted-foreground">
+                LM Studio に接続できません。URL を確認してください
+              </p>
+            )}
+          </div>
+
+          {/* フォールバック設定 */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="ai-fallback-toggle" className="text-sm">
+                フォールバック
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                LM Studio 失敗時に Claude へ自動切り替え
+              </p>
+            </div>
+            <Switch
+              id="ai-fallback-toggle"
+              checked={integrations.aiProvider.enableFallback}
+              onCheckedChange={(checked) => onUpdate({ enableFallback: checked })}
+              disabled={updating}
+            />
+          </div>
+        </div>
+
+        {/* 各処理の provider 設定 */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">処理別プロバイダー</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {PROVIDER_SETTINGS.map(({ key, label }) => (
+              <div key={key} className="flex items-center justify-between p-2 rounded border">
+                <span className="text-xs">{label}</span>
+                <Select
+                  value={integrations.aiProvider.providers[key]}
+                  onValueChange={(value: "claude" | "lmstudio") =>
+                    onUpdate({ providers: { [key]: value } })
+                  }
+                  disabled={updating}
+                >
+                  <SelectTrigger className="w-24 h-7 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="claude">Claude</SelectItem>
+                    <SelectItem value="lmstudio">LM Studio</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">※ 設定変更後は Worker の再起動が必要です</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** 警告状態を判定 (70%以上) */
 function checkHasWarning(
   rateLimitStatus: RateLimitStatus | null,
@@ -399,74 +452,17 @@ function checkHasWarning(
   );
 }
 
-/** LM Studio 接続管理用のカスタムフック */
-function useLmStudioConnection(integrationsUrl: string | undefined) {
-  const [lmStudioUrl, setLmStudioUrl] = useState("");
-  const [lmStudioModels, setLmStudioModels] = useState<string[]>([]);
-  const [lmStudioModel, setLmStudioModel] = useState("");
-  const [testingConnection, setTestingConnection] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<"idle" | "success" | "error">("idle");
-  const [loadingModels, setLoadingModels] = useState(false);
-
-  const fetchLmStudioModels = useCallback(async (url: string) => {
-    if (!url) return;
-    setLoadingModels(true);
-    try {
-      const data = await fetchAdasApi<{ models: string[] }>(
-        `/api/config/lmstudio/models?url=${encodeURIComponent(url)}`,
-      );
-      setLmStudioModels(data.models);
-      setConnectionStatus("success");
-    } catch {
-      setLmStudioModels([]);
-      setConnectionStatus("error");
-    } finally {
-      setLoadingModels(false);
-    }
-  }, []);
-
-  const testConnection = useCallback(async () => {
-    setTestingConnection(true);
-    setConnectionStatus("idle");
-    try {
-      const data = await postAdasApi<{ success: boolean; error?: string }>(
-        "/api/config/lmstudio/test",
-        { url: lmStudioUrl },
-      );
-      if (data.success) {
-        setConnectionStatus("success");
-        await fetchLmStudioModels(lmStudioUrl);
-      } else {
-        setConnectionStatus("error");
-      }
-    } catch {
-      setConnectionStatus("error");
-    } finally {
-      setTestingConnection(false);
-    }
-  }, [lmStudioUrl, fetchLmStudioModels]);
-
-  return {
-    lmStudioUrl,
-    setLmStudioUrl,
-    lmStudioModels,
-    lmStudioModel,
-    setLmStudioModel,
-    testingConnection,
-    connectionStatus,
-    loadingModels,
-    testConnection,
-    integrationsUrl,
-  };
-}
-
 export function AISettingsPanel() {
-  const { integrations, loading, error, updating, updateSummarizerConfig, updateRateLimitConfig } =
-    useConfig();
+  const {
+    integrations,
+    loading,
+    error,
+    updating,
+    updateSummarizerConfig,
+    updateRateLimitConfig,
+    updateAIProviderConfig,
+  } = useConfig();
   const { status: rateLimitStatus, refetch: refetchRateLimit } = useRateLimit();
-
-  // LM Studio 接続管理
-  const lmStudio = useLmStudioConnection(integrations?.summarizer.lmstudio.url);
 
   // スケジュール設定
   const [dailyScheduleHour, setDailyScheduleHour] = useState("23");
@@ -475,46 +471,10 @@ export function AISettingsPanel() {
   // 初期値を設定
   useEffect(() => {
     if (integrations?.summarizer) {
-      lmStudio.setLmStudioUrl(integrations.summarizer.lmstudio.url);
-      lmStudio.setLmStudioModel(integrations.summarizer.lmstudio.model);
       setDailyScheduleHour(String(integrations.summarizer.dailyScheduleHour ?? 23));
       setTimesIntervalMinutes(String(integrations.summarizer.timesIntervalMinutes ?? 0));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [integrations?.summarizer]);
-
-  const handleProviderChange = useCallback(
-    async (provider: "claude" | "lmstudio") => {
-      try {
-        await updateSummarizerConfig({ provider });
-      } catch {
-        // エラーはhook内で処理済み
-      }
-    },
-    [updateSummarizerConfig],
-  );
-
-  const handleLmStudioUrlBlur = useCallback(async () => {
-    if (lmStudio.lmStudioUrl !== integrations?.summarizer.lmstudio.url) {
-      try {
-        await updateSummarizerConfig({ lmstudio: { url: lmStudio.lmStudioUrl } });
-      } catch {
-        // エラーはhook内で処理済み
-      }
-    }
-  }, [lmStudio.lmStudioUrl, integrations?.summarizer.lmstudio.url, updateSummarizerConfig]);
-
-  const handleLmStudioModelChange = useCallback(
-    async (model: string) => {
-      lmStudio.setLmStudioModel(model);
-      try {
-        await updateSummarizerConfig({ lmstudio: { model } });
-      } catch {
-        // エラーはhook内で処理済み
-      }
-    },
-    [lmStudio, updateSummarizerConfig],
-  );
 
   const handleDailyScheduleHourChange = useCallback(
     async (value: string) => {
@@ -586,22 +546,10 @@ export function AISettingsPanel() {
         <CardDescription>サマリー生成とレート制限の設定</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <SummarizerSection
-          integrations={integrations}
+        <SummarizerScheduleSection
           updating={updating}
-          onProviderChange={handleProviderChange}
-          onLmStudioUrlBlur={handleLmStudioUrlBlur}
-          onLmStudioModelChange={handleLmStudioModelChange}
           onDailyScheduleHourChange={handleDailyScheduleHourChange}
           onTimesIntervalChange={handleTimesIntervalChange}
-          lmStudioUrl={lmStudio.lmStudioUrl}
-          setLmStudioUrl={lmStudio.setLmStudioUrl}
-          lmStudioModels={lmStudio.lmStudioModels}
-          lmStudioModel={lmStudio.lmStudioModel}
-          loadingModels={lmStudio.loadingModels}
-          testingConnection={lmStudio.testingConnection}
-          connectionStatus={lmStudio.connectionStatus}
-          onTestConnection={lmStudio.testConnection}
           dailyScheduleHour={dailyScheduleHour}
           timesIntervalMinutes={timesIntervalMinutes}
         />
@@ -613,6 +561,12 @@ export function AISettingsPanel() {
           updating={updating}
           onRefetch={refetchRateLimit}
           onToggle={(checked) => updateRateLimitConfig({ enabled: checked })}
+        />
+
+        <AIProviderSection
+          integrations={integrations}
+          updating={updating}
+          onUpdate={updateAIProviderConfig}
         />
       </CardContent>
     </Card>

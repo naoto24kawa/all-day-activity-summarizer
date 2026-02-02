@@ -1,12 +1,19 @@
 /**
  * AI Jobs Hook
  *
- * SSE接続とジョブ管理
+ * 統一 SSE サーバー経由でジョブ完了を受信
  */
 
-import type { AIJob, AIJobCompletedEvent, AIJobStats, AIJobType } from "@repo/types";
+import type {
+  AIJob,
+  AIJobCompletedEvent,
+  AIJobStats,
+  AIJobType,
+  SSEJobCompletedData,
+} from "@repo/types";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
+import { fetchAdasApi, postAdasApi } from "@/lib/adas-api";
+import { useSSE } from "./use-sse";
 
 interface UseAIJobsOptions {
   /** SSE接続を有効化 */
@@ -38,8 +45,6 @@ export function useAIJobs(options: UseAIJobsOptions = {}): UseAIJobsReturn {
 
   const [stats, setStats] = useState<AIJobStats | null>(null);
   const [jobs, setJobs] = useState<AIJob[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
   const onJobCompletedRef = useRef(onJobCompleted);
 
   // コールバックの参照を更新
@@ -86,67 +91,33 @@ export function useAIJobs(options: UseAIJobsOptions = {}): UseAIJobsReturn {
     [refreshStats],
   );
 
-  // 初回統計取得 + 定期ポーリング (10秒ごと)
+  // SSE でジョブ完了を受信
+  const handleJobCompleted = useCallback(
+    (data: SSEJobCompletedData) => {
+      console.log("[ai-jobs] Job completed:", data);
+
+      // 統計を更新
+      refreshStats();
+
+      // コールバックを呼び出し
+      onJobCompletedRef.current?.(data);
+    },
+    [refreshStats],
+  );
+
+  // 統一 SSE フックを使用
+  const { isConnected } = useSSE(
+    enableSSE
+      ? {
+          onJobCompleted: handleJobCompleted,
+        }
+      : {},
+  );
+
+  // 初回統計取得のみ (ポーリングは廃止)
   useEffect(() => {
     refreshStats();
-
-    const interval = setInterval(() => {
-      refreshStats();
-    }, 10000);
-
-    return () => clearInterval(interval);
   }, [refreshStats]);
-
-  // SSE接続
-  useEffect(() => {
-    if (!enableSSE) return;
-
-    const connect = () => {
-      const url = `${ADAS_API_URL}/api/ai-jobs/sse`;
-      const eventSource = new EventSource(url);
-      eventSourceRef.current = eventSource;
-
-      eventSource.onopen = () => {
-        setIsConnected(true);
-        console.log("[ai-jobs] SSE connected");
-      };
-
-      eventSource.onerror = () => {
-        setIsConnected(false);
-        console.warn("[ai-jobs] SSE error, reconnecting...");
-
-        // 再接続
-        eventSource.close();
-        setTimeout(connect, 5000);
-      };
-
-      eventSource.addEventListener("job_completed", (event) => {
-        try {
-          const data = JSON.parse(event.data) as AIJobCompletedEvent;
-          console.log("[ai-jobs] Job completed:", data);
-
-          // 統計を更新
-          refreshStats();
-
-          // コールバックを呼び出し
-          onJobCompletedRef.current?.(data);
-        } catch (error) {
-          console.error("[ai-jobs] Failed to parse SSE event:", error);
-        }
-      });
-
-      eventSource.addEventListener("heartbeat", () => {
-        // ハートビート受信
-      });
-    };
-
-    connect();
-
-    return () => {
-      eventSourceRef.current?.close();
-      eventSourceRef.current = null;
-    };
-  }, [enableSSE, refreshStats]);
 
   return {
     stats,

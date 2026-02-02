@@ -1,115 +1,50 @@
-import { RefreshCw, Server, Terminal } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { Bot, Cpu, RefreshCw, Server, Terminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { LogEntry, LogSource } from "@/hooks/use-server-logs";
 import { useServerLogs } from "@/hooks/use-server-logs";
+import { getTodayDateString } from "@/lib/date";
 
-interface ServerLogsPanelProps {
-  date: string;
-}
+type ServerLogsPanelProps = {};
 
-export function ServerLogsPanel({ date }: ServerLogsPanelProps) {
+export function ServerLogsPanel(_props: ServerLogsPanelProps) {
+  const date = getTodayDateString();
   const serveData = useServerLogs("serve", date);
-  const workerData = useServerLogs("worker", date);
-
-  const serveRef = useRef<HTMLDivElement>(null);
-  const workerRef = useRef<HTMLDivElement>(null);
-  const [syncEnabled, setSyncEnabled] = useState(true);
-  const isScrolling = useRef(false);
-
-  // 時刻ベースでスクロール同期
-  const handleScroll = useCallback(
-    (source: "serve" | "worker") => {
-      if (!syncEnabled || isScrolling.current) return;
-
-      const sourceRef = source === "serve" ? serveRef : workerRef;
-      const targetRef = source === "serve" ? workerRef : serveRef;
-      const targetEntries = source === "serve" ? workerData.entries : serveData.entries;
-
-      if (!sourceRef.current || !targetRef.current || targetEntries.length === 0) return;
-
-      // ソース側で現在表示されている最初のエントリのタイムスタンプを取得
-      const sourceContainer = sourceRef.current;
-      const sourceRows = sourceContainer.querySelectorAll("[data-timestamp]");
-
-      let visibleTimestamp: string | null = null;
-      for (const row of sourceRows) {
-        const rect = row.getBoundingClientRect();
-        const containerRect = sourceContainer.getBoundingClientRect();
-        if (rect.top >= containerRect.top && rect.top < containerRect.bottom) {
-          visibleTimestamp = row.getAttribute("data-timestamp");
-          break;
-        }
-      }
-
-      if (!visibleTimestamp) return;
-
-      // ターゲット側で最も近いタイムスタンプのエントリを見つける
-      const targetContainer = targetRef.current;
-      const targetRows = targetContainer.querySelectorAll("[data-timestamp]");
-
-      let closestRow: Element | null = null;
-      let closestDiff = Infinity;
-
-      for (const row of targetRows) {
-        const ts = row.getAttribute("data-timestamp");
-        if (!ts) continue;
-        const diff = Math.abs(new Date(ts).getTime() - new Date(visibleTimestamp).getTime());
-        if (diff < closestDiff) {
-          closestDiff = diff;
-          closestRow = row;
-        }
-      }
-
-      if (closestRow) {
-        isScrolling.current = true;
-        closestRow.scrollIntoView({ block: "start" });
-        // スクロール完了後にフラグをリセット
-        setTimeout(() => {
-          isScrolling.current = false;
-        }, 100);
-      }
-    },
-    [syncEnabled, serveData.entries, workerData.entries],
-  );
+  const aiWorkerData = useServerLogs("ai-worker", date);
+  const localWorkerData = useServerLogs("local-worker", date);
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Terminal className="h-5 w-5" />
           Server Logs
         </CardTitle>
-        <Button
-          variant={syncEnabled ? "default" : "outline"}
-          size="sm"
-          onClick={() => setSyncEnabled(!syncEnabled)}
-        >
-          {syncEnabled ? "Time Sync ON" : "Time Sync OFF"}
-        </Button>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-3">
           <LogView
             source="serve"
             entries={serveData.entries}
             loading={serveData.loading}
             error={serveData.error}
             refetch={serveData.refetch}
-            scrollRef={serveRef}
-            onScroll={() => handleScroll("serve")}
           />
           <LogView
-            source="worker"
-            entries={workerData.entries}
-            loading={workerData.loading}
-            error={workerData.error}
-            refetch={workerData.refetch}
-            scrollRef={workerRef}
-            onScroll={() => handleScroll("worker")}
+            source="ai-worker"
+            entries={aiWorkerData.entries}
+            loading={aiWorkerData.loading}
+            error={aiWorkerData.error}
+            refetch={aiWorkerData.refetch}
+          />
+          <LogView
+            source="local-worker"
+            entries={localWorkerData.entries}
+            loading={localWorkerData.loading}
+            error={localWorkerData.error}
+            refetch={localWorkerData.refetch}
           />
         </div>
       </CardContent>
@@ -123,14 +58,37 @@ interface LogViewProps {
   loading: boolean;
   error: string | null;
   refetch: () => void;
-  scrollRef?: React.RefObject<HTMLDivElement | null>;
-  onScroll?: () => void;
 }
 
-function LogView({ source, entries, loading, error, refetch, scrollRef, onScroll }: LogViewProps) {
-  const icon =
-    source === "serve" ? <Server className="h-4 w-4" /> : <Terminal className="h-4 w-4" />;
-  const title = source === "serve" ? "Serve" : "Worker";
+function getSourceIcon(source: LogSource) {
+  switch (source) {
+    case "serve":
+      return <Server className="h-4 w-4" />;
+    case "ai-worker":
+      return <Bot className="h-4 w-4" />;
+    case "local-worker":
+      return <Cpu className="h-4 w-4" />;
+    default:
+      return <Terminal className="h-4 w-4" />;
+  }
+}
+
+function getSourceTitle(source: LogSource) {
+  switch (source) {
+    case "serve":
+      return "Serve";
+    case "ai-worker":
+      return "AI Worker";
+    case "local-worker":
+      return "Local Worker";
+    default:
+      return "Worker";
+  }
+}
+
+function LogView({ source, entries, loading, error, refetch }: LogViewProps) {
+  const icon = getSourceIcon(source);
+  const title = getSourceTitle(source);
 
   return (
     <div className="flex flex-col">
@@ -160,11 +118,7 @@ function LogView({ source, entries, loading, error, refetch, scrollRef, onScroll
           <p>No logs for this date.</p>
         </div>
       ) : (
-        <div
-          ref={scrollRef as React.RefObject<HTMLDivElement>}
-          onScroll={onScroll}
-          className="h-[400px] overflow-y-auto rounded-md border bg-muted/30 p-2 font-mono text-xs"
-        >
+        <div className="h-[400px] overflow-y-auto rounded-md border bg-muted/30 p-2 font-mono text-xs">
           {entries.map((entry, index) => (
             <LogEntryRow key={`${entry.timestamp}-${index}`} entry={entry} />
           ))}

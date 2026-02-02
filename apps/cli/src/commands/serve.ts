@@ -12,6 +12,7 @@ import { startPromptImprovementScheduler } from "../prompt-improvement/scheduler
 import { createApp } from "../server/app.js";
 import { startSlackSystem } from "../slack/scheduler.js";
 import { startScheduler } from "../summarizer/scheduler.js";
+import { initSSENotifier } from "../utils/sse-notifier.js";
 import { startVocabularyExtractScheduler } from "../vocabulary/scheduler.js";
 
 // ファイルログを有効化
@@ -62,28 +63,56 @@ async function checkLocalWorkerConnection(config: AdasConfig): Promise<boolean> 
 }
 
 /**
+ * SSE Server への接続確認を行う
+ */
+async function checkSSEServerConnection(config: AdasConfig): Promise<boolean> {
+  const url = config.sseServer.url;
+  try {
+    const response = await fetch(`${url}/rpc/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(3000),
+    });
+    if (response.ok) {
+      consola.success(`SSE Server connected: ${url}`);
+      return true;
+    }
+    consola.warn(`SSE Server responded with status ${response.status}: ${url}`);
+    return false;
+  } catch (_error) {
+    consola.warn(`SSE Server not available: ${url}`);
+    return false;
+  }
+}
+
+/**
+ * 接続状態の変化をログ出力
+ */
+function logConnectionChange(name: string, isConnected: boolean, wasConnected: boolean): void {
+  if (isConnected && !wasConnected) {
+    consola.success(`${name} connection established`);
+  } else if (!isConnected && wasConnected) {
+    consola.warn(`${name} connection lost`);
+  }
+}
+
+/**
  * 定期的に Worker の接続状態を確認する
  */
 function startWorkerHealthCheck(config: AdasConfig, intervalMs = 30000): void {
-  let wasAIConnected = false;
-  let wasLocalConnected = false;
+  const state = { ai: false, local: false, sse: false };
 
   const check = async () => {
-    const isAIConnected = await checkAIWorkerConnection(config);
-    if (isAIConnected && !wasAIConnected) {
-      consola.success("AI Worker connection established");
-    } else if (!isAIConnected && wasAIConnected) {
-      consola.warn("AI Worker connection lost");
-    }
-    wasAIConnected = isAIConnected;
+    const isAI = await checkAIWorkerConnection(config);
+    logConnectionChange("AI Worker", isAI, state.ai);
+    state.ai = isAI;
 
-    const isLocalConnected = await checkLocalWorkerConnection(config);
-    if (isLocalConnected && !wasLocalConnected) {
-      consola.success("Local Worker connection established");
-    } else if (!isLocalConnected && wasLocalConnected) {
-      consola.warn("Local Worker connection lost");
-    }
-    wasLocalConnected = isLocalConnected;
+    const isLocal = await checkLocalWorkerConnection(config);
+    logConnectionChange("Local Worker", isLocal, state.local);
+    state.local = isLocal;
+
+    const isSSE = await checkSSEServerConnection(config);
+    logConnectionChange("SSE Server", isSSE, state.sse);
+    state.sse = isSSE;
   };
 
   // 定期チェック(初回は既に実行済みなのでスキップ)
@@ -110,9 +139,14 @@ export function registerServeCommand(program: Command): void {
 
       consola.success(`API server running on http://localhost:${port}`);
 
+      // SSE Notifier 初期化
+      initSSENotifier(config);
+      consola.success("SSE Notifier initialized");
+
       // Worker 接続確認
       await checkAIWorkerConnection(config);
       await checkLocalWorkerConnection(config);
+      await checkSSEServerConnection(config);
       startWorkerHealthCheck(config);
 
       startScheduler(db, config);

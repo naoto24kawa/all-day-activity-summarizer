@@ -4,7 +4,7 @@
  * Displays Claude Code sessions grouped by project
  */
 
-import type { ClaudeCodeMessage, ClaudeCodeSession, Project } from "@repo/types";
+import type { ClaudeCodeMessage, ClaudeCodeSession } from "@repo/types";
 import {
   ChevronDown,
   Code,
@@ -15,10 +15,10 @@ import {
   Wrench,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -37,10 +37,9 @@ import {
 } from "@/hooks/use-claude-code-sessions";
 import { useConfig } from "@/hooks/use-config";
 import { useProjects } from "@/hooks/use-projects";
-import { formatTimeShortJST } from "@/lib/date";
+import { formatTimeShortJST, getTodayDateString } from "@/lib/date";
 
 interface ClaudeCodeFeedProps {
-  date: string;
   className?: string;
 }
 
@@ -48,10 +47,10 @@ interface ClaudeCodeFeedProps {
 const DEFAULT_PROJECT_LIMIT = 3;
 const DEFAULT_SESSION_LIMIT = 3;
 
-export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
+export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
+  const date = getTodayDateString();
   const { integrations, loading: configLoading } = useConfig();
-  const { sessions, loading, error, syncSessions, syncing, updateSession } =
-    useClaudeCodeSessions();
+  const { sessions, loading, error, syncSessions, syncing } = useClaudeCodeSessions();
   const { stats } = useClaudeCodeStats(date);
   const { projects } = useProjects();
   const { updatePathProject, getPathProjectId } = useClaudeCodePaths();
@@ -271,9 +270,6 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
                               key={session.sessionId}
                               session={session}
                               onClick={() => setSelectedSession(session)}
-                              onUpdateProject={updateSession}
-                              projects={projects}
-                              inheritedProjectId={pathProjectId}
                             />
                           ))}
                           {hasMoreSessions && (
@@ -331,18 +327,9 @@ export function ClaudeCodeFeed({ date, className }: ClaudeCodeFeedProps) {
 interface SessionItemProps {
   session: ClaudeCodeSession;
   onClick: () => void;
-  onUpdateProject: (id: number, data: { projectId?: number | null }) => void;
-  projects: Project[];
-  inheritedProjectId?: number | null;
 }
 
-function SessionItem({
-  session,
-  onClick,
-  onUpdateProject,
-  projects,
-  inheritedProjectId,
-}: SessionItemProps) {
+function SessionItem({ session, onClick }: SessionItemProps) {
   // Format time
   const startTime = session.startTime ? new Date(session.startTime) : null;
   const endTime = session.endTime ? new Date(session.endTime) : null;
@@ -356,20 +343,6 @@ function SessionItem({
   const duration =
     startTime && endTime ? Math.round((endTime.getTime() - startTime.getTime()) / 60000) : null;
 
-  const activeProjects = projects.filter((p) => p.isActive);
-
-  // 継承の判定: セッション個別設定がなく、パス設定がある場合
-  const isInherited = !session.projectId && inheritedProjectId != null;
-  const effectiveProjectId = session.projectId ?? inheritedProjectId;
-  const inheritedProjectName = isInherited
-    ? projects.find((p) => p.id === inheritedProjectId)?.name
-    : null;
-
-  const handleProjectChange = (value: string) => {
-    const newProjectId = value === "none" ? null : Number(value);
-    onUpdateProject(session.id, { projectId: newProjectId });
-  };
-
   return (
     <div className="rounded-md border p-3 transition-colors hover:bg-muted/50">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -381,42 +354,6 @@ function SessionItem({
             <Badge variant="outline" className="text-xs">
               {duration}min
             </Badge>
-          )}
-          {activeProjects.length > 0 && (
-            <Select
-              value={session.projectId?.toString() ?? "none"}
-              onValueChange={handleProjectChange}
-            >
-              <SelectTrigger
-                className={`h-6 w-[120px] text-xs ${isInherited ? "border-dashed opacity-70" : ""}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <FolderGit2 className="mr-1 h-3 w-3" />
-                <SelectValue
-                  placeholder={
-                    isInherited && inheritedProjectName ? inheritedProjectName : "プロジェクト"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">
-                  {isInherited && inheritedProjectName
-                    ? `なし (継承: ${inheritedProjectName})`
-                    : "なし"}
-                </SelectItem>
-                {activeProjects.map((project) => (
-                  <SelectItem key={project.id} value={project.id.toString()}>
-                    {project.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          {!activeProjects.length && effectiveProjectId && (
-            <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-              <FolderGit2 className="h-3 w-3" />
-              {projects.find((p) => p.id === effectiveProjectId)?.name}
-            </span>
           )}
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">

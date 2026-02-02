@@ -48,7 +48,6 @@ import { getProjectName, useProjects } from "@/hooks/use-projects";
 import { LearningEditDialog } from "./learning-edit-dialog";
 
 interface LearningsFeedProps {
-  date?: string;
   className?: string;
 }
 
@@ -185,9 +184,9 @@ function FilterBar({
   );
 }
 
-export function LearningsFeed({ date, className }: LearningsFeedProps) {
+export function LearningsFeed({ className }: LearningsFeedProps) {
   const { learnings, loading, error, deleteLearning, updateLearning, createLearning, refetch } =
-    useLearnings({ date });
+    useLearnings();
   const { stats, refetch: refetchStats } = useLearningsStats();
   const { projects } = useProjects();
   const {
@@ -230,9 +229,9 @@ export function LearningsFeed({ date, className }: LearningsFeedProps) {
 
   const handleExtractAll = async () => {
     await Promise.all([
-      extractFromTranscriptions(date),
-      extractFromGitHubComments(date),
-      extractFromSlackMessages(date),
+      extractFromTranscriptions(),
+      extractFromGitHubComments(),
+      extractFromSlackMessages(),
     ]);
     refetch();
     refetchStats();
@@ -259,7 +258,6 @@ export function LearningsFeed({ date, className }: LearningsFeedProps) {
     } else {
       await createLearning({
         content: data.content,
-        date,
         category: data.category ?? undefined,
         tags: data.tags,
         projectId: data.projectId ?? undefined,
@@ -269,13 +267,13 @@ export function LearningsFeed({ date, className }: LearningsFeedProps) {
   };
 
   const handleExport = async () => {
-    const data = await exportLearnings({ date });
+    const data = await exportLearnings({});
     if (data) {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `learnings-${date || "all"}-${new Date().toISOString().split("T")[0]}.json`;
+      a.download = `learnings-all-${new Date().toISOString().split("T")[0]}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -438,9 +436,7 @@ export function LearningsFeed({ date, className }: LearningsFeedProps) {
       <CardContent className="min-h-0 flex-1 overflow-auto pt-4">
         {filteredLearnings.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            {date
-              ? "No learnings for this date. Try extracting from the sources above."
-              : "No learnings yet. Use the buttons above to extract learnings from various sources."}
+            No learnings yet. Use the buttons above to extract learnings from various sources.
           </p>
         ) : (
           <div className="space-y-3">

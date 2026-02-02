@@ -5,6 +5,7 @@
  */
 
 export const ADAS_API_URL = import.meta.env.VITE_ADAS_API_URL || "http://localhost:3001";
+export const SSE_SERVER_URL = import.meta.env.VITE_SSE_SERVER_URL || "http://localhost:3002";
 
 /**
  * API エラーレスポンスの型

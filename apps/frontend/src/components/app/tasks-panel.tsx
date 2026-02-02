@@ -37,10 +37,8 @@ import {
   ListTree,
   Loader2,
   MessageSquare,
-  MessageSquareMore,
   Mic,
   Minus,
-  MoreHorizontal,
   Pause,
   Pencil,
   Play,
@@ -103,12 +101,12 @@ import {
 } from "@/hooks/use-prompt-improvements";
 import { useTaskStats, useTasks } from "@/hooks/use-tasks";
 import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
+import { getTodayDateString } from "@/lib/date";
 import { BulkElaborateDialog } from "./bulk-elaborate-dialog";
 import { DuplicateSuggestionsPanel } from "./duplicate-suggestions-panel";
 import { TaskElaborateDialog } from "./task-elaborate-dialog";
 
 interface TasksPanelProps {
-  date: string;
   className?: string;
 }
 
@@ -193,7 +191,8 @@ function getTaskStyle(task: Task, isSelected: boolean, isSuggested?: boolean): s
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complex UI component with many states
-export function TasksPanel({ date, className }: TasksPanelProps) {
+export function TasksPanel({ className }: TasksPanelProps) {
+  const date = getTodayDateString();
   const {
     tasks,
     loading,
@@ -608,7 +607,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
       const { promise, rollback } = updateTaskOptimistic(taskId, updates);
 
       promise
-        .then((result) => {
+        .then(() => {
           const statusLabel = updates.status ? statusLabels[updates.status] : null;
           const message = statusLabel
             ? `「${task?.title ?? "タスク"}」を${statusLabel}に変更しました`
@@ -2428,7 +2427,6 @@ function TaskItem({
                     <DropdownMenuContent align="start">
                       <DropdownMenuItem
                         onClick={() => onUpdateTask(task.id, { status: "pending" })}
-                        className={task.status === "pending" ? "bg-accent" : ""}
                       >
                         <Circle className="mr-2 h-4 w-4 text-orange-500" />
                         承認待ちに戻す

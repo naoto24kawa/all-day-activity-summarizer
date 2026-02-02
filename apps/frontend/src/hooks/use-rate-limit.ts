@@ -2,18 +2,28 @@
  * Rate Limit Hook
  *
  * レート制限の状態を取得・更新
+ * SSE でリアルタイム更新 + 初回フェッチ
  */
 
 import type { RateLimitStatus } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
 import { fetchAdasApi } from "@/lib/adas-api";
-
-const POLL_INTERVAL_MS = 30 * 1000; // 30秒
+import { useSSE } from "./use-sse";
 
 export function useRateLimit() {
   const [status, setStatus] = useState<RateLimitStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // SSE でレート制限更新を受信
+  const handleRateLimitUpdated = useCallback((data: RateLimitStatus) => {
+    setStatus(data);
+    setError(null);
+  }, []);
+
+  useSSE({
+    onRateLimitUpdated: handleRateLimitUpdated,
+  });
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -27,12 +37,9 @@ export function useRateLimit() {
     }
   }, []);
 
-  // 初回と定期ポーリング
+  // 初回フェッチのみ (ポーリングは廃止、SSE に移行)
   useEffect(() => {
     fetchStatus();
-
-    const interval = setInterval(fetchStatus, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
   }, [fetchStatus]);
 
   return {

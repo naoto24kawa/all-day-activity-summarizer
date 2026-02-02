@@ -48,8 +48,9 @@ export function createServerLogsRouter(config?: AdasConfig) {
     const limit = Number(c.req.query("limit")) || 500;
     const offset = Number(c.req.query("offset")) || 0;
 
-    if (source !== "serve" && source !== "worker") {
-      return c.json({ error: "Invalid source. Must be 'serve' or 'worker'" }, 400);
+    const validSources = ["serve", "worker", "ai-worker", "local-worker"];
+    if (!validSources.includes(source)) {
+      return c.json({ error: `Invalid source. Must be one of: ${validSources.join(", ")}` }, 400);
     }
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {

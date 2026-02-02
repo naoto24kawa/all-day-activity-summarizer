@@ -131,6 +131,10 @@ export interface AdasConfig {
       lowest: number;
     };
   };
+  sseServer: {
+    url: string;
+    port: number;
+  };
 }
 
 const ADAS_HOME = join(homedir(), ".adas");
@@ -262,6 +266,10 @@ const defaultConfig: AdasConfig = {
       lowest: 0.6,
     },
   },
+  sseServer: {
+    url: "http://localhost:3002",
+    port: 3002,
+  },
 };
 
 export function getAdasHome(): string {
@@ -321,6 +329,7 @@ export function loadConfig(): AdasConfig {
         ...userConfig.rateLimit?.priorityMultipliers,
       },
     },
+    sseServer: { ...defaultConfig.sseServer, ...userConfig.sseServer },
   };
 
   return applyEnvOverrides(merged);

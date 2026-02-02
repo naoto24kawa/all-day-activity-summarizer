@@ -3,13 +3,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useTranscriptions } from "@/hooks/use-transcriptions";
+import { getTodayDateString } from "@/lib/date";
 
 interface TimelineProps {
-  date: string;
   className?: string;
 }
 
-export function Timeline({ date, className }: TimelineProps) {
+export function Timeline({ className }: TimelineProps) {
+  const date = getTodayDateString();
   const { segments, refetch } = useTranscriptions(date);
 
   const START_HOUR = 9;

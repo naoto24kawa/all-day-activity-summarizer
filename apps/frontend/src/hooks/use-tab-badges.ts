@@ -1,13 +1,15 @@
 /**
  * Tab Badges Hook
  * 各タブのバッジカウントを取得するフック
+ * SSE でリアルタイム更新 + 初回フェッチ
  */
 
-import type { TaskStats } from "@repo/types";
+import type { BadgesData, TaskStats } from "@repo/types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchAdasApi } from "@/lib/adas-api";
 import { TAB_GROUPS, type TabGroupId } from "@/lib/tab-groups";
 import type { LearningsStats } from "./use-learnings";
+import { useSSE } from "./use-sse";
 
 export interface TabBadges {
   tasks: number; // pending タスク数
@@ -41,6 +43,21 @@ export function useTabBadges(date?: string) {
     github: 0,
   });
 
+  // SSE でバッジ更新を受信
+  const handleBadgesUpdated = useCallback((data: BadgesData) => {
+    setBadges({
+      tasks: data.tasks.pending,
+      learnings: data.learnings.dueForReview,
+      slack: data.slack.unread,
+      github: data.github.unread,
+    });
+  }, []);
+
+  useSSE({
+    onBadgesUpdated: handleBadgesUpdated,
+  });
+
+  // 初回フェッチ (SSE 接続前のデータ取得)
   const fetchBadges = useCallback(async () => {
     try {
       const params = new URLSearchParams();
@@ -68,10 +85,9 @@ export function useTabBadges(date?: string) {
     }
   }, [date]);
 
+  // 初回フェッチのみ (ポーリングは廃止、SSE に移行)
   useEffect(() => {
     fetchBadges();
-    const interval = setInterval(fetchBadges, 30_000);
-    return () => clearInterval(interval);
   }, [fetchBadges]);
 
   // グループごとのバッジ集計

@@ -9,15 +9,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEvaluatorLogs } from "@/hooks/use-evaluator-logs";
 import { useFeedbacks } from "@/hooks/use-feedbacks";
-import { formatTimeJST } from "@/lib/date";
+import { formatTimeJST, getTodayDateString } from "@/lib/date";
 
 type Filter = "all" | "hallucination" | "legitimate";
 
-interface EvaluatorLogPanelProps {
-  date: string;
-}
+type EvaluatorLogPanelProps = {};
 
-export function EvaluatorLogPanel({ date }: EvaluatorLogPanelProps) {
+export function EvaluatorLogPanel(_props: EvaluatorLogPanelProps) {
+  const date = getTodayDateString();
   const { logs, loading, error, refetch } = useEvaluatorLogs(date);
   const { getFeedback, postFeedback } = useFeedbacks("evaluator_log", date);
   const [filter, setFilter] = useState<Filter>("all");

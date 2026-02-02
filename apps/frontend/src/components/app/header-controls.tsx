@@ -17,7 +17,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useBrowserRecording } from "@/hooks/use-browser-recording";
@@ -29,12 +28,10 @@ import { ThemeToggle } from "./theme-toggle";
 
 interface HeaderControlsProps {
   now: Date;
-  date: string;
-  onDateChange: (date: string) => void;
   jobStats?: AIJobStats | null;
 }
 
-export function HeaderControls({ now, date, onDateChange, jobStats }: HeaderControlsProps) {
+export function HeaderControls({ now, jobStats }: HeaderControlsProps) {
   const { integrations } = useConfig();
   const browserRecording = useBrowserRecording();
   const [micLoading, setMicLoading] = useState(false);
@@ -227,15 +224,9 @@ export function HeaderControls({ now, date, onDateChange, jobStats }: HeaderCont
 
       <div className="flex-1" />
 
-      {/* Time, Date & Theme */}
+      {/* Time & Theme */}
       <div className="flex items-center gap-3">
         <span className="font-mono text-muted-foreground">{formatTimeJST(now)}</span>
-        <Input
-          type="date"
-          value={date}
-          onChange={(e) => onDateChange(e.target.value)}
-          className="h-8 w-auto text-sm"
-        />
         <ThemeToggle />
       </div>
     </div>

@@ -15,6 +15,7 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@repo/core": "workspace:*",
     "@repo/db": "workspace:*",
+    "@repo/sse-server": "workspace:*",
     "@repo/types": "workspace:*",
     "commander": "^14.0.0",
     "consola": "^3.4.2",

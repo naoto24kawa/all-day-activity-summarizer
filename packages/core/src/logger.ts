@@ -15,7 +15,7 @@ const LOG_LEVEL_LABELS: Record<number, string> = {
   5: "TRACE",
 };
 
-export type LogSource = "serve" | "worker" | "ai-worker" | "local-worker";
+export type LogSource = "serve" | "worker" | "ai-worker" | "local-worker" | "sse-server";
 
 let currentSource: LogSource = "serve";
 let initialized = false;
@@ -98,7 +98,7 @@ export function listLogFiles(): LogFileInfo[] {
 
       // ファイル名パターン: {source}-{YYYY}-{MM}-{DD}.log または adas-{YYYY}-{MM}-{DD}.log (レガシー)
       const match = file.name.match(
-        /^(serve|worker|ai-worker|local-worker|adas)-(\d{4})-(\d{2})-(\d{2})\.log$/,
+        /^(serve|worker|ai-worker|local-worker|sse-server|adas)-(\d{4})-(\d{2})-(\d{2})\.log$/,
       );
       if (!match) continue;
 

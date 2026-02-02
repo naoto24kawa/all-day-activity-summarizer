@@ -25,7 +25,6 @@ const SOURCE_OPTIONS = ["all", "manual", "transcribe", "feedback", "interpret"] 
 type SourceFilter = (typeof SOURCE_OPTIONS)[number];
 
 interface VocabularyPanelProps {
-  date?: string;
   className?: string;
 }
 
@@ -35,7 +34,7 @@ interface EditForm {
   category: string;
 }
 
-export function VocabularyPanel({ date, className }: VocabularyPanelProps) {
+export function VocabularyPanel({ className }: VocabularyPanelProps) {
   const { terms, loading, error, addTerm, updateTerm, removeTerm, refresh } = useVocabulary();
   const [newTerm, setNewTerm] = useState("");
   const [newReading, setNewReading] = useState("");
@@ -51,7 +50,7 @@ export function VocabularyPanel({ date, className }: VocabularyPanelProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; term: string } | null>(null);
 
-  const targetDate = date ?? getTodayDateString();
+  const targetDate = getTodayDateString();
 
   // カテゴリ一覧を動的に取得
   const categories = useMemo(() => {

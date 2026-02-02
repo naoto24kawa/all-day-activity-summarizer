@@ -16,19 +16,20 @@ import { SummaryFeedbackDialog } from "@/components/app/summary-feedback-dialog"
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFeedbacks } from "@/hooks/use-feedbacks";
 import { useJobProgress } from "@/hooks/use-job-progress";
 import { useSummaries } from "@/hooks/use-summaries";
-import { formatTimeJST } from "@/lib/date";
+import { formatTimeJST, getTodayDateString } from "@/lib/date";
 
 interface SummaryViewProps {
-  date: string;
   className?: string;
 }
 
-export function SummaryView({ date, className }: SummaryViewProps) {
+export function SummaryView({ className }: SummaryViewProps) {
+  const [date, setDate] = useState(getTodayDateString());
   const {
     summaries: timesSummaries,
     loading: timesLoading,
@@ -103,6 +104,12 @@ export function SummaryView({ date, className }: SummaryViewProps) {
             Summaries
           </CardTitle>
           <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="h-8 w-auto text-sm"
+            />
             <Button size="sm" variant="outline" onClick={handleGenerate} disabled={generating}>
               <Sparkles className={`mr-1 h-3 w-3 ${generating ? "animate-pulse" : ""}`} />
               {generating ? "Generating..." : "Generate"}

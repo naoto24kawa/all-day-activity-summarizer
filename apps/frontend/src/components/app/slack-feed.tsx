@@ -28,6 +28,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SegmentedTabContent, SegmentedTabs } from "@/components/ui/segmented-tabs";
 import {
   Select,
   SelectContent,
@@ -36,20 +37,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfig } from "@/hooks/use-config";
 import { useProjects } from "@/hooks/use-projects";
 import { useSlackChannels } from "@/hooks/use-slack-channels";
 import { useSlackMessages, useSlackUnreadCounts } from "@/hooks/use-slack-messages";
 import { useSlackUsers } from "@/hooks/use-slack-users";
-import { formatSlackTsJST } from "@/lib/date";
+import { formatSlackTsJST, getTodayDateString } from "@/lib/date";
 
 interface SlackFeedProps {
-  date: string;
   className?: string;
 }
 
-export function SlackFeed({ date, className }: SlackFeedProps) {
+export function SlackFeed({ className }: SlackFeedProps) {
+  const date = getTodayDateString();
   const { integrations, loading: configLoading } = useConfig();
   const { messages, loading, error, refetch, markAsRead, markAllAsRead, updateMessage } =
     useSlackMessages();
@@ -58,6 +58,8 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
   const { updateChannelProject, getChannelProjectId } = useSlackChannels();
   const { users, loading: usersLoading, updateDisplayName, resetDisplayName } = useSlackUsers();
 
+  // タブ状態
+  const [activeTab, setActiveTab] = useState("mention");
   // Slack Users Popover state
   const [usersPopoverOpen, setUsersPopoverOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -302,46 +304,19 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
         {messages.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Slack messages for this date.</p>
         ) : (
-          <Tabs defaultValue="mention" className="flex min-h-0 flex-1 flex-col">
-            <TabsList className="shrink-0">
-              <TabsTrigger value="mention" className="flex items-center gap-1">
-                <AtSign className="h-3 w-3" />
-                Mentions
-                {counts.mention > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
-                    {counts.mention}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="channel" className="flex items-center gap-1">
-                <Hash className="h-3 w-3" />
-                Channels
-                {counts.channel > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
-                    {counts.channel}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="dm" className="flex items-center gap-1">
-                <MessageSquare className="h-3 w-3" />
-                DMs
-                {counts.dm > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
-                    {counts.dm}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="keyword" className="flex items-center gap-1">
-                <Search className="h-3 w-3" />
-                Keywords
-                {counts.keyword > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
-                    {counts.keyword}
-                  </Badge>
-                )}
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="mention" className="min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <SegmentedTabs
+              tabs={[
+                { id: "mention", label: "Mentions", icon: AtSign, badge: counts.mention },
+                { id: "channel", label: "Channels", icon: Hash, badge: counts.channel },
+                { id: "dm", label: "DMs", icon: MessageSquare, badge: counts.dm },
+                { id: "keyword", label: "Keywords", icon: Search, badge: counts.keyword },
+              ]}
+              value={activeTab}
+              onValueChange={setActiveTab}
+              className="mb-2 shrink-0"
+            />
+            <SegmentedTabContent value="mention" activeValue={activeTab}>
               <GroupedMessageList
                 messages={mentionMessages}
                 onMarkAsRead={markAsRead}
@@ -350,8 +325,8 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
                 getChannelProjectId={getChannelProjectId}
                 projects={projects}
               />
-            </TabsContent>
-            <TabsContent value="channel" className="min-h-0 flex-1">
+            </SegmentedTabContent>
+            <SegmentedTabContent value="channel" activeValue={activeTab}>
               <GroupedMessageList
                 messages={channelMessages}
                 onMarkAsRead={markAsRead}
@@ -360,8 +335,8 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
                 getChannelProjectId={getChannelProjectId}
                 projects={projects}
               />
-            </TabsContent>
-            <TabsContent value="dm" className="min-h-0 flex-1">
+            </SegmentedTabContent>
+            <SegmentedTabContent value="dm" activeValue={activeTab}>
               <GroupedMessageList
                 messages={dmMessages}
                 onMarkAsRead={markAsRead}
@@ -371,8 +346,8 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
                 projects={projects}
                 isDM
               />
-            </TabsContent>
-            <TabsContent value="keyword" className="min-h-0 flex-1">
+            </SegmentedTabContent>
+            <SegmentedTabContent value="keyword" activeValue={activeTab}>
               <GroupedMessageList
                 messages={keywordMessages}
                 onMarkAsRead={markAsRead}
@@ -381,8 +356,8 @@ export function SlackFeed({ date, className }: SlackFeedProps) {
                 getChannelProjectId={getChannelProjectId}
                 projects={projects}
               />
-            </TabsContent>
-          </Tabs>
+            </SegmentedTabContent>
+          </div>
         )}
       </CardContent>
     </Card>

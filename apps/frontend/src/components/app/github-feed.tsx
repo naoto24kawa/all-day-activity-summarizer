@@ -2,6 +2,7 @@
  * GitHub Feed Component
  *
  * Displays GitHub issues, PRs, and review requests grouped by repository
+ * Comments are shown under their respective Issue/PR
  */
 
 import type { GitHubComment, GitHubItem, Project } from "@repo/types";
@@ -27,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { SegmentedTabContent, SegmentedTabs } from "@/components/ui/segmented-tabs";
 import {
   Select,
   SelectContent,
@@ -35,7 +37,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfig } from "@/hooks/use-config";
 import {
   useGitHubComments,
@@ -45,14 +46,14 @@ import {
 } from "@/hooks/use-github";
 import { useProjects } from "@/hooks/use-projects";
 import { postAdasApi } from "@/lib/adas-api";
-import { formatGitHubDateJST } from "@/lib/date";
+import { formatGitHubDateJST, getTodayDateString } from "@/lib/date";
 
 interface GitHubFeedProps {
-  date: string;
   className?: string;
 }
 
-export function GitHubFeed({ date, className }: GitHubFeedProps) {
+export function GitHubFeed({ className }: GitHubFeedProps) {
+  const date = getTodayDateString();
   const { integrations, loading: configLoading } = useConfig();
   const { items, loading, error, refetch, markAsRead, markAllAsRead } = useGitHubItems();
   const { counts } = useGitHubUnreadCounts(date);
@@ -62,6 +63,7 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
   // プロジェクト管理
   const { projects: allProjects, updateProject } = useProjects(false);
   const [syncing, setSyncing] = useState(false);
+  const [activeTab, setActiveTab] = useState("issues");
 
   // アクティブなプロジェクト一覧 (紐付け先選択用)
   const activeProjects = useMemo(
@@ -80,6 +82,26 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
     }
     return map;
   }, [allProjects]);
+
+  // コメントを Item に紐づけるためのマップを作成
+  // キー: `${repoOwner}/${repoName}#${itemNumber}`
+  const commentsByItem = useMemo(() => {
+    const map = new Map<string, GitHubComment[]>();
+    for (const comment of comments) {
+      const key = `${comment.repoOwner}/${comment.repoName}#${comment.itemNumber}`;
+      const existing = map.get(key) ?? [];
+      existing.push(comment);
+      map.set(key, existing);
+    }
+    return map;
+  }, [comments]);
+
+  // Item ごとのコメント未読数を計算
+  const getItemCommentUnreadCount = (item: GitHubItem): number => {
+    const key = `${item.repoOwner}/${item.repoName}#${item.number}`;
+    const itemComments = commentsByItem.get(key) ?? [];
+    return itemComments.filter((c) => !c.isRead).length;
+  };
 
   const syncProjects = async () => {
     setSyncing(true);
@@ -143,7 +165,7 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
     );
   }
 
-  if (loading) {
+  if (loading || commentsLoading) {
     return (
       <Card>
         <CardHeader>
@@ -181,6 +203,16 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
   const pullRequests = items.filter((i) => i.itemType === "pull_request" && !i.isReviewRequested);
   const reviewRequests = items.filter((i) => i.itemType === "pull_request" && i.isReviewRequested);
 
+  // タブごとのバッジ (Item 未読 + コメント未読)
+  const issuesBadge =
+    counts.issue + issues.reduce((acc, item) => acc + getItemCommentUnreadCount(item), 0);
+  const prsBadge =
+    counts.pullRequest +
+    pullRequests.reduce((acc, item) => acc + getItemCommentUnreadCount(item), 0);
+  const reviewsBadge =
+    counts.reviewRequest +
+    reviewRequests.reduce((acc, item) => acc + getItemCommentUnreadCount(item), 0);
+
   const totalUnread = counts.total + commentCounts.total;
 
   return (
@@ -208,93 +240,57 @@ export function GitHubFeed({ date, className }: GitHubFeedProps) {
         </div>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col">
-        {items.length === 0 && comments.length === 0 ? (
+        {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">No GitHub activity for this date.</p>
         ) : (
-          <Tabs defaultValue="issues" className="flex min-h-0 flex-1 flex-col">
-            <TabsList className="shrink-0">
-              <TabsTrigger value="issues" className="flex items-center gap-1">
-                <CircleDot className="h-3 w-3" />
-                Issues
-                {counts.issue > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
-                    {counts.issue}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="prs" className="flex items-center gap-1">
-                <GitPullRequest className="h-3 w-3" />
-                PRs
-                {counts.pullRequest > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
-                    {counts.pullRequest}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="reviews" className="flex items-center gap-1">
-                <Eye className="h-3 w-3" />
-                Reviews
-                {counts.reviewRequest > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
-                    {counts.reviewRequest}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="comments" className="flex items-center gap-1">
-                <MessageSquare className="h-3 w-3" />
-                Comments
-                {commentCounts.total > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
-                    {commentCounts.total}
-                  </Badge>
-                )}
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="issues" className="min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <SegmentedTabs
+              tabs={[
+                { id: "issues", label: "Issues", icon: CircleDot, badge: issuesBadge },
+                { id: "prs", label: "PRs", icon: GitPullRequest, badge: prsBadge },
+                { id: "reviews", label: "Reviews", icon: Eye, badge: reviewsBadge },
+              ]}
+              value={activeTab}
+              onValueChange={setActiveTab}
+              className="mb-2 shrink-0"
+            />
+            <SegmentedTabContent value="issues" activeValue={activeTab}>
               <RepoGroupedItemList
                 items={issues}
+                commentsByItem={commentsByItem}
                 repoToProjectMap={repoToProjectMap}
                 activeProjects={activeProjects}
                 onMarkAsRead={markAsRead}
+                onMarkCommentAsRead={markCommentAsRead}
                 onProjectChange={handleRepoProjectChange}
                 syncing={syncing}
               />
-            </TabsContent>
-            <TabsContent value="prs" className="min-h-0 flex-1">
+            </SegmentedTabContent>
+            <SegmentedTabContent value="prs" activeValue={activeTab}>
               <RepoGroupedItemList
                 items={pullRequests}
+                commentsByItem={commentsByItem}
                 repoToProjectMap={repoToProjectMap}
                 activeProjects={activeProjects}
                 onMarkAsRead={markAsRead}
+                onMarkCommentAsRead={markCommentAsRead}
                 onProjectChange={handleRepoProjectChange}
                 syncing={syncing}
               />
-            </TabsContent>
-            <TabsContent value="reviews" className="min-h-0 flex-1">
+            </SegmentedTabContent>
+            <SegmentedTabContent value="reviews" activeValue={activeTab}>
               <RepoGroupedItemList
                 items={reviewRequests}
+                commentsByItem={commentsByItem}
                 repoToProjectMap={repoToProjectMap}
                 activeProjects={activeProjects}
                 onMarkAsRead={markAsRead}
+                onMarkCommentAsRead={markCommentAsRead}
                 onProjectChange={handleRepoProjectChange}
                 syncing={syncing}
               />
-            </TabsContent>
-            <TabsContent value="comments" className="min-h-0 flex-1">
-              {commentsLoading ? (
-                <Skeleton className="h-16 w-full" />
-              ) : (
-                <RepoGroupedCommentList
-                  comments={comments}
-                  repoToProjectMap={repoToProjectMap}
-                  activeProjects={activeProjects}
-                  onMarkAsRead={markCommentAsRead}
-                  onProjectChange={handleRepoProjectChange}
-                  syncing={syncing}
-                />
-              )}
-            </TabsContent>
-          </Tabs>
+            </SegmentedTabContent>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -314,16 +310,20 @@ interface RepoGroup {
 
 function RepoGroupedItemList({
   items,
+  commentsByItem,
   repoToProjectMap,
   activeProjects,
   onMarkAsRead,
+  onMarkCommentAsRead,
   onProjectChange,
   syncing,
 }: {
   items: GitHubItem[];
+  commentsByItem: Map<string, GitHubComment[]>;
   repoToProjectMap: Map<string, { projectId: number; projectName: string }>;
   activeProjects: Project[];
   onMarkAsRead: (id: number) => void;
+  onMarkCommentAsRead: (id: number) => void;
   onProjectChange: (
     repoOwner: string,
     repoName: string,
@@ -397,10 +397,12 @@ function RepoGroupedItemList({
           <RepoCollapsible
             key={group.repoKey}
             group={group}
+            commentsByItem={commentsByItem}
             isOpen={openGroups.has(group.repoKey)}
             onToggle={() => toggleGroup(group.repoKey)}
             activeProjects={activeProjects}
             onMarkAsRead={onMarkAsRead}
+            onMarkCommentAsRead={onMarkCommentAsRead}
             onProjectChange={onProjectChange}
             syncing={syncing}
           />
@@ -412,18 +414,22 @@ function RepoGroupedItemList({
 
 function RepoCollapsible({
   group,
+  commentsByItem,
   isOpen,
   onToggle,
   activeProjects,
   onMarkAsRead,
+  onMarkCommentAsRead,
   onProjectChange,
   syncing,
 }: {
   group: RepoGroup;
+  commentsByItem: Map<string, GitHubComment[]>;
   isOpen: boolean;
   onToggle: () => void;
   activeProjects: Project[];
   onMarkAsRead: (id: number) => void;
+  onMarkCommentAsRead: (id: number) => void;
   onProjectChange: (
     repoOwner: string,
     repoName: string,
@@ -475,9 +481,19 @@ function RepoCollapsible({
       </div>
       <CollapsibleContent>
         <div className="mt-2 space-y-3 pl-6">
-          {group.items.map((item) => (
-            <GitHubItemCard key={item.id} item={item} onMarkAsRead={onMarkAsRead} />
-          ))}
+          {group.items.map((item) => {
+            const key = `${item.repoOwner}/${item.repoName}#${item.number}`;
+            const itemComments = commentsByItem.get(key) ?? [];
+            return (
+              <GitHubItemCard
+                key={item.id}
+                item={item}
+                comments={itemComments}
+                onMarkAsRead={onMarkAsRead}
+                onMarkCommentAsRead={onMarkCommentAsRead}
+              />
+            );
+          })}
         </div>
       </CollapsibleContent>
     </Collapsible>
@@ -486,11 +502,18 @@ function RepoCollapsible({
 
 function GitHubItemCard({
   item,
+  comments,
   onMarkAsRead,
+  onMarkCommentAsRead,
 }: {
   item: GitHubItem;
+  comments: GitHubComment[];
   onMarkAsRead: (id: number) => void;
+  onMarkCommentAsRead: (id: number) => void;
 }) {
+  const [showComments, setShowComments] = useState(false);
+  const unreadCommentCount = comments.filter((c) => !c.isRead).length;
+
   const getStateIcon = () => {
     if (item.state === "merged") {
       return <GitMerge className="h-4 w-4 text-purple-500" />;
@@ -508,7 +531,7 @@ function GitHubItemCard({
 
   return (
     <div
-      className={`rounded-md border p-3 ${item.isRead ? "opacity-60" : "border-primary/30 bg-primary/5"}`}
+      className={`rounded-md border p-3 ${item.isRead && unreadCommentCount === 0 ? "opacity-60" : "border-primary/30 bg-primary/5"}`}
     >
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -578,190 +601,40 @@ function GitHubItemCard({
           </Badge>
         )}
       </div>
-    </div>
-  );
-}
 
-/** コメント用リポジトリ別グループ */
-interface CommentRepoGroup {
-  repoKey: string;
-  repoOwner: string;
-  repoName: string;
-  projectId: number | null;
-  projectName: string | null;
-  comments: GitHubComment[];
-  unreadCount: number;
-}
-
-function RepoGroupedCommentList({
-  comments,
-  repoToProjectMap,
-  activeProjects,
-  onMarkAsRead,
-  onProjectChange,
-  syncing,
-}: {
-  comments: GitHubComment[];
-  repoToProjectMap: Map<string, { projectId: number; projectName: string }>;
-  activeProjects: Project[];
-  onMarkAsRead: (id: number) => void;
-  onProjectChange: (
-    repoOwner: string,
-    repoName: string,
-    currentProjectId: number | null,
-    newProjectIdStr: string,
-  ) => void;
-  syncing: boolean;
-}) {
-  // リポジトリ別にグループ化
-  const groups = useMemo((): CommentRepoGroup[] => {
-    const groupMap = new Map<string, GitHubComment[]>();
-
-    for (const comment of comments) {
-      const key = `${comment.repoOwner}/${comment.repoName}`;
-      const existing = groupMap.get(key) ?? [];
-      existing.push(comment);
-      groupMap.set(key, existing);
-    }
-
-    const result: CommentRepoGroup[] = [];
-
-    for (const [repoKey, groupComments] of groupMap.entries()) {
-      const [repoOwner, repoName] = repoKey.split("/");
-      const projectInfo = repoToProjectMap.get(repoKey);
-      result.push({
-        repoKey,
-        repoOwner: repoOwner ?? "",
-        repoName: repoName ?? "",
-        projectId: projectInfo?.projectId ?? null,
-        projectName: projectInfo?.projectName ?? null,
-        comments: groupComments,
-        unreadCount: groupComments.filter((c) => !c.isRead).length,
-      });
-    }
-
-    // リポジトリ名でソート
-    result.sort((a, b) => a.repoKey.localeCompare(b.repoKey));
-
-    return result;
-  }, [comments, repoToProjectMap]);
-
-  // 開閉状態を管理
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
-    const initial = new Set<string>();
-    for (const g of groups) {
-      initial.add(g.repoKey);
-    }
-    return initial;
-  });
-
-  const toggleGroup = (repoKey: string) => {
-    setOpenGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(repoKey)) {
-        next.delete(repoKey);
-      } else {
-        next.add(repoKey);
-      }
-      return next;
-    });
-  };
-
-  if (comments.length === 0) {
-    return <p className="py-4 text-center text-sm text-muted-foreground">No comments.</p>;
-  }
-
-  return (
-    <div className="h-full overflow-y-auto">
-      <div className="space-y-2">
-        {groups.map((group) => (
-          <CommentRepoCollapsible
-            key={group.repoKey}
-            group={group}
-            isOpen={openGroups.has(group.repoKey)}
-            onToggle={() => toggleGroup(group.repoKey)}
-            activeProjects={activeProjects}
-            onMarkAsRead={onMarkAsRead}
-            onProjectChange={onProjectChange}
-            syncing={syncing}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CommentRepoCollapsible({
-  group,
-  isOpen,
-  onToggle,
-  activeProjects,
-  onMarkAsRead,
-  onProjectChange,
-  syncing,
-}: {
-  group: CommentRepoGroup;
-  isOpen: boolean;
-  onToggle: () => void;
-  activeProjects: Project[];
-  onMarkAsRead: (id: number) => void;
-  onProjectChange: (
-    repoOwner: string,
-    repoName: string,
-    currentProjectId: number | null,
-    newProjectIdStr: string,
-  ) => void;
-  syncing: boolean;
-}) {
-  return (
-    <Collapsible open={isOpen} onOpenChange={onToggle}>
-      <div className="flex items-center gap-2 rounded-md border p-2 hover:bg-muted/50">
-        <CollapsibleTrigger className="flex flex-1 items-center gap-2">
-          {isOpen ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+      {/* コメントセクション */}
+      {comments.length > 0 && (
+        <div className="mt-3 border-t pt-2">
+          <button
+            type="button"
+            onClick={() => setShowComments(!showComments)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <MessageSquare className="h-3 w-3" />
+            {comments.length} comment{comments.length !== 1 ? "s" : ""}
+            {unreadCommentCount > 0 && (
+              <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
+                {unreadCommentCount} new
+              </Badge>
+            )}
+            <ChevronDown
+              className={`h-3 w-3 transition-transform ${showComments ? "rotate-180" : ""}`}
+            />
+          </button>
+          {showComments && (
+            <div className="mt-2 space-y-2">
+              {comments.map((comment) => (
+                <GitHubCommentCard
+                  key={comment.id}
+                  comment={comment}
+                  onMarkAsRead={onMarkCommentAsRead}
+                />
+              ))}
+            </div>
           )}
-          <FolderGit2 className="h-4 w-4 text-muted-foreground" />
-          <span className="truncate text-sm font-medium">{group.repoKey}</span>
-          <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-            {group.comments.length}
-          </Badge>
-          {group.unreadCount > 0 && (
-            <Badge variant="destructive" className="h-5 px-1.5 text-xs">
-              {group.unreadCount} unread
-            </Badge>
-          )}
-        </CollapsibleTrigger>
-        {/* プロジェクト Select */}
-        <Select
-          value={group.projectId?.toString() ?? "none"}
-          onValueChange={(value) =>
-            onProjectChange(group.repoOwner, group.repoName, group.projectId, value)
-          }
-          disabled={syncing}
-        >
-          <SelectTrigger className="h-7 w-[130px] text-xs" onClick={(e) => e.stopPropagation()}>
-            <SelectValue placeholder="Project" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">なし</SelectItem>
-            {activeProjects.map((project) => (
-              <SelectItem key={project.id} value={project.id.toString()}>
-                {project.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <CollapsibleContent>
-        <div className="mt-2 space-y-3 pl-6">
-          {group.comments.map((comment) => (
-            <GitHubCommentCard key={comment.id} comment={comment} onMarkAsRead={onMarkAsRead} />
-          ))}
         </div>
-      </CollapsibleContent>
-    </Collapsible>
+      )}
+    </div>
   );
 }
 
@@ -781,24 +654,25 @@ function GitHubCommentCard({
 
   return (
     <div
-      className={`rounded-md border p-3 ${comment.isRead ? "opacity-60" : "border-primary/30 bg-primary/5"}`}
+      className={`rounded-md border p-2 text-xs ${comment.isRead ? "opacity-60" : "border-primary/30 bg-primary/5"}`}
     >
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs font-medium text-muted-foreground">#{comment.itemNumber}</span>
           <Badge variant="outline" className="text-xs">
             {getTypeLabel()}
           </Badge>
+          {comment.authorLogin && (
+            <span className="text-muted-foreground">@{comment.authorLogin}</span>
+          )}
           {comment.githubCreatedAt && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-muted-foreground">
               {formatGitHubDateJST(comment.githubCreatedAt)}
             </span>
           )}
         </div>
         <div className="flex items-center gap-1">
           {comment.url && (
-            <Button variant="ghost" size="icon" className="h-6 w-6" asChild>
+            <Button variant="ghost" size="icon" className="h-5 w-5" asChild>
               <a href={comment.url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="h-3 w-3" />
               </a>
@@ -808,7 +682,7 @@ function GitHubCommentCard({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6"
+              className="h-5 w-5"
               onClick={() => onMarkAsRead(comment.id)}
               title="Mark as read"
             >
@@ -817,12 +691,7 @@ function GitHubCommentCard({
           )}
         </div>
       </div>
-      {comment.authorLogin && (
-        <Badge variant="secondary" className="mb-2 text-xs">
-          @{comment.authorLogin}
-        </Badge>
-      )}
-      <p className="line-clamp-3 whitespace-pre-wrap text-sm">{comment.body}</p>
+      <p className="line-clamp-2 whitespace-pre-wrap">{comment.body}</p>
     </div>
   );
 }

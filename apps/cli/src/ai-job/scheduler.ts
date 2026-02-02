@@ -5,11 +5,13 @@
  */
 
 import type { AdasDatabase } from "@repo/db";
+import type { AIJob } from "@repo/types";
 import consola from "consola";
 import type { AdasConfig } from "../config.js";
 import { cleanupOldUsage } from "../utils/rate-limiter.js";
+import { getSSENotifier } from "../utils/sse-notifier.js";
 import { registerAllHandlers } from "./handlers/index.js";
-import { cleanupOldJobs } from "./queue.js";
+import { cleanupOldJobs, getJob } from "./queue.js";
 import { processJob } from "./worker.js";
 
 const POLL_INTERVAL_MS = 10 * 1000; // 10秒
@@ -39,14 +41,35 @@ export function addJobCompletedListener(listener: JobCompletedListener): () => v
 }
 
 /**
- * ジョブ完了を通知
+ * ジョブ完了を通知 (リスナー + SSE)
  */
-function notifyJobCompleted(jobId: number, jobType: string, resultSummary: string | null): void {
+async function notifyJobCompleted(
+  db: AdasDatabase,
+  jobId: number,
+  jobType: string,
+  resultSummary: string | null,
+): Promise<void> {
+  // レガシーリスナーへの通知
   for (const listener of completedListeners) {
     try {
       listener(jobId, jobType, resultSummary);
     } catch (err) {
       consola.error("[ai-job] Listener error:", err);
+    }
+  }
+
+  // SSE 経由で通知
+  const notifier = getSSENotifier();
+  if (notifier) {
+    try {
+      const job = getJob(db, jobId);
+      if (job) {
+        await notifier.emitJobCompleted(job as AIJob);
+        // バッジも更新 (タスク抽出などで変わる可能性)
+        await notifier.emitBadgesUpdated(db);
+      }
+    } catch (err) {
+      consola.debug("[ai-job] SSE notify error:", err);
     }
   }
 }
@@ -79,7 +102,7 @@ export function startAIJobScheduler(db: AdasDatabase, config: AdasConfig): () =>
 
         // 完了/失敗を通知
         if (result.jobId && result.jobType) {
-          notifyJobCompleted(result.jobId, result.jobType, result.resultSummary ?? null);
+          void notifyJobCompleted(db, result.jobId, result.jobType, result.resultSummary ?? null);
         }
 
         processedCount++;

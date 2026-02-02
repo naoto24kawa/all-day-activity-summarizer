@@ -7,9 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAiProcessingLogs } from "@/hooks/use-ai-processing-logs";
+import { getTodayDateString } from "@/lib/date";
 
 interface AiProcessingLogPanelProps {
-  date: string;
+  className?: string;
 }
 
 const PROCESS_TYPE_LABELS: Record<AiProcessType, string> = {
@@ -40,7 +41,8 @@ const PROCESS_TYPE_COLORS: Record<AiProcessType, string> = {
   "match-channels": "text-teal-500",
 };
 
-export function AiProcessingLogPanel({ date }: AiProcessingLogPanelProps) {
+export function AiProcessingLogPanel(_props: AiProcessingLogPanelProps) {
+  const date = getTodayDateString();
   const [filter, setFilter] = useState<AiProcessType | "all">("all");
 
   const { logs, loading, error, refetch } = useAiProcessingLogs({

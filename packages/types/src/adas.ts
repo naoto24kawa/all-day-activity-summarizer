@@ -1580,3 +1580,47 @@ export interface RpcTokenizeResponse {
   /** トークン総数 */
   tokenCount: number;
 }
+
+// ========== SSE (Server-Sent Events) 型定義 ==========
+
+/** SSE イベント種別 */
+export type SSEEventType =
+  | "connected"
+  | "heartbeat"
+  | "badges_updated"
+  | "job_completed"
+  | "rate_limit_updated";
+
+/** バッジデータ */
+export interface BadgesData {
+  tasks: { pending: number };
+  learnings: { dueForReview: number };
+  slack: { unread: number };
+  github: { unread: number };
+}
+
+/** SSE RPC emit リクエスト */
+export interface SSEEmitRequest {
+  event: SSEEventType;
+  data: unknown;
+}
+
+/** SSE RPC emit レスポンス */
+export interface SSEEmitResponse {
+  ok: boolean;
+  sent: number;
+  failed: number;
+}
+
+/** SSE 接続イベントデータ */
+export interface SSEConnectedData {
+  clientId: string;
+}
+
+/** SSE ジョブ完了イベントデータ */
+export interface SSEJobCompletedData {
+  jobId: number;
+  jobType: AIJobType;
+  status: AIJobStatus;
+  resultSummary: string | null;
+}

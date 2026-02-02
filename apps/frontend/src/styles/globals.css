@@ -3,50 +3,86 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Cool & Professional Theme
+ * - Primary: ブルー系 (アクションカラー)
+ * - Accent: シアン (ハイライト)
+ * - 明確なカード境界とコントラスト
+ */
+
 @theme {
-  --color-background: oklch(1 0 0);
-  --color-foreground: oklch(0.145 0.005 285.823);
-  --color-card: oklch(1 0 0);
-  --color-card-foreground: oklch(0.145 0.005 285.823);
+  /* ライトモード: クリーンで視認性の高いデザイン */
+  --color-background: oklch(0.985 0.002 250);          /* オフホワイト (わずかにクール) */
+  --color-foreground: oklch(0.20 0.02 250);            /* 深いスレートブルー */
+  --color-card: oklch(1 0 0);                          /* 純白 (背景と区別) */
+  --color-card-foreground: oklch(0.20 0.02 250);
   --color-popover: oklch(1 0 0);
-  --color-popover-foreground: oklch(0.145 0.005 285.823);
-  --color-primary: oklch(0.205 0.01 285.883);
-  --color-primary-foreground: oklch(0.985 0 0);
-  --color-secondary: oklch(0.97 0.002 286.375);
-  --color-secondary-foreground: oklch(0.205 0.01 285.883);
-  --color-muted: oklch(0.97 0.002 286.375);
-  --color-muted-foreground: oklch(0.556 0.015 285.938);
-  --color-accent: oklch(0.97 0.002 286.375);
-  --color-accent-foreground: oklch(0.205 0.01 285.883);
-  --color-destructive: oklch(0.577 0.245 27.325);
-  --color-destructive-foreground: oklch(0.985 0 0);
-  --color-border: oklch(0.922 0.003 286.32);
-  --color-input: oklch(0.922 0.003 286.32);
-  --color-ring: oklch(0.145 0.005 285.823);
-  --radius: 0.5rem;
+  --color-popover-foreground: oklch(0.20 0.02 250);
+  --color-primary: oklch(0.55 0.18 250);               /* 鮮やかなブルー */
+  --color-primary-foreground: oklch(0.98 0 0);
+  --color-secondary: oklch(0.94 0.01 250);             /* ライトグレーブルー */
+  --color-secondary-foreground: oklch(0.30 0.03 250);
+  --color-muted: oklch(0.96 0.005 250);                /* ニュートラルグレー */
+  --color-muted-foreground: oklch(0.50 0.02 250);      /* コントラスト強化 */
+  --color-accent: oklch(0.75 0.12 210);                /* シアンアクセント */
+  --color-accent-foreground: oklch(0.20 0.03 210);
+  --color-destructive: oklch(0.60 0.22 25);            /* レッド */
+  --color-destructive-foreground: oklch(0.98 0 0);
+  --color-border: oklch(0.88 0.01 250);                /* 明確なボーダー */
+  --color-input: oklch(0.92 0.008 250);
+  --color-ring: oklch(0.55 0.18 250);                  /* フォーカスリング = primary */
+  --radius: 0.625rem;                                   /* やや大きめの角丸 */
+
+  /* セマンティックカラー */
+  --color-success: oklch(0.60 0.16 145);               /* グリーン */
+  --color-success-foreground: oklch(0.98 0 0);
+  --color-warning: oklch(0.75 0.15 85);                /* アンバー */
+  --color-warning-foreground: oklch(0.25 0.05 85);
+  --color-info: oklch(0.65 0.15 220);                  /* スカイブルー */
+  --color-info-foreground: oklch(0.98 0 0);
+
+  /* サイドバー・ナビゲーション */
+  --color-sidebar: oklch(0.97 0.005 250);
+  --color-sidebar-foreground: oklch(0.25 0.02 250);
+  --color-sidebar-accent: oklch(0.55 0.18 250);
+  --color-sidebar-border: oklch(0.90 0.008 250);
 }
 
-/* クラスベースのダークモード */
+/* ダークモード: モダンでクールなデザイン */
 .dark {
-  --color-background: oklch(0.141 0.005 285.823);
-  --color-foreground: oklch(0.985 0 0);
-  --color-card: oklch(0.141 0.005 285.823);
-  --color-card-foreground: oklch(0.985 0 0);
-  --color-popover: oklch(0.141 0.005 285.823);
-  --color-popover-foreground: oklch(0.985 0 0);
-  --color-primary: oklch(0.985 0 0);
-  --color-primary-foreground: oklch(0.205 0.01 285.883);
-  --color-secondary: oklch(0.262 0.018 285.843);
-  --color-secondary-foreground: oklch(0.985 0 0);
-  --color-muted: oklch(0.262 0.018 285.843);
-  --color-muted-foreground: oklch(0.702 0.013 286.238);
-  --color-accent: oklch(0.262 0.018 285.843);
-  --color-accent-foreground: oklch(0.985 0 0);
-  --color-destructive: oklch(0.456 0.151 27.325);
-  --color-destructive-foreground: oklch(0.985 0 0);
-  --color-border: oklch(0.262 0.018 285.843);
-  --color-input: oklch(0.262 0.018 285.843);
-  --color-ring: oklch(0.851 0.008 286.371);
+  --color-background: oklch(0.16 0.015 250);           /* 深いスレートブルー */
+  --color-foreground: oklch(0.95 0.005 250);           /* オフホワイト */
+  --color-card: oklch(0.20 0.018 250);                 /* 背景より明るい (浮き上がり) */
+  --color-card-foreground: oklch(0.95 0.005 250);
+  --color-popover: oklch(0.22 0.02 250);
+  --color-popover-foreground: oklch(0.95 0.005 250);
+  --color-primary: oklch(0.70 0.16 250);               /* 明るいブルー */
+  --color-primary-foreground: oklch(0.10 0.02 250);
+  --color-secondary: oklch(0.28 0.02 250);             /* ダークスレート */
+  --color-secondary-foreground: oklch(0.90 0.01 250);
+  --color-muted: oklch(0.26 0.015 250);
+  --color-muted-foreground: oklch(0.65 0.02 250);      /* コントラスト強化 */
+  --color-accent: oklch(0.70 0.14 210);                /* シアンアクセント */
+  --color-accent-foreground: oklch(0.10 0.02 210);
+  --color-destructive: oklch(0.55 0.20 25);
+  --color-destructive-foreground: oklch(0.98 0 0);
+  --color-border: oklch(0.32 0.02 250);                /* 明確なボーダー */
+  --color-input: oklch(0.28 0.02 250);
+  --color-ring: oklch(0.70 0.16 250);
+
+  /* セマンティックカラー (ダークモード) */
+  --color-success: oklch(0.65 0.18 145);
+  --color-success-foreground: oklch(0.15 0.03 145);
+  --color-warning: oklch(0.78 0.14 85);
+  --color-warning-foreground: oklch(0.20 0.05 85);
+  --color-info: oklch(0.70 0.14 220);
+  --color-info-foreground: oklch(0.15 0.03 220);
+
+  /* サイドバー・ナビゲーション (ダークモード) */
+  --color-sidebar: oklch(0.14 0.012 250);
+  --color-sidebar-foreground: oklch(0.85 0.01 250);
+  --color-sidebar-accent: oklch(0.70 0.16 250);
+  --color-sidebar-border: oklch(0.25 0.018 250);
 }
 
 @layer base {
