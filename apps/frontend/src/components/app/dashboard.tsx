@@ -57,6 +57,9 @@ export function Dashboard() {
     onTasksUpdated: useCallback(() => {
       refetchBadges();
     }, [refetchBadges]),
+    onLearningsUpdated: useCallback(() => {
+      refetchBadges();
+    }, [refetchBadges]),
   });
 
   useEffect(() => {

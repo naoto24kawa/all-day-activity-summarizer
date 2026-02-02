@@ -1,6 +1,17 @@
 # API エンドポイント
 
-## CLI APIサーバー(:3001)
+## サーバー構成
+
+| ポート | サービス | 用途 |
+|-------|---------|------|
+| 3001 | CLI API | メインの REST API |
+| 3002 | SSE Server | リアルタイム更新通知 |
+| 3100 | AI Worker | Claude API 処理 (要約、評価、解釈) |
+| 3200 | Local Worker | ローカル処理 (WhisperX, Kuromoji) |
+
+---
+
+## CLI API サーバー (:3001)
 
 ### ヘルス・ステータス
 
@@ -254,15 +265,40 @@
 
 ---
 
-## Worker RPCサーバー(:3100)
+## AI Worker RPC サーバー (:3100)
+
+Claude API を使用する処理を担当。
 
 | メソッド | パス | 説明 |
 |---------|------|------|
-| GET | `/rpc/health` | ヘルスチェック(WhisperX/Claude 状態) |
-| POST | `/rpc/transcribe` | WhisperX 文字起こし(multipart/form-data) |
+| GET | `/rpc/health` | ヘルスチェック |
 | POST | `/rpc/summarize` | Claude 要約実行 |
 | POST | `/rpc/interpret` | AI テキスト解釈 |
 | POST | `/rpc/evaluate` | ハルシネーション評価 |
+| POST | `/rpc/extract-terms` | 用語抽出 |
 | POST | `/rpc/extract-learnings` | 学び抽出 (userProfile 対応) |
 | POST | `/rpc/analyze-profile` | プロフィール提案生成 |
 | POST | `/rpc/check-completion` | タスク完了判定 (AI) |
+
+---
+
+## Local Worker RPC サーバー (:3200)
+
+ローカル処理 (外部 API 不要) を担当。
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/rpc/health` | ヘルスチェック |
+| POST | `/rpc/transcribe` | WhisperX 文字起こし (multipart/form-data) |
+| POST | `/rpc/tokenize` | Kuromoji 形態素解析 |
+
+---
+
+## SSE Server (:3002)
+
+リアルタイム更新通知を担当。
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/events` | SSE ストリーム接続 |
+| POST | `/notify` | 通知送信 (内部用) |

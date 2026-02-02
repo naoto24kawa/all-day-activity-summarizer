@@ -1,8 +1,8 @@
-import { Check, FileText, Loader2, Sparkles, ThumbsDown, ThumbsUp, X } from "lucide-react";
+import { Check, FileText, Info, Loader2, Sparkles, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   type PromptImprovement,
   useApproveImprovement,
@@ -80,8 +81,17 @@ export function PromptImprovementsPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">プロンプト改善</CardTitle>
-        <CardDescription>フィードバックに基づくプロンプト自動改善</CardDescription>
+        <CardTitle className="flex items-center gap-2 text-base">
+          プロンプト改善
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="h-4 w-4 cursor-help text-muted-foreground" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>フィードバックに基づくプロンプト自動改善</p>
+            </TooltipContent>
+          </Tooltip>
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="pending">

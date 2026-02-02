@@ -11,11 +11,13 @@ import type {
   TranscriptionSegment,
 } from "@repo/db";
 import { schema } from "@repo/db";
+import { isApprovalOnlyTask, type SummarySourceMetadata, type TaskSourceType } from "@repo/types";
 import { and, between, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { loadConfig } from "../config.js";
 import { getChildTasks } from "../utils/task-hierarchy.js";
 import { generateSummary, getModelName } from "./client.js";
 import { buildDailySummaryPrompt, buildTimesSummaryPrompt } from "./prompts.js";
+import { buildSourceMetadata } from "./source-metadata.js";
 
 // ---------------------------------------------------------------------------
 // Time utilities (JST)
@@ -539,10 +541,21 @@ function buildActivityTextWithProjectSections(
   }
 
   // タスクをプロジェクト別にグループ化 (親タスクのみ、子タスクは除外)
-  const acceptedTasks = classified.personal.tasks.filter(
+  // 承認タスク (prompt-improvement, profile-suggestion, vocabulary) は詳細表示せず件数のみ集計
+  const allAcceptedTasks = classified.personal.tasks.filter(
     (t) => (t.status === "accepted" || t.status === "completed") && t.parentId === null,
   );
-  const taskGroups = groupItemsByProject(acceptedTasks, projectNameMap);
+
+  // 承認タスクと通常タスクを分離
+  const approvalTasks = allAcceptedTasks.filter((t) =>
+    isApprovalOnlyTask(t.sourceType as TaskSourceType),
+  );
+  const regularTasks = allAcceptedTasks.filter(
+    (t) => !isApprovalOnlyTask(t.sourceType as TaskSourceType),
+  );
+
+  // 通常タスクをプロジェクト別に詳細表示
+  const taskGroups = groupItemsByProject(regularTasks, projectNameMap);
   for (const group of taskGroups) {
     if (group.items.length > 0) {
       const taskLines: string[] = [];
@@ -568,6 +581,29 @@ function buildActivityTextWithProjectSections(
         group.projectId !== null ? `#### タスク [${group.projectName}]` : "#### タスク (その他)";
       personalSections.push(`${projectLabel}\n${taskLines.join("\n")}`);
     }
+  }
+
+  // 承認タスクは件数のみ集計表示
+  if (approvalTasks.length > 0) {
+    // sourceType 別に件数を集計
+    const approvalCounts = new Map<string, number>();
+    for (const t of approvalTasks) {
+      const type = t.sourceType ?? "unknown";
+      approvalCounts.set(type, (approvalCounts.get(type) ?? 0) + 1);
+    }
+
+    // 日本語ラベルでフォーマット
+    const typeLabels: Record<string, string> = {
+      "prompt-improvement": "プロンプト改善",
+      "profile-suggestion": "プロフィール",
+      vocabulary: "用語追加",
+    };
+
+    const breakdown = Array.from(approvalCounts.entries())
+      .map(([type, count]) => `${typeLabels[type] ?? type} ${count}件`)
+      .join(", ");
+
+    personalSections.push(`#### 承認タスク\n- ${approvalTasks.length}件処理 (${breakdown})`);
   }
 
   // 学びをプロジェクト別にグループ化
@@ -886,6 +922,18 @@ export async function generateTimesSummary(
   const content = await generateSummary(prompt);
   const segmentIds = segments.map((s) => s.id);
 
+  // ソースメタデータを構築
+  const sourceMetadata = buildSourceMetadata(
+    segments,
+    memos,
+    slackMessages,
+    claudeSessions,
+    tasks,
+    learnings,
+    githubItems,
+    githubComments,
+  );
+
   // 同じ期間の既存サマリーを削除してから挿入(上書き)
   db.delete(schema.summaries)
     .where(
@@ -907,6 +955,7 @@ export async function generateTimesSummary(
       content,
       segmentIds: JSON.stringify(segmentIds),
       model: getModelName(),
+      sourceMetadata: JSON.stringify(sourceMetadata),
     })
     .run();
 
@@ -957,12 +1006,64 @@ export async function generateDailySummary(
 
   let summariesText: string;
   let allSegmentIds: number[];
+  let sourceMetadataJson: string | null = null;
 
   if (timesSummaries.length > 0) {
     summariesText = timesSummaries
       .map((s) => `### ${s.periodStart} - ${s.periodEnd}\n${s.content}`)
       .join("\n\n");
     allSegmentIds = timesSummaries.flatMap((s) => JSON.parse(s.segmentIds) as number[]);
+
+    // Times サマリのソースメタデータを結合
+    const combinedMetadata: SummarySourceMetadata = {
+      segments: [],
+      memos: [],
+      slackMessages: [],
+      claudeSessions: [],
+      tasks: [],
+      learnings: [],
+      githubItems: [],
+      githubComments: [],
+    };
+
+    for (const summary of timesSummaries) {
+      if (summary.sourceMetadata) {
+        try {
+          const meta = JSON.parse(summary.sourceMetadata) as SummarySourceMetadata;
+          combinedMetadata.segments.push(...meta.segments);
+          combinedMetadata.memos.push(...meta.memos);
+          combinedMetadata.slackMessages.push(...meta.slackMessages);
+          combinedMetadata.claudeSessions.push(...meta.claudeSessions);
+          combinedMetadata.tasks.push(...meta.tasks);
+          combinedMetadata.learnings.push(...meta.learnings);
+          combinedMetadata.githubItems.push(...meta.githubItems);
+          combinedMetadata.githubComments.push(...meta.githubComments);
+        } catch {
+          // パースに失敗した場合は無視
+        }
+      }
+    }
+
+    // 重複を削除 (ID でユニーク化)
+    const uniqueById = <T extends { id: number }>(arr: T[]): T[] => {
+      const seen = new Set<number>();
+      return arr.filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
+    };
+
+    combinedMetadata.segments = uniqueById(combinedMetadata.segments);
+    combinedMetadata.memos = uniqueById(combinedMetadata.memos);
+    combinedMetadata.slackMessages = uniqueById(combinedMetadata.slackMessages);
+    combinedMetadata.claudeSessions = uniqueById(combinedMetadata.claudeSessions);
+    combinedMetadata.tasks = uniqueById(combinedMetadata.tasks);
+    combinedMetadata.learnings = uniqueById(combinedMetadata.learnings);
+    combinedMetadata.githubItems = uniqueById(combinedMetadata.githubItems);
+    combinedMetadata.githubComments = uniqueById(combinedMetadata.githubComments);
+
+    sourceMetadataJson = JSON.stringify(combinedMetadata);
   } else {
     // times サマリーがない場合、1日分の活動データから直接生成
     const startTime = `${date}T00:00:00`;
@@ -1004,6 +1105,19 @@ export async function generateDailySummary(
       projectNameMap,
     );
     allSegmentIds = segments.map((s) => s.id);
+
+    // ソースメタデータを構築
+    const sourceMetadata = buildSourceMetadata(
+      segments,
+      memos,
+      slackMessages,
+      claudeSessions,
+      tasks,
+      learnings,
+      githubItems,
+      githubComments,
+    );
+    sourceMetadataJson = JSON.stringify(sourceMetadata);
   }
 
   // 着手すべきタスクを取得してプロンプトに追加
@@ -1027,6 +1141,7 @@ export async function generateDailySummary(
       content,
       segmentIds: JSON.stringify(allSegmentIds),
       model: getModelName(),
+      sourceMetadata: sourceMetadataJson,
     })
     .run();
 

@@ -109,10 +109,11 @@ export function createDatabase(dbPath: string) {
       date TEXT NOT NULL,
       period_start TEXT NOT NULL,
       period_end TEXT NOT NULL,
-      summary_type TEXT NOT NULL CHECK(summary_type IN ('pomodoro', 'hourly', 'daily')),
+      summary_type TEXT NOT NULL CHECK(summary_type IN ('times', 'daily')),
       content TEXT NOT NULL,
       segment_ids TEXT NOT NULL,
       model TEXT NOT NULL,
+      source_metadata TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -489,38 +490,6 @@ export function createDatabase(dbPath: string) {
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_extraction_logs_unique ON extraction_logs(extraction_type, source_type, source_id);
   `);
-
-  // Migration: update CHECK constraint to allow 'pomodoro' summary_type
-  // SQLite doesn't support ALTER CHECK, so recreate the table
-  try {
-    const row = sqlite
-      .query<{ sql: string }, []>(
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name='summaries'",
-      )
-      .get();
-    if (row && !row.sql.includes("'pomodoro'")) {
-      sqlite.exec(`
-        ALTER TABLE summaries RENAME TO summaries_old;
-        CREATE TABLE summaries (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          date TEXT NOT NULL,
-          period_start TEXT NOT NULL,
-          period_end TEXT NOT NULL,
-          summary_type TEXT NOT NULL CHECK(summary_type IN ('pomodoro', 'hourly', 'daily')),
-          content TEXT NOT NULL,
-          segment_ids TEXT NOT NULL,
-          model TEXT NOT NULL,
-          created_at TEXT NOT NULL
-        );
-        INSERT INTO summaries SELECT * FROM summaries_old;
-        DROP TABLE summaries_old;
-        CREATE INDEX IF NOT EXISTS idx_summaries_date ON summaries(date);
-        CREATE INDEX IF NOT EXISTS idx_summaries_type ON summaries(summary_type);
-      `);
-    }
-  } catch {
-    // Migration already applied or fresh DB
-  }
 
   // Migration: update evaluator_logs CHECK constraint to allow 'mixed' judgment
   try {
@@ -1213,6 +1182,9 @@ export function createDatabase(dbPath: string) {
       )
       .get();
     if (row?.sql.includes("'pomodoro'") && !row.sql.includes("'times'")) {
+      // source_metadata カラムの有無を確認
+      const hasSourceMetadata = row.sql.includes("source_metadata");
+
       sqlite.exec(`
         -- 既存の pomodoro/hourly サマリーを削除
         DELETE FROM summaries WHERE summary_type IN ('pomodoro', 'hourly');
@@ -1228,9 +1200,25 @@ export function createDatabase(dbPath: string) {
           content TEXT NOT NULL,
           segment_ids TEXT NOT NULL,
           model TEXT NOT NULL,
+          source_metadata TEXT,
           created_at TEXT NOT NULL
         );
-        INSERT INTO summaries SELECT * FROM summaries_old;
+      `);
+
+      // source_metadata の有無に応じてデータ移行
+      if (hasSourceMetadata) {
+        sqlite.exec(`
+          INSERT INTO summaries (id, date, period_start, period_end, summary_type, content, segment_ids, model, source_metadata, created_at)
+            SELECT id, date, period_start, period_end, summary_type, content, segment_ids, model, source_metadata, created_at FROM summaries_old;
+        `);
+      } else {
+        sqlite.exec(`
+          INSERT INTO summaries (id, date, period_start, period_end, summary_type, content, segment_ids, model, created_at)
+            SELECT id, date, period_start, period_end, summary_type, content, segment_ids, model, created_at FROM summaries_old;
+        `);
+      }
+
+      sqlite.exec(`
         DROP TABLE summaries_old;
         CREATE INDEX IF NOT EXISTS idx_summaries_date ON summaries(date);
         CREATE INDEX IF NOT EXISTS idx_summaries_type ON summaries(summary_type);
@@ -1358,6 +1346,49 @@ export function createDatabase(dbPath: string) {
 
   // Migration: add source_id column to tasks (for external sources like Notion)
   addColumnIfNotExists(sqlite, "tasks", "source_id", "TEXT");
+
+  // Migration: add source_metadata column to summaries (for source link feature)
+  addColumnIfNotExists(sqlite, "summaries", "source_metadata", "TEXT");
+
+  // Migration: add priority column to slack_messages (for AI-based priority detection)
+  addColumnIfNotExists(sqlite, "slack_messages", "priority", "TEXT");
+  sqlite.exec(
+    `CREATE INDEX IF NOT EXISTS idx_slack_messages_priority ON slack_messages(priority);`,
+  );
+
+  // Migration: update ai_processing_logs CHECK constraint to include new process types
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='ai_processing_logs'",
+      )
+      .get();
+    if (row && !row.sql.includes("'slack-priority'")) {
+      sqlite.exec(`
+        ALTER TABLE ai_processing_logs RENAME TO ai_processing_logs_old;
+        CREATE TABLE ai_processing_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          process_type TEXT NOT NULL CHECK(process_type IN ('transcribe', 'evaluate', 'interpret', 'extract-learnings', 'explain-learning', 'summarize', 'check-completion', 'extract-terms', 'analyze-profile', 'suggest-tags', 'match-channels', 'slack-priority')),
+          status TEXT NOT NULL CHECK(status IN ('success', 'error')),
+          model TEXT,
+          input_size INTEGER,
+          output_size INTEGER,
+          duration_ms INTEGER NOT NULL,
+          error_message TEXT,
+          metadata TEXT,
+          created_at TEXT NOT NULL
+        );
+        INSERT INTO ai_processing_logs SELECT * FROM ai_processing_logs_old;
+        DROP TABLE ai_processing_logs_old;
+        CREATE INDEX IF NOT EXISTS idx_ai_processing_logs_date ON ai_processing_logs(date);
+        CREATE INDEX IF NOT EXISTS idx_ai_processing_logs_type ON ai_processing_logs(process_type);
+        CREATE INDEX IF NOT EXISTS idx_ai_processing_logs_status ON ai_processing_logs(status);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
 
   return db;
 }

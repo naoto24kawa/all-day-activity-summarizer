@@ -26,6 +26,7 @@ export const summaries = sqliteTable("summaries", {
   content: text("content").notNull(),
   segmentIds: text("segment_ids").notNull(), // JSON array of segment IDs
   model: text("model").notNull(),
+  sourceMetadata: text("source_metadata"), // JSON: SummarySourceMetadata (nullable for existing summaries)
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -185,6 +186,7 @@ export const slackMessages = sqliteTable("slack_messages", {
   threadTs: text("thread_ts"), // Parent message ts if in thread
   permalink: text("permalink"),
   isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),
+  priority: text("priority", { enum: ["high", "medium", "low"] }), // AI判定の優先度
   projectId: integer("project_id"), // FK to projects (nullable)
   createdAt: text("created_at")
     .notNull()
@@ -801,6 +803,7 @@ export const aiJobQueue = sqliteTable("ai_job_queue", {
       "summarize-times",
       "summarize-daily",
       "claude-chat",
+      "slack-priority",
     ],
   }).notNull(),
   params: text("params"), // JSON: 入力パラメータ

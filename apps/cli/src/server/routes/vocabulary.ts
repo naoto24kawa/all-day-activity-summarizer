@@ -232,5 +232,20 @@ export function createVocabularyRouter(db: AdasDatabase, _config?: AdasConfig) {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // 読み設定エンドポイント (非同期キュー)
+  // ---------------------------------------------------------------------------
+
+  // 読みがない用語に読みを設定
+  router.post("/generate-readings", (c) => {
+    const jobId = enqueueJob(db, "vocabulary-generate-readings", {});
+
+    return c.json({
+      success: true,
+      jobId,
+      message: "読み設定ジョブをキューに追加しました",
+    });
+  });
+
   return router;
 }

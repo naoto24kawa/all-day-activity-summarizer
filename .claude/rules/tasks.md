@@ -118,8 +118,9 @@ Slack/GitHub/メモから AI でタスクを自動抽出し、フィードバッ
 
 ```
 pending → accepted → in_progress → completed
-                  ↘ paused ↗
+        ↘        ↘ paused ↗
         → rejected
+        → someday → accepted (必要になったら)
 ```
 
 | ステータス | 説明 |
@@ -130,6 +131,7 @@ pending → accepted → in_progress → completed
 | `paused` | 中断 |
 | `completed` | 完了 |
 | `rejected` | 却下済み |
+| `someday` | いつかやる (必要になったら着手) |
 
 ---
 

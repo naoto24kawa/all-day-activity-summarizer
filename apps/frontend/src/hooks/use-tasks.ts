@@ -28,23 +28,32 @@ import type {
 import { useCallback, useEffect, useState } from "react";
 import { deleteAdasApi, fetchAdasApi, patchAdasApi, postAdasApi } from "@/lib/adas-api";
 
-export function useTasks() {
+export function useTasks(status?: TaskStatus) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchTasks = useCallback(async (silent = false) => {
-    try {
-      if (!silent) setLoading(true);
-      const data = await fetchAdasApi<Task[]>("/api/tasks");
-      setTasks(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch tasks");
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, []);
+  const fetchTasks = useCallback(
+    async (silent = false, overrideStatus?: TaskStatus) => {
+      try {
+        if (!silent) setLoading(true);
+        const targetStatus = overrideStatus ?? status;
+        const params = new URLSearchParams();
+        if (targetStatus) {
+          params.set("status", targetStatus);
+        }
+        const url = params.toString() ? `/api/tasks?${params}` : "/api/tasks";
+        const data = await fetchAdasApi<Task[]>(url);
+        setTasks(data);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch tasks");
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [status],
+  );
 
   useEffect(() => {
     fetchTasks();
@@ -432,6 +441,12 @@ export function useTaskStats(date?: string) {
     paused: 0,
     rejected: 0,
     completed: 0,
+    someday: 0,
+    acceptedByPriority: {
+      high: 0,
+      medium: 0,
+      low: 0,
+    },
   });
   const [error, setError] = useState<string | null>(null);
 

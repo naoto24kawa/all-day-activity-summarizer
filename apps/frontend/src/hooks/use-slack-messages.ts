@@ -2,7 +2,7 @@
  * Slack Messages Hook
  */
 
-import type { SlackMessage } from "@repo/types";
+import type { SlackMessage, SlackMessagePriority, SlackPriorityCounts } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
 import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
@@ -66,6 +66,18 @@ export function useSlackMessages() {
     [fetchMessages],
   );
 
+  const updatePriority = useCallback(
+    async (id: number, priority: SlackMessagePriority) => {
+      await fetch(`${ADAS_API_URL}/api/slack-messages/${id}/priority`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority }),
+      });
+      await fetchMessages(true);
+    },
+    [fetchMessages],
+  );
+
   return {
     messages,
     error,
@@ -74,6 +86,7 @@ export function useSlackMessages() {
     markAsRead,
     markAllAsRead,
     updateMessage,
+    updatePriority,
   };
 }
 
@@ -101,6 +114,40 @@ export function useSlackUnreadCounts(date?: string) {
       setError(err instanceof Error ? err.message : "Failed to fetch unread counts");
     }
   }, [date]);
+
+  useEffect(() => {
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchCounts]);
+
+  return { counts, error, refetch: fetchCounts };
+}
+
+export function useSlackPriorityCounts(unreadOnly = true) {
+  const [counts, setCounts] = useState<SlackPriorityCounts>({
+    total: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    unassigned: 0,
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchCounts = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      params.set("unreadOnly", String(unreadOnly));
+
+      const data = await fetchAdasApi<SlackPriorityCounts>(
+        `/api/slack-messages/priority-counts?${params}`,
+      );
+      setCounts(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch priority counts");
+    }
+  }, [unreadOnly]);
 
   useEffect(() => {
     fetchCounts();

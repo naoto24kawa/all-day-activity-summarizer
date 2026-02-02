@@ -4,7 +4,7 @@
  * Displays learnings extracted from various sources
  */
 
-import type { Learning, LearningSourceType, Project } from "@repo/types";
+import type { AIJobCompletedEvent, Learning, LearningSourceType, Project } from "@repo/types";
 import {
   BookOpen,
   Calendar,
@@ -26,7 +26,7 @@ import {
   Upload,
   User,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAIJobs } from "@/hooks/use-ai-jobs";
 import {
   type LearningExplanation,
   type LearningImportItem,
@@ -201,6 +202,20 @@ export function LearningsFeed({ className }: LearningsFeedProps) {
     importLearnings,
   } = useLearningsExportImport();
 
+  // SSE でジョブ完了を監視し、learning-extract 完了時に refetch
+  useAIJobs({
+    enableSSE: true,
+    onJobCompleted: useCallback(
+      (event: AIJobCompletedEvent) => {
+        if (event.jobType === "learning-extract") {
+          refetch();
+          refetchStats();
+        }
+      },
+      [refetch, refetchStats],
+    ),
+  });
+
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<LearningSourceType | null>(null);
   const [projectFilter, setProjectFilter] = useState<number | "all" | "none">("all");
@@ -227,14 +242,14 @@ export function LearningsFeed({ className }: LearningsFeedProps) {
     (p) => projectCount.has(p.id) && (projectCount.get(p.id) ?? 0) > 0,
   );
 
+  // 非同期版: ジョブをキューに登録 (結果はSSE通知で受け取る)
   const handleExtractAll = async () => {
     await Promise.all([
       extractFromTranscriptions(),
       extractFromGitHubComments(),
       extractFromSlackMessages(),
     ]);
-    refetch();
-    refetchStats();
+    // ジョブ登録完了 - 実際の結果はSSE通知で受け取る
   };
 
   const handleAddClick = () => {

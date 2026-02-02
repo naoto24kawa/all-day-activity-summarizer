@@ -4,7 +4,16 @@ AI アシスタント向け共通ドキュメント。常に日本語で回答�
 
 ## プロジェクト概要
 
-**All Day Activity Summarizer (ADAS)** - PCの音声入出力を監視し、WhisperX (ローカル) で文字起こし + 話者識別、Claude Code CLI で要約するアプリケーション。
+**All Day Activity Summarizer (ADAS)** - PCの音声入出力を監視し、WhisperX (ローカル) で文字起こし + 話者識別、Claude で要約するアプリケーション。
+
+## サーバー構成
+
+| ポート | サービス | アプリ | 用途 |
+|-------|---------|--------|------|
+| 3001 | CLI API | `apps/cli` | メインの REST API (`http://localhost:3001/api/*`) |
+| 3002 | SSE Server | `apps/sse-server` | リアルタイム更新通知 |
+| 3100 | AI Worker | `apps/ai-worker` | Claude API を使う処理 (要約、評価、解釈) |
+| 3200 | Local Worker | `apps/local-worker` | ローカル処理 (WhisperX 文字起こし、Kuromoji 形態素解析) |
 
 ## ドキュメント
 

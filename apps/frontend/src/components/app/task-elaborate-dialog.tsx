@@ -28,6 +28,7 @@ import {
   Loader2,
   Mic,
   MicOff,
+  RefreshCw,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -145,6 +146,7 @@ export function TaskElaborateDialog({
           stopPolling();
           setElaborationResult(status.result);
           initializeChildTaskEdits(status.result.childTasks);
+          setUserInstruction(""); // 修正指示入力欄をクリア
           setPhase("preview");
         } else if (status.status === "failed") {
           stopPolling();
@@ -179,6 +181,7 @@ export function TaskElaborateDialog({
         const result = JSON.parse(task.pendingElaboration) as ElaborationResult;
         setElaborationResult(result);
         initializeChildTaskEdits(result.childTasks);
+        setUserInstruction(""); // 修正指示入力欄をクリア
         setPhase("preview");
       } catch {
         setPhase("input");
@@ -209,7 +212,7 @@ export function TaskElaborateDialog({
     }
   }, [open, stopPolling]);
 
-  // 詳細化を開始
+  // 詳細化を開始 (バックグラウンドで実行してモーダルを閉じる)
   const handleStartElaborate = useCallback(async () => {
     if (inputListening) {
       stopInputListening();
@@ -223,8 +226,8 @@ export function TaskElaborateDialog({
         level: elaborationLevel,
       });
 
-      setPhase("polling");
-      startPolling();
+      // モーダルを閉じてバックグラウンドで続行
+      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "詳細化の開始に失敗しました");
     }
@@ -235,8 +238,25 @@ export function TaskElaborateDialog({
     inputListening,
     stopInputListening,
     onStartElaborate,
-    startPolling,
+    onClose,
   ]);
+
+  // 再生成 (バックグラウンドで実行してモーダルを閉じる)
+  const handleRegenerate = useCallback(async () => {
+    setError(null);
+
+    try {
+      await onStartElaborate(task.id, {
+        userInstruction: userInstruction.trim() || undefined,
+        level: elaborationLevel,
+      });
+
+      // モーダルを閉じてバックグラウンドで続行
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "再生成の開始に失敗しました");
+    }
+  }, [task.id, userInstruction, elaborationLevel, onStartElaborate, onClose]);
 
   // 子タスクの編集を更新
   const updateChildTaskEdit = (stepNumber: number, updates: Partial<ChildTaskEdit>) => {
@@ -415,7 +435,7 @@ export function TaskElaborateDialog({
               キャンセル
             </Button>
             <Button onClick={handleStartElaborate}>
-              詳細化を実行
+              詳細化を開始
               <span className="ml-2 text-xs text-muted-foreground">(Cmd+Enter)</span>
             </Button>
           </DialogFooter>
@@ -594,6 +614,46 @@ export function TaskElaborateDialog({
               </CollapsibleContent>
             </Collapsible>
           )}
+
+          {/* 再生成セクション */}
+          <div className="space-y-3 pt-2 border-t">
+            <Label className="text-sm font-medium">再生成</Label>
+            <div className="flex gap-2 items-start">
+              <div className="flex-1 space-y-2">
+                <Textarea
+                  id="refine-instruction"
+                  placeholder="修正指示 (任意): 例: ステップ2をもっと詳しく、エラーハンドリングも追加して"
+                  value={userInstruction}
+                  onChange={(e) => setUserInstruction(e.target.value)}
+                  rows={2}
+                />
+              </div>
+              <div className="shrink-0 space-y-2">
+                <Select
+                  value={elaborationLevel}
+                  onValueChange={(value) => setElaborationLevel(value as ElaborationLevel)}
+                >
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="light">簡潔</SelectItem>
+                    <SelectItem value="standard">標準</SelectItem>
+                    <SelectItem value="detailed">詳細</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  onClick={handleRegenerate}
+                  className="w-full"
+                  title="再生成 (バックグラウンドで実行)"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  再生成
+                </Button>
+              </div>
+            </div>
+          </div>
 
           {error && (
             <div className="flex items-center gap-2 text-sm text-destructive">

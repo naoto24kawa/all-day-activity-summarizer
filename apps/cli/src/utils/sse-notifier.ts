@@ -93,6 +93,20 @@ export class SSENotifier {
       .get();
     const tasksPending = tasksResult?.count ?? 0;
 
+    // Tasks: accepted 状態の優先度別カウント
+    const acceptedTasks = db
+      .select()
+      .from(schema.tasks)
+      .where(eq(schema.tasks.status, "accepted"))
+      .all();
+    const acceptedByPriority = { high: 0, medium: 0, low: 0 };
+    for (const task of acceptedTasks) {
+      const priority = task.priority as "high" | "medium" | "low" | null;
+      if (priority && priority in acceptedByPriority) {
+        acceptedByPriority[priority]++;
+      }
+    }
+
     // Learnings: 復習期限のカウント
     const now = new Date().toISOString();
     const learningsResult = db
@@ -119,7 +133,7 @@ export class SSENotifier {
     const githubUnread = githubResult?.count ?? 0;
 
     return {
-      tasks: { pending: tasksPending },
+      tasks: { pending: tasksPending, acceptedByPriority },
       learnings: { dueForReview: learningsDue },
       slack: { unread: slackUnread },
       github: { unread: githubUnread },

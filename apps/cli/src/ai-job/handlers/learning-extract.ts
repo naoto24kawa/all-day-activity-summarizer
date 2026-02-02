@@ -25,7 +25,6 @@ import type { JobResult } from "../worker.js";
 /** 学び抽出ソースタイプ */
 type LearningExtractSourceType = Exclude<LearningSourceType, "manual">;
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complex extraction logic
 export async function handleLearningExtract(
   db: AdasDatabase,
   config: AdasConfig,

@@ -11,8 +11,16 @@ import { TAB_GROUPS, type TabGroupId } from "@/lib/tab-groups";
 import type { LearningsStats } from "./use-learnings";
 import { useSSE } from "./use-sse";
 
+export interface TaskBadges {
+  pending: number;
+  acceptedHigh: number;
+  acceptedMedium: number;
+  acceptedLow: number;
+}
+
 export interface TabBadges {
-  tasks: number; // pending タスク数
+  tasks: number; // pending タスク数 (後方互換性のため残す)
+  taskBadges: TaskBadges; // タスクの詳細バッジ
   learnings: number; // 復習期限の学び数
   slack: number; // 未読 Slack メッセージ数
   github: number; // 未読 GitHub アイテム数
@@ -38,6 +46,12 @@ interface GitHubUnreadCount {
 export function useTabBadges(date?: string) {
   const [badges, setBadges] = useState<TabBadges>({
     tasks: 0,
+    taskBadges: {
+      pending: 0,
+      acceptedHigh: 0,
+      acceptedMedium: 0,
+      acceptedLow: 0,
+    },
     learnings: 0,
     slack: 0,
     github: 0,
@@ -47,6 +61,12 @@ export function useTabBadges(date?: string) {
   const handleBadgesUpdated = useCallback((data: BadgesData) => {
     setBadges({
       tasks: data.tasks.pending,
+      taskBadges: {
+        pending: data.tasks.pending,
+        acceptedHigh: data.tasks.acceptedByPriority.high,
+        acceptedMedium: data.tasks.acceptedByPriority.medium,
+        acceptedLow: data.tasks.acceptedByPriority.low,
+      },
       learnings: data.learnings.dueForReview,
       slack: data.slack.unread,
       github: data.github.unread,
@@ -76,6 +96,12 @@ export function useTabBadges(date?: string) {
 
       setBadges({
         tasks: taskStats.pending,
+        taskBadges: {
+          pending: taskStats.pending,
+          acceptedHigh: taskStats.acceptedByPriority.high,
+          acceptedMedium: taskStats.acceptedByPriority.medium,
+          acceptedLow: taskStats.acceptedByPriority.low,
+        },
         learnings: learningsStats.dueForReview,
         slack: slackUnread.total,
         github: githubUnread.total,

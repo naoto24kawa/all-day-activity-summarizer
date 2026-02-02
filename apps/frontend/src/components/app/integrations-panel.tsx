@@ -4,15 +4,32 @@
  * 外部サービス連携の有効/無効を管理
  */
 
-import { Github, MessageSquare, Mic, Plug, Sparkles, Terminal, Wand2 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Github,
+  Info,
+  MessageSquare,
+  Mic,
+  Plug,
+  Plus,
+  Sparkles,
+  Terminal,
+  Wand2,
+} from "lucide-react";
+import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useConfig } from "@/hooks/use-config";
 
 export function IntegrationsPanel() {
-  const { integrations, loading, error, updating, updateIntegration } = useConfig();
+  const { integrations, loading, error, updating, updateIntegration, updateSlackKeywords } =
+    useConfig();
+  const [newKeyword, setNewKeyword] = useState("");
 
   if (loading) {
     return (
@@ -66,10 +83,16 @@ export function IntegrationsPanel() {
         <CardTitle className="flex items-center gap-2">
           <Plug className="h-5 w-5 text-green-500" />
           Integrations
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="h-4 w-4 cursor-help text-muted-foreground" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>外部サービス連携の有効/無効を切り替えます。</p>
+              <p>変更後はサーバーの再起動が必要です。</p>
+            </TooltipContent>
+          </Tooltip>
         </CardTitle>
-        <CardDescription>
-          外部サービス連携の有効/無効を切り替えます。変更後はサーバーの再起動が必要です。
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Whisper (文字起こし) */}
@@ -92,24 +115,88 @@ export function IntegrationsPanel() {
         </div>
 
         {/* Slack */}
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <Label htmlFor="slack-toggle" className="flex items-center gap-2 text-base">
-              <MessageSquare className="h-4 w-4" />
-              Slack
-            </Label>
-            <p className="text-sm text-muted-foreground">
-              {integrations.slack.hasCredentials
-                ? "メンション・キーワード監視"
-                : "認証情報未設定 (config.json で xoxcToken/xoxdToken を設定)"}
-            </p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="slack-toggle" className="flex items-center gap-2 text-base">
+                <MessageSquare className="h-4 w-4" />
+                Slack
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                {integrations.slack.hasCredentials
+                  ? "メンション・キーワード監視"
+                  : "認証情報未設定 (config.json で xoxcToken/xoxdToken を設定)"}
+              </p>
+            </div>
+            <Switch
+              id="slack-toggle"
+              checked={integrations.slack.enabled}
+              onCheckedChange={(checked) => handleToggle("slack", checked)}
+              disabled={updating || !integrations.slack.hasCredentials}
+            />
           </div>
-          <Switch
-            id="slack-toggle"
-            checked={integrations.slack.enabled}
-            onCheckedChange={(checked) => handleToggle("slack", checked)}
-            disabled={updating || !integrations.slack.hasCredentials}
-          />
+
+          {/* キーワード監視設定 */}
+          {integrations.slack.hasCredentials && integrations.slack.enabled && (
+            <div className="ml-6 space-y-2 border-l-2 border-muted pl-4">
+              <Label className="text-sm text-muted-foreground">監視キーワード</Label>
+              <div className="flex flex-wrap gap-2">
+                {integrations.slack.watchKeywords.map((keyword) => (
+                  <Badge
+                    key={keyword}
+                    variant="secondary"
+                    className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground"
+                    onClick={() => {
+                      const updated = integrations.slack.watchKeywords.filter((k) => k !== keyword);
+                      updateSlackKeywords(updated);
+                    }}
+                  >
+                    {keyword} ×
+                  </Badge>
+                ))}
+                <div className="flex gap-1">
+                  <Input
+                    placeholder="追加..."
+                    value={newKeyword}
+                    onChange={(e) => setNewKeyword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newKeyword.trim()) {
+                        if (!integrations.slack.watchKeywords.includes(newKeyword.trim())) {
+                          updateSlackKeywords([
+                            ...integrations.slack.watchKeywords,
+                            newKeyword.trim(),
+                          ]);
+                        }
+                        setNewKeyword("");
+                      }
+                    }}
+                    className="h-6 w-24 text-xs"
+                    disabled={updating}
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2"
+                    onClick={() => {
+                      if (
+                        newKeyword.trim() &&
+                        !integrations.slack.watchKeywords.includes(newKeyword.trim())
+                      ) {
+                        updateSlackKeywords([
+                          ...integrations.slack.watchKeywords,
+                          newKeyword.trim(),
+                        ]);
+                        setNewKeyword("");
+                      }
+                    }}
+                    disabled={updating || !newKeyword.trim()}
+                  >
+                    <Plus className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* GitHub */}

@@ -19,9 +19,11 @@ const JOB_TYPE_LABELS: Record<AIJobType, string> = {
   "task-check-completion": "タスク完了チェック",
   "learning-extract": "学び抽出",
   "vocabulary-extract": "用語抽出",
+  "vocabulary-generate-readings": "読み仮名生成",
   "profile-analyze": "プロフィール分析",
   "summarize-times": "時間範囲サマリ",
   "summarize-daily": "日次サマリ",
+  "slack-priority": "Slack優先度判定",
   "claude-chat": "Claude送信",
 };
 
@@ -34,6 +36,8 @@ interface UseJobNotificationsOptions {
   enableSound?: boolean;
   /** タスク更新コールバック */
   onTasksUpdated?: () => void;
+  /** 学び更新コールバック */
+  onLearningsUpdated?: () => void;
 }
 
 interface UseJobNotificationsReturn {
@@ -59,17 +63,23 @@ export function useJobNotifications(
     enableWebNotification = true,
     enableSound = true,
     onTasksUpdated,
+    onLearningsUpdated,
   } = options;
 
   const [notificationPermission, setNotificationPermission] =
     useState<NotificationPermission | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const onTasksUpdatedRef = useRef(onTasksUpdated);
+  const onLearningsUpdatedRef = useRef(onLearningsUpdated);
 
   // コールバックの参照を更新
   useEffect(() => {
     onTasksUpdatedRef.current = onTasksUpdated;
   }, [onTasksUpdated]);
+
+  useEffect(() => {
+    onLearningsUpdatedRef.current = onLearningsUpdated;
+  }, [onLearningsUpdated]);
 
   // 通知音の初期化
   // Note: /public/notification.mp3 を配置すると通知音が再生される
@@ -148,6 +158,11 @@ export function useJobNotifications(
         event.jobType === "profile-analyze"
       ) {
         onTasksUpdatedRef.current?.();
+      }
+
+      // 学び更新コールバック
+      if (event.jobType === "learning-extract") {
+        onLearningsUpdatedRef.current?.();
       }
     },
     [enableToast, enableWebNotification, enableSound, notificationPermission],

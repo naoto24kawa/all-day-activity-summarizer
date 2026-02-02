@@ -24,7 +24,8 @@ export type ProcessType =
   | "checkCompletion"
   | "analyzeProfile"
   | "extractLearnings"
-  | "taskExtract";
+  | "taskExtract"
+  | "generateReadings";
 
 /** AI プロバイダー設定の型 */
 interface AIProviderConfig {
@@ -58,6 +59,7 @@ const defaultAIProviderConfig: AIProviderConfig = {
     analyzeProfile: "claude",
     extractLearnings: "claude",
     taskExtract: "claude",
+    generateReadings: "lmstudio",
   },
   enableFallback: true,
 };

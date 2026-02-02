@@ -147,6 +147,7 @@ const VALID_TASK_STATUSES = [
   "in_progress",
   "paused",
   "completed",
+  "someday",
 ] as const;
 
 /** クエリパラメータが有効な TaskStatus かどうかを判定 */
@@ -450,12 +451,25 @@ export function createTasksRouter(db: AdasDatabase) {
       in_progress: 0,
       paused: 0,
       completed: 0,
+      someday: 0,
+      acceptedByPriority: {
+        high: 0,
+        medium: 0,
+        low: 0,
+      },
     };
 
     for (const task of tasks) {
-      const taskStatus = task.status as keyof typeof stats;
-      if (taskStatus in stats && taskStatus !== "total") {
-        stats[taskStatus]++;
+      const taskStatus = task.status as keyof Omit<typeof stats, "total" | "acceptedByPriority">;
+      if (taskStatus in stats) {
+        (stats[taskStatus] as number)++;
+      }
+      // 承認済みの優先度別カウント
+      if (task.status === "accepted" && task.priority) {
+        const priority = task.priority as "high" | "medium" | "low";
+        if (priority in stats.acceptedByPriority) {
+          stats.acceptedByPriority[priority]++;
+        }
       }
     }
 

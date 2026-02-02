@@ -11,6 +11,7 @@ import {
   ChevronRight,
   FolderGit2,
   FolderKanban,
+  Info,
   Pencil,
   Plus,
   Search,
@@ -21,7 +22,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
@@ -36,6 +37,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProjects, useProjectsConfig } from "@/hooks/use-projects";
 
 export function ProjectsPanel() {
@@ -167,6 +169,15 @@ export function ProjectsPanel() {
                   )}
                   <FolderKanban className="h-5 w-5 text-indigo-500" />
                   Projects
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-4 w-4 cursor-help text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>プロジェクトを管理します。</p>
+                      <p>タスクや学びをプロジェクトに紐付けできます。</p>
+                    </TooltipContent>
+                  </Tooltip>
                   {projects.length > 0 && (
                     <Badge variant="secondary" className="ml-1">
                       {projects.length}
@@ -217,16 +228,11 @@ export function ProjectsPanel() {
                   </Button>
                 </div>
               </div>
-              {!isOpen && (
-                <CardDescription className="mt-1 text-xs">クリックして展開</CardDescription>
-              )}
+              {!isOpen && <p className="mt-1 text-xs text-muted-foreground">クリックして展開</p>}
             </CardHeader>
           </CollapsibleTrigger>
           <CollapsibleContent>
             <CardContent className="flex min-h-0 flex-1 flex-col">
-              <CardDescription className="mb-3">
-                プロジェクトを管理します。タスクや学びをプロジェクトに紐付けできます。
-              </CardDescription>
               {error && <p className="mb-4 shrink-0 text-sm text-destructive">{error}</p>}
 
               {autoDetectResult && (

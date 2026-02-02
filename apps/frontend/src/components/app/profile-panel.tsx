@@ -1,11 +1,12 @@
-import { Lightbulb, Plus, Sparkles, Target, User, Wrench } from "lucide-react";
+import { Info, Lightbulb, Plus, Sparkles, Target, User, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProfile, useProfileSuggestions } from "@/hooks/use-profile";
 
 export function ProfilePanel() {
@@ -113,15 +114,19 @@ export function ProfilePanel() {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle className="flex items-center gap-2">
-            <User className="h-5 w-5 text-orange-500" />
-            Profile Settings
-          </CardTitle>
-          <CardDescription>
-            プロフィール情報は学び抽出時に参照されます。提案は Tasks タブに表示されます。
-          </CardDescription>
-        </div>
+        <CardTitle className="flex items-center gap-2">
+          <User className="h-5 w-5 text-orange-500" />
+          Profile Settings
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="h-4 w-4 cursor-help text-muted-foreground" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>プロフィール情報は学び抽出時に参照されます。</p>
+              <p>提案は Tasks タブに表示されます。</p>
+            </TooltipContent>
+          </Tooltip>
+        </CardTitle>
         <Button onClick={handleGenerateSuggestions} disabled={generating} size="sm">
           <Sparkles className={`mr-1 h-3 w-3 ${generating ? "animate-pulse" : ""}`} />
           {generating ? "生成中..." : "提案を生成"}

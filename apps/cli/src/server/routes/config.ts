@@ -41,6 +41,9 @@ interface IntegrationsUpdateBody {
     providers?: Partial<AIProviderConfig["providers"]>;
     enableFallback?: boolean;
   };
+  slackKeywords?: {
+    watchKeywords?: string[];
+  };
 }
 
 /** enabled 設定を持つ連携機能のキー */
@@ -226,6 +229,25 @@ function updateAIProviderConfig(
 }
 
 /**
+ * Slack キーワード設定を更新
+ */
+function updateSlackKeywordsConfig(
+  config: AdasConfig,
+  slackKeywords: IntegrationsUpdateBody["slackKeywords"],
+): boolean {
+  if (!slackKeywords) return false;
+
+  let updated = false;
+
+  if (slackKeywords.watchKeywords !== undefined) {
+    config.slack.watchKeywords = slackKeywords.watchKeywords;
+    updated = true;
+  }
+
+  return updated;
+}
+
+/**
  * 連携機能の有効/無効設定を管理するAPI
  * トークンなどの機密情報は返さない
  */
@@ -311,12 +333,14 @@ export function createConfigRouter() {
     const taskElaborationUpdated = updateTaskElaborationConfig(config, body.taskElaboration);
     const rateLimitUpdated = updateRateLimitConfig(config, body.rateLimit);
     const aiProviderUpdated = updateAIProviderConfig(config, body.aiProvider);
+    const slackKeywordsUpdated = updateSlackKeywordsConfig(config, body.slackKeywords);
     const updated =
       enabledUpdated ||
       summarizerUpdated ||
       taskElaborationUpdated ||
       rateLimitUpdated ||
-      aiProviderUpdated;
+      aiProviderUpdated ||
+      slackKeywordsUpdated;
 
     if (updated) {
       saveConfig(config);
@@ -328,7 +352,7 @@ export function createConfigRouter() {
       requiresRestart: updated,
       integrations: {
         whisper: { enabled: config.whisper.enabled },
-        slack: { enabled: config.slack.enabled },
+        slack: { enabled: config.slack.enabled, watchKeywords: config.slack.watchKeywords },
         github: { enabled: config.github.enabled },
         claudeCode: { enabled: config.claudeCode.enabled },
         evaluator: { enabled: config.evaluator.enabled },

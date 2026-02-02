@@ -73,13 +73,51 @@ export HF_TOKEN=hf_...
 
 ## 設定ファイル
 
-デフォルトの設定は `~/.adas/config.json` に保存:
+`~/.adas/config.json` で各機能を設定できます。
+初回起動時に自動生成されるため、手動で作成する必要はありません。
+
+### 最小構成 (音声認識のみ)
+
+```json
+{}
+```
+
+空の JSON でも起動可能です。全てデフォルト値が使用されます。
+
+### 推奨構成
+
+```json
+{
+  "whisper": {
+    "enabled": true,
+    "hfToken": "hf_..."
+  },
+  "slack": {
+    "enabled": true,
+    "xoxcToken": "xoxc-...",
+    "xoxdToken": "xoxd-...",
+    "userId": "U12345678",
+    "channels": ["C123456789"],
+    "watchKeywords": ["キーワード"]
+  },
+  "github": {
+    "enabled": true,
+    "username": "your-github-username"
+  },
+  "claudeCode": {
+    "enabled": true
+  }
+}
+```
+
+### 全設定項目
 
 ```json
 {
   "recordingsDir": "~/.adas/recordings",
   "dbPath": "~/.adas/adas.db",
   "whisper": {
+    "enabled": true,
     "modelName": "ggml-large-v3-turbo-q5_0.bin",
     "language": "ja",
     "engine": "whisperx",
@@ -88,7 +126,7 @@ export HF_TOKEN=hf_...
   "audio": {
     "sampleRate": 16000,
     "channels": 1,
-    "chunkDurationMinutes": 5
+    "chunkDurationMinutes": 2
   },
   "server": { "port": 3001 },
   "evaluator": {
@@ -97,25 +135,68 @@ export HF_TOKEN=hf_...
   },
   "worker": {
     "url": "http://localhost:3100",
-    "timeout": 120000
+    "timeout": 300000
+  },
+  "localWorker": {
+    "url": "http://localhost:3200",
+    "timeout": 300000
+  },
+  "sseServer": {
+    "url": "http://localhost:3002",
+    "port": 3002
   },
   "slack": {
     "enabled": false,
     "xoxcToken": "xoxc-...",
     "xoxdToken": "xoxd-...",
-    "fetchIntervalMinutes": 5
+    "userId": "U12345678",
+    "fetchIntervalMinutes": 5,
+    "parallelWorkers": 3,
+    "channels": [],
+    "excludeChannels": [],
+    "mentionGroups": [],
+    "watchKeywords": []
   },
   "github": {
     "enabled": false,
+    "username": "",
     "fetchIntervalMinutes": 10,
     "parallelWorkers": 2
   },
   "claudeCode": {
     "enabled": false,
-    "fetchIntervalMinutes": 5
+    "fetchIntervalMinutes": 5,
+    "parallelWorkers": 2,
+    "projects": []
+  },
+  "promptImprovement": {
+    "enabled": false,
+    "badFeedbackThreshold": 5
+  },
+  "summarizer": {
+    "dailyScheduleHour": 23,
+    "timesIntervalMinutes": 0
   }
 }
 ```
+
+### 設定項目の説明
+
+| 項目 | 説明 |
+|------|------|
+| `whisper.enabled` | 音声認識の有効/無効 |
+| `whisper.hfToken` | HuggingFace トークン (話者識別に必要) |
+| `slack.enabled` | Slack 連携の有効/無効 |
+| `slack.xoxcToken` / `xoxdToken` | Slack ブラウザセッションのトークン |
+| `slack.userId` | 自分の Slack ユーザーID (例: `U12345678`) |
+| `slack.channels` | 監視するチャンネル ID の配列 |
+| `slack.watchKeywords` | 監視するキーワードの配列 |
+| `github.enabled` | GitHub 連携の有効/無効 |
+| `github.username` | GitHub ユーザー名 (Issue/PR のフィルタに使用) |
+| `claudeCode.enabled` | Claude Code 連携の有効/無効 |
+| `claudeCode.projects` | 監視するプロジェクトパス (空配列で全プロジェクト) |
+| `summarizer.dailyScheduleHour` | 日次サマリの自動生成時間 (0-23) |
+| `summarizer.timesIntervalMinutes` | 時間サマリの自動生成間隔 (0 = 無効) |
 
 ---
 
@@ -164,11 +245,42 @@ bun run cli -- setup
 
 ### HuggingFace トークン関連
 
-話者ダイアライゼーションには HuggingFace トークンが必要:
+話者ダイアライゼーション (誰が話したかを識別) には HuggingFace トークンが必要です。
 
-1. https://huggingface.co/settings/tokens でトークンを取得
-2. pyannote のモデル利用規約に同意(https://huggingface.co/pyannote/speaker-diarization-3.1)
-3. `~/.adas/config.json` の `whisper.hfToken` に設定、または `HF_TOKEN` 環境変数をセット
+**取得手順:**
+
+1. **HuggingFace アカウント作成**
+   - https://huggingface.co/join でアカウントを作成
+
+2. **トークンの発行**
+   - https://huggingface.co/settings/tokens にアクセス
+   - 「New token」をクリック
+   - Token type: `Read` を選択
+   - 「Generate token」でトークンを作成
+   - 表示されたトークン (`hf_...`) をコピー
+
+3. **pyannote モデルの利用規約に同意**
+   - https://huggingface.co/pyannote/speaker-diarization-3.1 にアクセス
+   - ページ下部の「I have read and accept the license terms」にチェック
+   - 「Submit」をクリック
+
+4. **トークンの設定** (いずれかの方法)
+
+   **方法 A: 設定ファイルに記載**
+   ```json
+   {
+     "whisper": {
+       "hfToken": "hf_xxxxxxxxxxxxxxxxxxxx"
+     }
+   }
+   ```
+
+   **方法 B: 環境変数で設定**
+   ```bash
+   export HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
+   ```
+
+**注意:** HuggingFace トークンがない場合でも音声認識は動作しますが、話者識別は無効になります。
 
 ### キャッシュのクリア
 

@@ -31,6 +31,8 @@ export interface AIProviderConfig {
     extractLearnings: LLMProviderType;
     /** タスク抽出 */
     taskExtract: LLMProviderType;
+    /** 読み生成 (Kuromoji フォールバック用) */
+    generateReadings: LLMProviderType;
   };
   /** フォールバック有効化 (LM Studio 失敗時に Claude へ) */
   enableFallback: boolean;
@@ -81,6 +83,12 @@ export interface AdasConfig {
     excludeChannels: string[]; // Channel IDs to exclude (e.g., RSS feed channels)
     mentionGroups: string[]; // Group names to monitor (e.g., "team_製品開発本部_ジョブアンテナ")
     watchKeywords: string[]; // Keywords to monitor (e.g., "ジョブアンテナ", "障害")
+    priorityNotification: {
+      enabled: boolean; // 優先度通知を有効にする
+      terminalNotify: boolean; // ターミナルに通知を表示
+      sseNotify: boolean; // SSE で通知を送信
+      cooldownMinutes: number; // 同一スレッドの通知抑制時間 (分)
+    };
   };
   claudeCode: {
     enabled: boolean;
@@ -185,6 +193,12 @@ const defaultConfig: AdasConfig = {
     excludeChannels: [],
     mentionGroups: [],
     watchKeywords: [],
+    priorityNotification: {
+      enabled: true,
+      terminalNotify: true,
+      sseNotify: true,
+      cooldownMinutes: 5,
+    },
   },
   claudeCode: {
     enabled: false,
@@ -233,6 +247,7 @@ const defaultConfig: AdasConfig = {
       analyzeProfile: "claude",
       extractLearnings: "claude",
       taskExtract: "claude",
+      generateReadings: "lmstudio",
     },
     enableFallback: true,
   },
@@ -304,7 +319,14 @@ export function loadConfig(): AdasConfig {
     worker: { ...defaultConfig.worker, ...userConfig.worker },
     localWorker: { ...defaultConfig.localWorker, ...userConfig.localWorker },
     promptImprovement: { ...defaultConfig.promptImprovement, ...userConfig.promptImprovement },
-    slack: { ...defaultConfig.slack, ...userConfig.slack },
+    slack: {
+      ...defaultConfig.slack,
+      ...userConfig.slack,
+      priorityNotification: {
+        ...defaultConfig.slack.priorityNotification,
+        ...userConfig.slack?.priorityNotification,
+      },
+    },
     claudeCode: { ...defaultConfig.claudeCode, ...userConfig.claudeCode },
     github: { ...defaultConfig.github, ...userConfig.github },
     projects: { ...defaultConfig.projects, ...userConfig.projects },

@@ -179,6 +179,8 @@ export function registerVocabCommand(program: Command): void {
 
 /**
  * DB の vocabulary テーブルから initial_prompt 用の文字列を生成する。
+ * reading (読み仮名) がある場合は「読み(用語)」形式で出力し、
+ * Whisper の認識精度を向上させる。
  */
 export function buildInitialPrompt(db: ReturnType<typeof createDatabase>): string | undefined {
   const terms = db.select().from(schema.vocabulary).all();
@@ -186,8 +188,16 @@ export function buildInitialPrompt(db: ReturnType<typeof createDatabase>): strin
   if (terms.length === 0) return undefined;
 
   // 用語リストを initial_prompt 形式に変換
-  // WhisperX は initial_prompt でコンテキストを渡せる
-  const termList = terms.map((v) => v.term).join("、");
+  // 読み仮名がある場合: 「読み(用語)」形式 → Whisper が発音と正式名称を関連付けられる
+  // 読み仮名がない場合: 用語のみ
+  const termList = terms
+    .map((v) => {
+      if (v.reading) {
+        return `${v.reading}(${v.term})`;
+      }
+      return v.term;
+    })
+    .join("、");
 
   return `以下は会話で使われる可能性のある用語です: ${termList}`;
 }

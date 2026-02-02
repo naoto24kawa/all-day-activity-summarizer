@@ -5,10 +5,10 @@
  */
 
 import type { RateLimitStatus } from "@repo/types";
-import { Activity, Bot, BrainCircuit, Clock, Gauge, RefreshCw, Zap } from "lucide-react";
+import { Activity, Bot, BrainCircuit, Clock, Gauge, Info, RefreshCw, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -541,9 +541,16 @@ export function AISettingsPanel() {
         <CardTitle className="flex items-center gap-2">
           <Bot className="h-5 w-5" />
           AI Settings
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="h-4 w-4 cursor-help text-muted-foreground" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>サマリー生成とレート制限の設定</p>
+            </TooltipContent>
+          </Tooltip>
           {hasWarning && <span className="ml-2 inline-flex h-2 w-2 rounded-full bg-amber-500" />}
         </CardTitle>
-        <CardDescription>サマリー生成とレート制限の設定</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <SummarizerScheduleSection

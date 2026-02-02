@@ -1,4 +1,14 @@
-import { Book, Check, Pencil, RefreshCw, Search, Sparkles, Trash2, X } from "lucide-react";
+import {
+  Book,
+  Check,
+  Languages,
+  Pencil,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   AlertDialog,
@@ -16,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useJobProgress } from "@/hooks/use-job-progress";
 import { useVocabulary } from "@/hooks/use-vocabulary";
 import { postAdasApi } from "@/lib/adas-api";
 import { getTodayDateString } from "@/lib/date";
@@ -41,7 +52,6 @@ export function VocabularyPanel({ className }: VocabularyPanelProps) {
   const [newCategory, setNewCategory] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
-  const [extracting, setExtracting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -51,6 +61,16 @@ export function VocabularyPanel({ className }: VocabularyPanelProps) {
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; term: string } | null>(null);
 
   const targetDate = getTodayDateString();
+
+  // 用語抽出ジョブの進捗管理
+  const extractJob = useJobProgress({
+    onAllCompleted: () => refresh(),
+  });
+
+  // 読み設定ジョブの進捗管理
+  const readingsJob = useJobProgress({
+    onAllCompleted: () => refresh(),
+  });
 
   // カテゴリ一覧を動的に取得
   const categories = useMemo(() => {
@@ -88,14 +108,28 @@ export function VocabularyPanel({ className }: VocabularyPanelProps) {
   };
 
   const handleExtractAll = async () => {
-    setExtracting(true);
     try {
-      await postAdasApi("/api/vocabulary/extract/all", { date: targetDate });
-      await refresh();
+      const result = (await postAdasApi("/api/vocabulary/extract/all", { date: targetDate })) as {
+        jobIds: number[];
+      };
+      if (result.jobIds?.length > 0) {
+        extractJob.trackJobs(result.jobIds);
+      }
     } catch (err) {
       console.error("Failed to extract vocabulary:", err);
-    } finally {
-      setExtracting(false);
+    }
+  };
+
+  const handleGenerateReadings = async () => {
+    try {
+      const result = (await postAdasApi("/api/vocabulary/generate-readings", {})) as {
+        jobId: number;
+      };
+      if (result.jobId) {
+        readingsJob.trackJob(result.jobId);
+      }
+    } catch (err) {
+      console.error("Failed to generate readings:", err);
     }
   };
 
@@ -213,11 +247,25 @@ export function VocabularyPanel({ className }: VocabularyPanelProps) {
               variant="outline"
               size="sm"
               onClick={handleExtractAll}
-              disabled={extracting}
+              disabled={extractJob.isProcessing}
               title="Extract vocabulary from all feeds"
             >
-              <Sparkles className={`mr-1 h-3 w-3 ${extracting ? "animate-pulse" : ""}`} />
-              {extracting ? "..." : "用語抽出"}
+              <Sparkles
+                className={`mr-1 h-3 w-3 ${extractJob.isProcessing ? "animate-pulse" : ""}`}
+              />
+              {extractJob.isProcessing ? "..." : "用語抽出"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleGenerateReadings}
+              disabled={readingsJob.isProcessing}
+              title="Generate readings for terms without reading"
+            >
+              <Languages
+                className={`mr-1 h-3 w-3 ${readingsJob.isProcessing ? "animate-pulse" : ""}`}
+              />
+              {readingsJob.isProcessing ? "..." : "読み設定"}
             </Button>
             <Button variant="ghost" size="icon" onClick={() => refresh()} title="Refresh">
               <RefreshCw className="h-4 w-4" />

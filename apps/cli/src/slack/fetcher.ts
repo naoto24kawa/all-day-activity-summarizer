@@ -8,6 +8,7 @@ import type { AdasDatabase, NewSlackMessage, SlackQueueJob } from "@repo/db";
 import { schema } from "@repo/db";
 import consola from "consola";
 import { and, eq } from "drizzle-orm";
+import { enqueueJob } from "../ai-job/queue.js";
 import { findProjectByName, findProjectFromContent } from "../utils/project-lookup.js";
 import type { SlackClient, SlackMessageAttachment } from "./client.js";
 
@@ -220,8 +221,9 @@ function autoLinkProject(
 
 /**
  * Insert message if not exists
+ * Returns the inserted message ID if successful, null otherwise
  */
-function insertMessageIfNotExists(db: AdasDatabase, message: NewSlackMessage): boolean {
+function insertMessageIfNotExists(db: AdasDatabase, message: NewSlackMessage): number | null {
   // Check if already exists (using unique constraint on channel_id + message_ts)
   const existing = db
     .select()
@@ -235,7 +237,7 @@ function insertMessageIfNotExists(db: AdasDatabase, message: NewSlackMessage): b
     .get();
 
   if (existing) {
-    return false;
+    return null;
   }
 
   // Ensure channel exists in slackChannels table
@@ -256,12 +258,22 @@ function insertMessageIfNotExists(db: AdasDatabase, message: NewSlackMessage): b
   }
 
   try {
-    db.insert(schema.slackMessages).values(message).run();
-    return true;
+    const result = db
+      .insert(schema.slackMessages)
+      .values(message)
+      .returning({ id: schema.slackMessages.id })
+      .get();
+
+    // 優先度判定ジョブを登録
+    if (result?.id) {
+      enqueueJob(db, "slack-priority", { messageId: result.id });
+    }
+
+    return result?.id ?? null;
   } catch (error) {
     // Unique constraint violation - already exists
     if (String(error).includes("UNIQUE constraint failed")) {
-      return false;
+      return null;
     }
     throw error;
   }
@@ -334,7 +346,7 @@ export async function fetchMentions(
           isRead: false,
         });
 
-        if (inserted) {
+        if (inserted !== null) {
           stored++;
         }
       }
@@ -411,7 +423,7 @@ export async function fetchKeywords(
           isRead: false,
         });
 
-        if (inserted) {
+        if (inserted !== null) {
           stored++;
         }
       }
@@ -494,7 +506,7 @@ async function fetchThreadReplies(
         isRead: false,
       });
 
-      if (inserted) {
+      if (inserted !== null) {
         stored++;
       }
     }
@@ -576,7 +588,7 @@ export async function fetchChannel(
         isRead: false,
       });
 
-      if (inserted) {
+      if (inserted !== null) {
         stored++;
       }
 
@@ -668,7 +680,7 @@ export async function fetchDM(
         isRead: false,
       });
 
-      if (inserted) {
+      if (inserted !== null) {
         stored++;
       }
     }

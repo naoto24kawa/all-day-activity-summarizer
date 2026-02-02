@@ -80,7 +80,8 @@ bun run lint:fix
 
 # 型チェック
 npx tsc --noEmit -p apps/cli/tsconfig.json
-npx tsc --noEmit -p apps/worker/tsconfig.json
+npx tsc --noEmit -p apps/ai-worker/tsconfig.json
+npx tsc --noEmit -p apps/local-worker/tsconfig.json
 npx tsc --noEmit -p packages/core/tsconfig.json
 ```
 
@@ -120,8 +121,10 @@ bun run dev
 ```bash
 # LISTEN しているプロセスを確認
 lsof -i :5173 -sTCP:LISTEN  # フロントエンド
-lsof -i :3001 -sTCP:LISTEN  # API サーバー
-lsof -i :3100 -sTCP:LISTEN  # Worker
+lsof -i :3001 -sTCP:LISTEN  # CLI API サーバー
+lsof -i :3002 -sTCP:LISTEN  # SSE Server
+lsof -i :3100 -sTCP:LISTEN  # AI Worker
+lsof -i :3200 -sTCP:LISTEN  # Local Worker
 
 # プロセスを停止
 kill <PID>

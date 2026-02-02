@@ -165,7 +165,7 @@ export async function handleProfileAnalyze(
 
 interface ActivityData {
   claudeCodeSessions: Array<{ projectName: string | null; summary: string | null }>;
-  learnings: Array<{ content: string; category: string | null }>;
+  learnings: Array<{ content: string; category: string | null; tags: string | null }>;
   githubItems: Array<{ repoName: string; labels: string | null }>;
 }
 
@@ -183,6 +183,7 @@ function collectActivityData(db: AdasDatabase, startDateStr: string): ActivityDa
     .select({
       content: schema.learnings.content,
       category: schema.learnings.category,
+      tags: schema.learnings.tags,
     })
     .from(schema.learnings)
     .where(gte(schema.learnings.date, startDateStr))
@@ -208,13 +209,13 @@ async function analyzeProfileWithWorker(
   const { url, timeout } = config.worker;
 
   const requestBody = {
-    profile: {
+    currentProfile: {
       experienceYears: profile.experienceYears,
       specialties: profile.specialties ? JSON.parse(profile.specialties) : [],
       knownTechnologies: profile.knownTechnologies ? JSON.parse(profile.knownTechnologies) : [],
       learningGoals: profile.learningGoals ? JSON.parse(profile.learningGoals) : [],
     },
-    activity: activityData,
+    activityData: activityData,
   };
 
   try {

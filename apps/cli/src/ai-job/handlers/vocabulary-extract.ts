@@ -288,7 +288,7 @@ async function handleMemoVocabularyExtract(
   if (memos.length === 0) {
     return {
       success: true,
-      resultSummary: "対象メモがありません (処理済み含む)",
+      resultSummary: "対象メモがありません",
       data: { extracted: 0, skippedDuplicate: 0, tasksCreated: 0 },
     };
   }

@@ -117,7 +117,7 @@ interface UpdateIntegrationsResponse {
   requiresRestart: boolean;
   integrations: {
     whisper: IntegrationStatus;
-    slack: IntegrationStatus;
+    slack: IntegrationStatus & { watchKeywords?: string[] };
     github: IntegrationStatus;
     claudeCode: IntegrationStatus;
     evaluator: IntegrationStatus;
@@ -304,6 +304,35 @@ export function useConfig() {
     [],
   );
 
+  const updateSlackKeywords = useCallback(async (watchKeywords: string[]) => {
+    try {
+      setUpdating(true);
+      setError(null);
+      const body = { slackKeywords: { watchKeywords } };
+      const data = await patchAdasApi<UpdateIntegrationsResponse>("/api/config/integrations", body);
+
+      // ローカル状態を更新
+      setIntegrations((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          slack: {
+            ...prev.slack,
+            watchKeywords: data.integrations.slack.watchKeywords ?? [],
+          },
+        };
+      });
+
+      return data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "設定の更新に失敗しました";
+      setError(message);
+      throw err;
+    } finally {
+      setUpdating(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchConfig();
   }, [fetchConfig]);
@@ -318,5 +347,6 @@ export function useConfig() {
     updateSummarizerConfig,
     updateRateLimitConfig,
     updateAIProviderConfig,
+    updateSlackKeywords,
   };
 }

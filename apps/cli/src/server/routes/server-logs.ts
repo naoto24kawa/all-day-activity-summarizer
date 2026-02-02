@@ -8,11 +8,12 @@ import type { AdasConfig } from "../../config.js";
  */
 async function fetchWorkerLogs(
   workerUrl: string,
+  source: LogSource,
   date: string,
   limit: number,
 ): Promise<{ entries: LogEntry[] }> {
   try {
-    const response = await fetch(`${workerUrl}/rpc/logs/worker/${date}?limit=${limit}`, {
+    const response = await fetch(`${workerUrl}/rpc/logs/${source}/${date}?limit=${limit}`, {
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) {
@@ -57,14 +58,21 @@ export function createServerLogsRouter(config?: AdasConfig) {
       return c.json({ error: "Invalid date format. Use YYYY-MM-DD" }, 400);
     }
 
-    // Worker のログは Worker API から取得
-    if (source === "worker" && config?.worker?.url) {
-      const result = await fetchWorkerLogs(config.worker.url, date, limit + offset);
+    // AI Worker のログは AI Worker API から取得
+    if ((source === "worker" || source === "ai-worker") && config?.worker?.url) {
+      const result = await fetchWorkerLogs(config.worker.url, source, date, limit + offset);
       const entries = result.entries.slice(offset, offset + limit);
       return c.json({ entries, source, date, limit, offset });
     }
 
-    // Serve のログはローカルから読み取り
+    // Local Worker のログは Local Worker API から取得
+    if (source === "local-worker" && config?.localWorker?.url) {
+      const result = await fetchWorkerLogs(config.localWorker.url, source, date, limit + offset);
+      const entries = result.entries.slice(offset, offset + limit);
+      return c.json({ entries, source, date, limit, offset });
+    }
+
+    // Serve/servers のログはローカルから読み取り
     const entries = readLogFile(source, date, { limit, offset });
     return c.json({ entries, source, date, limit, offset });
   });

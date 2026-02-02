@@ -78,12 +78,43 @@ Slack のメンション・チャンネル・DM・キーワードを自動取得
 
 ### トークンの取得方法
 
-1. Slack Web アプリ (https://app.slack.com) をブラウザで開く
-2. DevTools を開く (F12 または Cmd+Option+I)
-3. Network タブを選択
-4. 任意の API リクエストを選択し、Request Headers から以下を取得:
-   - `Authorization: Bearer xoxc-...` → `xoxcToken`
-   - `Cookie: d=xoxd-...` → `xoxdToken`
+#### xoxc / xoxd トークン
+
+1. **Slack Web アプリを開く**
+   - ブラウザで https://app.slack.com にアクセス
+   - ワークスペースにログイン
+
+2. **DevTools を開く**
+   - Windows/Linux: `F12` または `Ctrl+Shift+I`
+   - macOS: `Cmd+Option+I`
+
+3. **Network タブでトークンを取得**
+   - DevTools の「Network」タブを選択
+   - 左上のフィルタに `api` と入力
+   - ページを更新 (F5) して API リクエストを発生させる
+   - 任意のリクエスト (例: `conversations.list`) をクリック
+   - 「Headers」タブの「Request Headers」セクションから:
+     - `Authorization: Bearer xoxc-...` → `xoxcToken` として使用
+     - `Cookie` ヘッダー内の `d=xoxd-...;` → `xoxdToken` として使用
+
+#### ユーザー ID (userId)
+
+自分の投稿を除外するために必要です。
+
+1. Slack アプリで自分のプロフィールを開く
+2. 「その他」(…) ボタンをクリック
+3. 「メンバー ID をコピー」を選択
+4. `U` で始まる ID (例: `U059Z83SHRD`) が取得できる
+
+#### チャンネル ID の取得
+
+監視するチャンネルを指定する場合:
+
+1. Slack でチャンネルを開く
+2. チャンネル名をクリックして詳細を表示
+3. 下部にある「チャンネル ID」をコピー (例: `C01234ABCDE`)
+
+**注意:** トークンはブラウザセッションに紐づいているため、ログアウトすると無効になります。
 
 ### 設定オプション
 

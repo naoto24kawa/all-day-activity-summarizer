@@ -3,6 +3,7 @@ import {
   Calendar,
   Clock,
   FileText,
+  Link2,
   Minus,
   RefreshCw,
   Sparkles,
@@ -13,6 +14,7 @@ import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { SummaryFeedbackDialog } from "@/components/app/summary-feedback-dialog";
+import { SummarySourcesPanel } from "@/components/app/summary-sources-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFeedbacks } from "@/hooks/use-feedbacks";
 import { useJobProgress } from "@/hooks/use-job-progress";
 import { useSummaries } from "@/hooks/use-summaries";
+import { useSummarySources } from "@/hooks/use-summary-sources";
 import { formatTimeJST, getTodayDateString } from "@/lib/date";
 
 interface SummaryViewProps {
@@ -59,6 +62,24 @@ export function SummaryView({ className }: SummaryViewProps) {
     summaryId: number;
     rating: FeedbackRating;
   } | null>(null);
+  const {
+    sources,
+    loading: sourcesLoading,
+    error: sourcesError,
+    fetchSources,
+    clearSources,
+  } = useSummarySources();
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+
+  const handleSourcesClick = async (summaryId: number) => {
+    setSourcesOpen(true);
+    await fetchSources(summaryId);
+  };
+
+  const handleSourcesClose = () => {
+    setSourcesOpen(false);
+    clearSources();
+  };
 
   const handleRefresh = async () => {
     await Promise.all([refetchTimes(), refetchDaily()]);
@@ -158,6 +179,7 @@ export function SummaryView({ className }: SummaryViewProps) {
                     summary={summary}
                     feedback={getFeedback(summary.id)?.rating ?? null}
                     onFeedback={(rating) => handleFeedbackClick(summary.id, rating)}
+                    onSourcesClick={() => handleSourcesClick(summary.id)}
                     showTimeRange={false}
                   />
                 ))}
@@ -182,6 +204,7 @@ export function SummaryView({ className }: SummaryViewProps) {
                     summary={summary}
                     feedback={getFeedback(summary.id)?.rating ?? null}
                     onFeedback={(rating) => handleFeedbackClick(summary.id, rating)}
+                    onSourcesClick={() => handleSourcesClick(summary.id)}
                     showTimeRange
                   />
                 ))}
@@ -198,6 +221,13 @@ export function SummaryView({ className }: SummaryViewProps) {
           onCancel={() => setPendingFeedback(null)}
         />
       )}
+      <SummarySourcesPanel
+        open={sourcesOpen}
+        onClose={handleSourcesClose}
+        loading={sourcesLoading}
+        error={sourcesError}
+        sources={sources?.sources ?? null}
+      />
     </Card>
   );
 }
@@ -206,11 +236,13 @@ function SummaryItem({
   summary,
   feedback,
   onFeedback,
+  onSourcesClick,
   showTimeRange,
 }: {
   summary: Summary;
   feedback: FeedbackRating | null;
   onFeedback: (rating: FeedbackRating) => void;
+  onSourcesClick: () => void;
   showTimeRange: boolean;
 }) {
   return (
@@ -224,6 +256,15 @@ function SummaryItem({
           <span />
         )}
         <div className="flex shrink-0 gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={onSourcesClick}
+            title="ソースを表示"
+          >
+            <Link2 className="h-3 w-3" />
+          </Button>
           <Button
             variant={feedback === "good" ? "default" : "ghost"}
             size="icon"

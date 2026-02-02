@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAiProcessingLogs } from "@/hooks/use-ai-processing-logs";
+import { useAiProcessingLogs, useAiProcessingLogsStats } from "@/hooks/use-ai-processing-logs";
 import { getTodayDateString } from "@/lib/date";
 
 interface AiProcessingLogPanelProps {
@@ -25,6 +25,7 @@ const PROCESS_TYPE_LABELS: Record<AiProcessType, string> = {
   "analyze-profile": "Profile",
   "suggest-tags": "Tags",
   "match-channels": "Channels",
+  "slack-priority": "Slack Priority",
 };
 
 const PROCESS_TYPE_COLORS: Record<AiProcessType, string> = {
@@ -39,6 +40,7 @@ const PROCESS_TYPE_COLORS: Record<AiProcessType, string> = {
   "analyze-profile": "text-indigo-500",
   "suggest-tags": "text-amber-500",
   "match-channels": "text-teal-500",
+  "slack-priority": "text-red-500",
 };
 
 export function AiProcessingLogPanel(_props: AiProcessingLogPanelProps) {
@@ -49,6 +51,8 @@ export function AiProcessingLogPanel(_props: AiProcessingLogPanelProps) {
     date,
     processType: filter === "all" ? undefined : filter,
   });
+
+  const { stats } = useAiProcessingLogsStats(date);
 
   return (
     <Card>
@@ -65,12 +69,25 @@ export function AiProcessingLogPanel(_props: AiProcessingLogPanelProps) {
       <CardContent>
         <Tabs value={filter} onValueChange={(v) => setFilter(v as AiProcessType | "all")}>
           <TabsList className="mb-4 flex-wrap">
-            <TabsTrigger value="all">All</TabsTrigger>
-            {Object.entries(PROCESS_TYPE_LABELS).map(([key, label]) => (
-              <TabsTrigger key={key} value={key}>
-                {label}
-              </TabsTrigger>
-            ))}
+            <TabsTrigger value="all" className="gap-1">
+              All
+              {stats && <Badge variant="secondary">{stats.total}</Badge>}
+            </TabsTrigger>
+            {Object.entries(PROCESS_TYPE_LABELS).map(([key, label]) => {
+              const typeStats = stats?.byProcessType[key];
+              const count = typeStats ? typeStats.success + typeStats.error : 0;
+              const errorCount = typeStats?.error ?? 0;
+              return (
+                <TabsTrigger key={key} value={key} className="gap-1">
+                  {label}
+                  {count > 0 && (
+                    <Badge variant={errorCount > 0 ? "destructive" : "secondary"}>
+                      {errorCount > 0 ? `${count}/${errorCount}err` : count}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
         </Tabs>
 

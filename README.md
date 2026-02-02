@@ -1,55 +1,53 @@
 # All Day Activity Summarizer (ADAS)
 
-PCの音声入出力を1日中監視し、WhisperX(ローカル)で文字起こし + 話者識別、Claude Code CLIで要約するアプリケーション。
-CLIツール + Worker(文字起こし/評価) + Web UIダッシュボードの3層構成。
+PC の音声入出力を監視し、WhisperX でローカル文字起こし + Claude で要約するアプリケーション。
 
 ## 主な機能
 
-- ブラウザベースの音声録音(Web UI から操作)
-- WhisperX(ローカル)による文字起こし + 話者ダイアライゼーション
-- Claude(sonnet)による音声認識テキストのAI解釈(読みやすい日本語への整形)
-- Claude Code CLI による時間単位/日次要約 (個人作業/チーム活動の分類表示)
-- ハルシネーション自動評価 + パターン自動追加
-- 話者登録(声紋埋め込み) + 未知話者の名前割り当て
-- SQLite(bun:sqlite + Drizzle ORM)によるデータ永続化
-- React + shadcn/ui ダッシュボードUI
-- **Slack 統合**: メンション・チャンネル・DM の自動取得
-- **GitHub 統合**: Issue/PR/レビューリクエストの自動取得
-- **Claude Code 統合**: セッション履歴の自動取得・表示
-- **タスク抽出**: Slack/GitHub/メモから AI でタスクを自動抽出、フィードバックループで精度向上
-- **タスク完了検知**: GitHub/Claude Code/Slack/音声から AI でタスク完了を自動検知
-- **プロジェクト管理**: プロジェクト単位でタスク・学びを管理、GitHub リポジトリと連携
-- **ユーザープロフィール管理**: 技術スキル・専門分野の自動提案と学び抽出精度向上
-- **単語帳 (Vocabulary)**: 専門用語を登録し、音声認識・サマリ・タスク・学び抽出の精度向上
-- **プロンプト定期見直し**: Claude Opus による1日1回の自動見直し、フィードバックベースの改善提案
-
-## 技術スタック
-
-| 機能 | 技術 |
-|------|------|
-| 音声キャプチャ | ブラウザ MediaRecorder API |
-| 文字起こし | WhisperX(ローカル) |
-| 要約/評価 | Claude Code CLI |
-| DB | SQLite(bun:sqlite + Drizzle ORM) |
-| CLI | Commander.js + Bun |
-| Worker | Hono + Bun.serve |
-| APIサーバー | Hono + @hono/node-server |
-| UI | React 19 + Vite + Tailwind CSS 4 + shadcn/ui |
+| カテゴリ | 機能 |
+|---------|------|
+| 音声認識 | WhisperX 文字起こし、話者識別、ハルシネーション評価 |
+| AI 要約 | 時間単位/日次要約、個人作業/チーム活動の自動分類 |
+| 外部連携 | Slack、GitHub、Claude Code からの自動取得 |
+| タスク管理 | AI によるタスク抽出・完了検知、プロジェクト管理 |
+| 学習支援 | 単語帳、ユーザープロフィール、プロンプト自動改善 |
 
 ## クイックスタート
 
 ```bash
-# 依存関係のインストール
+# 1. 依存関係インストール
 bun install
 
-# WhisperX + whisper.cpp のセットアップ
+# 2. WhisperX セットアップ (音声認識を使う場合)
 bun run cli -- setup
 
-# Worker 起動(ターミナル1)
-bun run cli -- worker
+# 3. サーバー起動 (2つのターミナルで)
+bun run cli -- workers  # ターミナル1: Worker
+bun run cli -- serve    # ターミナル2: API サーバー
+```
 
-# APIサーバー + 録音 + 要約スケジューラ(ターミナル2)
-bun run cli -- serve
+起動後、http://localhost:3001 で Web UI にアクセスできます。
+
+## サーバー構成
+
+| ポート | サービス | 用途 |
+|-------|---------|------|
+| 3001 | API Server | REST API + Web UI |
+| 3002 | SSE Server | リアルタイム通知 |
+| 3100 | AI Worker | Claude API 処理 |
+| 3200 | Local Worker | WhisperX 文字起こし |
+
+## 設定
+
+設定ファイル `~/.adas/config.json` は初回起動時に自動生成されます。
+
+```json
+{
+  "whisper": { "enabled": true, "hfToken": "hf_..." },
+  "slack": { "enabled": true, "xoxcToken": "...", "xoxdToken": "..." },
+  "github": { "enabled": true, "username": "..." },
+  "claudeCode": { "enabled": true }
+}
 ```
 
 詳細は [セットアップガイド](docs/setup.md) を参照してください。
@@ -58,14 +56,10 @@ bun run cli -- serve
 
 | ドキュメント | 内容 |
 |-------------|------|
-| [セットアップガイド](docs/setup.md) | インストール、設定、トラブルシューティング |
-| [CLIコマンドリファレンス](docs/cli.md) | 各コマンドの使い方 |
-| [APIエンドポイント](docs/api.md) | CLI APIサーバー・Worker RPC の詳細 |
-| [機能詳細](docs/features.md) | タスク、プロフィール、プロジェクト等の実装詳細 |
-| [外部サービス統合](docs/integrations.md) | GitHub、Slack、Claude Code との連携方法 |
-| [フィードバックループ](docs/feedback-loop.md) | AI出力品質の継続的改善システム |
-| [アーキテクチャ](docs/architecture.md) | モノレポ構造、DBスキーマ、データフロー |
-| [開発ワークフロー](docs/development.md) | 開発コマンド、品質管理、Git Hooks |
+| [セットアップガイド](docs/setup.md) | インストール、設定、トークン取得、トラブルシューティング |
+| [CLI リファレンス](docs/cli.md) | 各コマンドの使い方 |
+| [外部サービス統合](docs/integrations.md) | Slack / GitHub / Claude Code 連携 |
+| [アーキテクチャ](docs/architecture.md) | モノレポ構造、DB スキーマ |
 
 ## ライセンス
 

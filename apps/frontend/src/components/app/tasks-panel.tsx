@@ -15,6 +15,7 @@ import {
   type TaskStatus,
   type VocabularySuggestionSourceType,
   WORK_TYPE_LABELS,
+  WORK_TYPES,
   type WorkType,
 } from "@repo/types";
 import {
@@ -34,11 +35,13 @@ import {
   FolderKanban,
   Github,
   GitMerge,
+  Info,
   ListTree,
   Loader2,
   MessageSquare,
   Mic,
   Minus,
+  Moon,
   Pause,
   Pencil,
   Play,
@@ -91,6 +94,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useJobProgress } from "@/hooks/use-job-progress";
 import { useNotifications } from "@/hooks/use-notifications";
 import { getProjectName, useProjects } from "@/hooks/use-projects";
@@ -119,6 +123,7 @@ const TASK_STATUS_STYLES: Record<TaskStatus | "selected" | "suggested", string> 
   in_progress: "border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-950",
   paused: "border-yellow-400 bg-yellow-50 dark:border-yellow-600 dark:bg-yellow-950",
   suggested: "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-950",
+  someday: "opacity-50 border-purple-300 dark:border-purple-700",
   accepted: "",
 };
 
@@ -171,6 +176,13 @@ const STATUS_FILTER_CONFIG: {
     activeClass:
       "bg-red-100 border-red-400 text-red-700 dark:bg-red-950 dark:border-red-600 dark:text-red-300",
   },
+  {
+    status: "someday",
+    label: "いつか",
+    icon: Moon,
+    activeClass:
+      "bg-purple-100 border-purple-400 text-purple-700 dark:bg-purple-950 dark:border-purple-600 dark:text-purple-300",
+  },
 ];
 
 /** 用語提案ソースタイプのラベルマップ */
@@ -190,9 +202,31 @@ function getTaskStyle(task: Task, isSelected: boolean, isSuggested?: boolean): s
   return TASK_STATUS_STYLES[task.status] ?? "";
 }
 
+const STORAGE_KEY_STATUS_FILTER = "adas-tasks-status-filter";
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: complex UI component with many states
 export function TasksPanel({ className }: TasksPanelProps) {
   const date = getTodayDateString();
+  // ステータスフィルター (useTasks より先に定義)
+  // localStorage から復元、なければ "pending"
+  const [statusFilter, setStatusFilter] = useState<TaskStatus>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_STATUS_FILTER);
+    if (
+      saved &&
+      ["pending", "accepted", "in_progress", "paused", "completed", "rejected", "someday"].includes(
+        saved,
+      )
+    ) {
+      return saved as TaskStatus;
+    }
+    return "pending";
+  });
+
+  // statusFilter の変更を localStorage に保存
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_STATUS_FILTER, statusFilter);
+  }, [statusFilter]);
+
   const {
     tasks,
     loading,
@@ -220,7 +254,7 @@ export function TasksPanel({ className }: TasksPanelProps) {
     checkSimilarityBatch,
     // GitHub Issue 作成
     createGitHubIssue,
-  } = useTasks();
+  } = useTasks(statusFilter);
   const { stats } = useTaskStats(date);
   const {
     projects,
@@ -241,6 +275,10 @@ export function TasksPanel({ className }: TasksPanelProps) {
 
   const [sourceFilter, setSourceFilter] = useState<TaskSourceType | "all">("all");
   const [projectFilter, setProjectFilter] = useState<number | "all" | "none">("all");
+  const [workTypeFilter, setWorkTypeFilter] = useState<WorkType | "all">("all");
+  const [elaborationFilter, setElaborationFilter] = useState<
+    "all" | "elaborated" | "not-elaborated"
+  >("all");
   const [checkingCompletion, setCheckingCompletion] = useState(false);
   const [completionCheckJobId, setCompletionCheckJobId] = useState<number | null>(null);
 
@@ -268,9 +306,6 @@ export function TasksPanel({ className }: TasksPanelProps) {
   // 重複チェック
   const [checkingSimilarity, setCheckingSimilarity] = useState(false);
 
-  // ステータスフィルター (単一選択)
-  const [statusFilter, setStatusFilter] = useState<TaskStatus>("pending");
-
   // タスク詳細化
   const [elaborateDialogOpen, setElaborateDialogOpen] = useState(false);
   const [elaborateTargetTask, setElaborateTargetTask] = useState<Task | null>(null);
@@ -295,34 +330,16 @@ export function TasksPanel({ className }: TasksPanelProps) {
     setElaborateTargetTask(null);
   };
 
-  // 詳細化を開始 (モーダルなし) または結果確認 (結果がある場合)
-  const handleElaborate = async (task: Task) => {
-    // 詳細化結果がある場合はダイアログを開いて確認
-    if (task.elaborationStatus === "completed" && task.pendingElaboration) {
-      openElaborateDialog(task);
-      return;
-    }
-
+  // 詳細化ダイアログを開く
+  const handleElaborate = (task: Task) => {
     // 既に詳細化中の場合はスキップ
     if (task.elaborationStatus === "pending" || elaboratingTaskIds.has(task.id)) {
       toast.info("詳細化中です", { description: "しばらくお待ちください" });
       return;
     }
 
-    // ジョブを開始
-    try {
-      const result = await startElaborate(task.id);
-      trackElaboration(result.jobId, task.id);
-      toast.success("詳細化を開始しました", {
-        description: `タスク「${task.title}」をバックグラウンドで詳細化中`,
-      });
-      // タスクリストをリフレッシュ (elaborationStatus: pending を反映)
-      refetch();
-    } catch (err) {
-      toast.error("詳細化の開始に失敗しました", {
-        description: err instanceof Error ? err.message : String(err),
-      });
-    }
+    // ダイアログを開く (入力フェーズまたはプレビューフェーズ)
+    openElaborateDialog(task);
   };
 
   // 一括詳細化ダイアログ
@@ -429,6 +446,20 @@ export function TasksPanel({ className }: TasksPanelProps) {
         result = result.filter((t) => t.projectId === null);
       } else {
         result = result.filter((t) => t.projectId === projectFilter);
+      }
+    }
+
+    // WorkType filter
+    if (workTypeFilter !== "all") {
+      result = result.filter((t) => t.workType === workTypeFilter);
+    }
+
+    // Elaboration filter
+    if (elaborationFilter !== "all") {
+      if (elaborationFilter === "elaborated") {
+        result = result.filter((t) => t.elaborationStatus === "applied");
+      } else {
+        result = result.filter((t) => t.elaborationStatus !== "applied");
       }
     }
 
@@ -598,6 +629,7 @@ export function TasksPanel({ className }: TasksPanelProps) {
     paused: "中断",
     completed: "完了",
     rejected: "却下",
+    someday: "いつか",
   };
 
   // 楽観的更新でタスクを更新 (UIを即座に反映し、完了時にトースト通知)
@@ -793,33 +825,15 @@ export function TasksPanel({ className }: TasksPanelProps) {
     );
   }
 
-  const pendingTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "pending")));
-  const acceptedTasks = sortByPriority(filterTasks(tasks.filter((t) => t.status === "accepted")));
-  const inProgressTasks = sortByDateDesc(
-    filterTasks(tasks.filter((t) => t.status === "in_progress")),
-  );
-  const pausedTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "paused")));
-  const completedTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "completed")));
-  const rejectedTasks = sortByDateDesc(filterTasks(tasks.filter((t) => t.status === "rejected")));
-
-  // 選択されたステータスでフィルタリング
+  // API から既にステータスでフィルタされたタスクが返ってくる
+  // 追加のフィルタ (子タスク除外、ソース、プロジェクト) とソートを適用
   const filteredTasksByStatus = (() => {
-    switch (statusFilter) {
-      case "pending":
-        return pendingTasks;
-      case "accepted":
-        return acceptedTasks;
-      case "in_progress":
-        return inProgressTasks;
-      case "paused":
-        return pausedTasks;
-      case "completed":
-        return completedTasks;
-      case "rejected":
-        return rejectedTasks;
-      default:
-        return [];
+    const filtered = filterTasks(tasks);
+    // accepted は優先度でソート、その他は日付でソート
+    if (statusFilter === "accepted") {
+      return sortByPriority(filtered);
     }
+    return sortByDateDesc(filtered);
   })();
 
   // Count tasks by source for filter badges
@@ -856,6 +870,15 @@ export function TasksPanel({ className }: TasksPanelProps) {
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-purple-500" />
             Tasks
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-4 w-4 cursor-help text-muted-foreground" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>AIがSlack/GitHubから抽出したタスク候補です。</p>
+                <p>承認するとタスク化されます。</p>
+              </TooltipContent>
+            </Tooltip>
             {stats.pending > 0 && (
               <Badge variant="destructive" className="ml-2">
                 {stats.pending} 件の承認待ち
@@ -863,25 +886,6 @@ export function TasksPanel({ className }: TasksPanelProps) {
             )}
           </CardTitle>
           <div className="flex items-center gap-1">
-            {/* 編集モードトグル */}
-            <Button
-              variant={selectionMode ? "default" : "outline"}
-              size="sm"
-              onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
-              title={selectionMode ? "編集モードを終了" : "編集モードを開始"}
-            >
-              {selectionMode ? (
-                <>
-                  <X className="mr-1 h-3 w-3" />
-                  終了
-                </>
-              ) : (
-                <>
-                  <CheckSquare className="mr-1 h-3 w-3" />
-                  編集
-                </>
-              )}
-            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -1113,72 +1117,155 @@ export function TasksPanel({ className }: TasksPanelProps) {
             </Button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">
-          AIがSlack/GitHubから抽出したタスク候補です。承認するとタスク化されます。
-        </p>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col">
+        {/* ステータスフィルター */}
+        {stats.total > 0 && (
+          <div className="mb-3 flex shrink-0 flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-xs text-muted-foreground">表示:</span>
+            {STATUS_FILTER_CONFIG.map(({ status, label, icon: Icon, activeClass }) => {
+              const isActive = statusFilter === status;
+              const count = stats[status] ?? 0;
+              return (
+                <button
+                  type="button"
+                  key={status}
+                  onClick={() => selectStatusFilter(status)}
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                    isActive
+                      ? activeClass
+                      : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  <Icon className="h-3 w-3" />
+                  {label}
+                  {/* 未完了ステータスのみバッジ表示 */}
+                  {count > 0 &&
+                    ["pending", "accepted", "in_progress", "paused"].includes(status) && (
+                      <span className={`ml-0.5 ${isActive ? "" : "opacity-60"}`}>{count}</span>
+                    )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Filters */}
         {tasks.length > 0 && (
-          <div className="mb-3 flex shrink-0 items-center gap-2">
-            <Filter className="h-3 w-3 text-muted-foreground" />
-            {/* Source Filter */}
-            <Select
-              value={sourceFilter}
-              onValueChange={(value) => setSourceFilter(value as TaskSourceType | "all")}
-            >
-              <SelectTrigger className="h-7 w-auto min-w-[100px] text-xs">
-                <SelectValue placeholder="ソース" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全て ({sourceCount.all})</SelectItem>
-                {sourceCount.slack > 0 && (
-                  <SelectItem value="slack">Slack ({sourceCount.slack})</SelectItem>
-                )}
-                {sourceCount.github > 0 && (
-                  <SelectItem value="github">GitHub ({sourceCount.github})</SelectItem>
-                )}
-                {sourceCount["prompt-improvement"] > 0 && (
-                  <SelectItem value="prompt-improvement">
-                    改善 ({sourceCount["prompt-improvement"]})
-                  </SelectItem>
-                )}
-                {sourceCount.memo > 0 && (
-                  <SelectItem value="memo">Memo ({sourceCount.memo})</SelectItem>
-                )}
-                {sourceCount.vocabulary > 0 && (
-                  <SelectItem value="vocabulary">用語 ({sourceCount.vocabulary})</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-            {/* Project Filter */}
-            {projectsWithTasks.length > 0 && (
+          <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Filter className="h-3 w-3 text-muted-foreground" />
+              {/* Source Filter */}
               <Select
-                value={String(projectFilter)}
-                onValueChange={(value) => {
-                  if (value === "all" || value === "none") {
-                    setProjectFilter(value);
-                  } else {
-                    setProjectFilter(Number(value));
-                  }
-                }}
+                value={sourceFilter}
+                onValueChange={(value) => setSourceFilter(value as TaskSourceType | "all")}
               >
-                <SelectTrigger className="h-7 w-auto min-w-[120px] text-xs">
-                  <SelectValue placeholder="プロジェクト" />
+                <SelectTrigger className="h-7 w-auto min-w-[100px] text-xs">
+                  <SelectValue placeholder="ソース" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">全プロジェクト</SelectItem>
-                  {projectsWithTasks.map((project) => (
-                    <SelectItem key={project.id} value={String(project.id)}>
-                      {project.name} ({projectCount.get(project.id) ?? 0})
+                  <SelectItem value="all">全て ({sourceCount.all})</SelectItem>
+                  {sourceCount.slack > 0 && (
+                    <SelectItem value="slack">Slack ({sourceCount.slack})</SelectItem>
+                  )}
+                  {sourceCount.github > 0 && (
+                    <SelectItem value="github">GitHub ({sourceCount.github})</SelectItem>
+                  )}
+                  {sourceCount["prompt-improvement"] > 0 && (
+                    <SelectItem value="prompt-improvement">
+                      改善 ({sourceCount["prompt-improvement"]})
                     </SelectItem>
-                  ))}
-                  {(projectCount.get("none") ?? 0) > 0 && (
-                    <SelectItem value="none">未分類 ({projectCount.get("none")})</SelectItem>
+                  )}
+                  {sourceCount.memo > 0 && (
+                    <SelectItem value="memo">Memo ({sourceCount.memo})</SelectItem>
+                  )}
+                  {sourceCount.vocabulary > 0 && (
+                    <SelectItem value="vocabulary">用語 ({sourceCount.vocabulary})</SelectItem>
                   )}
                 </SelectContent>
               </Select>
-            )}
+              {/* Project Filter */}
+              {projectsWithTasks.length > 0 && (
+                <Select
+                  value={String(projectFilter)}
+                  onValueChange={(value) => {
+                    if (value === "all" || value === "none") {
+                      setProjectFilter(value);
+                    } else {
+                      setProjectFilter(Number(value));
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-7 w-auto min-w-[120px] text-xs">
+                    <SelectValue placeholder="プロジェクト" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全プロジェクト</SelectItem>
+                    {projectsWithTasks.map((project) => (
+                      <SelectItem key={project.id} value={String(project.id)}>
+                        {project.name} ({projectCount.get(project.id) ?? 0})
+                      </SelectItem>
+                    ))}
+                    {(projectCount.get("none") ?? 0) > 0 && (
+                      <SelectItem value="none">未分類 ({projectCount.get("none")})</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+              {/* WorkType Filter */}
+              <Select
+                value={workTypeFilter}
+                onValueChange={(value) => setWorkTypeFilter(value as WorkType | "all")}
+              >
+                <SelectTrigger className="h-7 w-auto min-w-[80px] text-xs">
+                  <SelectValue placeholder="パターン" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全パターン</SelectItem>
+                  {WORK_TYPES.map((wt) => (
+                    <SelectItem key={wt} value={wt}>
+                      {WORK_TYPE_LABELS[wt]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* Elaboration Filter */}
+              <Select
+                value={elaborationFilter}
+                onValueChange={(value) =>
+                  setElaborationFilter(value as "all" | "elaborated" | "not-elaborated")
+                }
+              >
+                <SelectTrigger className="h-7 w-auto min-w-[90px] text-xs">
+                  <SelectValue placeholder="詳細化" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全て</SelectItem>
+                  <SelectItem value="elaborated">詳細化済み</SelectItem>
+                  <SelectItem value="not-elaborated">未詳細化</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {/* 一括操作モードトグル */}
+            <Button
+              variant={selectionMode ? "default" : "outline"}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
+              title={selectionMode ? "一括操作モードを終了" : "一括操作モードを開始"}
+            >
+              {selectionMode ? (
+                <>
+                  <X className="mr-1 h-3 w-3" />
+                  終了
+                </>
+              ) : (
+                <>
+                  <CheckSquare className="mr-1 h-3 w-3" />
+                  一括操作
+                </>
+              )}
+            </Button>
           </div>
         )}
 
@@ -1232,7 +1319,7 @@ export function TasksPanel({ className }: TasksPanelProps) {
           </div>
         )}
 
-        {tasks.length === 0 ? (
+        {stats.total === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <Sparkles className="mb-2 h-8 w-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">AIが抽出したタスク候補はありません</p>
@@ -1242,33 +1329,6 @@ export function TasksPanel({ className }: TasksPanelProps) {
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
-            {/* ステータスフィルター */}
-            <div className="mb-3 flex shrink-0 flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-xs text-muted-foreground">表示:</span>
-              {STATUS_FILTER_CONFIG.map(({ status, label, icon: Icon, activeClass }) => {
-                const isActive = statusFilter === status;
-                const count = stats[status] ?? 0;
-                return (
-                  <button
-                    type="button"
-                    key={status}
-                    onClick={() => selectStatusFilter(status)}
-                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                      isActive
-                        ? activeClass
-                        : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    <Icon className="h-3 w-3" />
-                    {label}
-                    {count > 0 && (
-                      <span className={`ml-0.5 ${isActive ? "" : "opacity-60"}`}>{count}</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
             {/* 編集モードバー */}
             {selectionMode && (
               <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded-md border bg-blue-50 p-2 dark:bg-blue-950">
@@ -1321,6 +1381,10 @@ export function TasksPanel({ className }: TasksPanelProps) {
                         >
                           <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
                           完了
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "someday" })}>
+                          <Moon className="mr-2 h-4 w-4 text-purple-500" />
+                          いつか
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -2389,6 +2453,14 @@ function TaskItem({
                   <X className="mr-1 h-3 w-3" />
                   却下
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onUpdateTask(task.id, { status: "someday" })}
+                >
+                  <Moon className="mr-1 h-3 w-3" />
+                  いつか
+                </Button>
               </>
             )}
 
@@ -2417,10 +2489,12 @@ function TaskItem({
                         {task.status === "in_progress" && <Play className="h-3 w-3" />}
                         {task.status === "paused" && <Pause className="h-3 w-3" />}
                         {task.status === "completed" && <CheckCircle2 className="h-3 w-3" />}
+                        {task.status === "someday" && <Moon className="h-3 w-3" />}
                         {task.status === "accepted" && "未着手"}
                         {task.status === "in_progress" && "進行中"}
                         {task.status === "paused" && "中断"}
                         {task.status === "completed" && "完了"}
+                        {task.status === "someday" && "いつか"}
                         <ChevronDown className="h-3 w-3" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -2459,6 +2533,14 @@ function TaskItem({
                       >
                         <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
                         完了
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => onUpdateTask(task.id, { status: "someday" })}
+                        className={task.status === "someday" ? "bg-accent" : ""}
+                      >
+                        <Moon className="mr-2 h-4 w-4 text-purple-500" />
+                        いつか
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

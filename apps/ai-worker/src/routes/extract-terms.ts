@@ -38,7 +38,7 @@ export function createExtractTermsRouter() {
 
       // candidates がある場合は候補精査モード、ない場合はテキスト抽出モード
       const hasCandidates = body.candidates && body.candidates.length > 0;
-      const inputSize = hasCandidates ? body.candidates!.length : (body.text?.length ?? 0);
+      const inputSize = hasCandidates ? body.candidates?.length : (body.text?.length ?? 0);
 
       const result = await withProcessingLog(
         "extract-terms",

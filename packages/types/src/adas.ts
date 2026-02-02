@@ -27,6 +27,7 @@ export interface Summary {
   content: string;
   segmentIds: string;
   model: string;
+  sourceMetadata: string | null;
   createdAt: string;
 }
 
@@ -324,6 +325,9 @@ export interface BrowserRecordingStatus {
 
 // ========== Slack 型定義 ==========
 
+/** Slack メッセージ優先度 */
+export type SlackMessagePriority = "high" | "medium" | "low";
+
 /** Slack メッセージ */
 export interface SlackMessage {
   id: number;
@@ -338,6 +342,7 @@ export interface SlackMessage {
   threadTs: string | null;
   permalink: string | null;
   isRead: boolean;
+  priority: SlackMessagePriority | null; // AI判定の優先度
   projectId: number | null; // FK to projects
   /** 有効プロジェクトID (メッセージ > チャンネル > 自動検索 の優先順) */
   effectiveProjectId?: number | null;
@@ -618,7 +623,8 @@ export type TaskStatus =
   | "rejected"
   | "in_progress"
   | "paused"
-  | "completed";
+  | "completed"
+  | "someday";
 
 /** タスク優先度 */
 export type TaskPriority = "high" | "medium" | "low";
@@ -764,6 +770,13 @@ export interface TaskStats {
   in_progress: number;
   paused: number;
   completed: number;
+  someday: number;
+  /** 承認済みの優先度別カウント */
+  acceptedByPriority: {
+    high: number;
+    medium: number;
+    low: number;
+  };
 }
 
 // ========== Task Dependency 型定義 ==========
@@ -1167,7 +1180,8 @@ export type AiProcessType =
   | "extract-terms"
   | "analyze-profile"
   | "suggest-tags"
-  | "match-channels";
+  | "match-channels"
+  | "slack-priority";
 
 /** AI処理ログのステータス */
 export type AiProcessStatus = "success" | "error";
@@ -1370,10 +1384,12 @@ export type AIJobType =
   | "task-check-completion"
   | "learning-extract"
   | "vocabulary-extract"
+  | "vocabulary-generate-readings"
   | "profile-analyze"
   | "summarize-times"
   | "summarize-daily"
-  | "claude-chat";
+  | "claude-chat"
+  | "slack-priority";
 
 /** AIジョブステータス */
 export type AIJobStatus = "pending" | "processing" | "completed" | "failed";
@@ -1581,6 +1597,32 @@ export interface RpcTokenizeResponse {
   tokenCount: number;
 }
 
+// ========== Slack Priority 型定義 ==========
+
+/** RPC Slack Priority リクエスト */
+export interface RpcSlackPriorityRequest {
+  messageId: number;
+  text: string;
+  userName: string | null;
+  channelName: string | null;
+  messageType: "mention" | "channel" | "dm" | "keyword";
+}
+
+/** RPC Slack Priority レスポンス */
+export interface RpcSlackPriorityResponse {
+  priority: SlackMessagePriority;
+  reason: string;
+}
+
+/** Slack 優先度別カウント */
+export interface SlackPriorityCounts {
+  total: number;
+  high: number;
+  medium: number;
+  low: number;
+  unassigned: number;
+}
+
 // ========== SSE (Server-Sent Events) 型定義 ==========
 
 /** SSE イベント種別 */
@@ -1589,11 +1631,19 @@ export type SSEEventType =
   | "heartbeat"
   | "badges_updated"
   | "job_completed"
-  | "rate_limit_updated";
+  | "rate_limit_updated"
+  | "slack_high_priority";
 
 /** バッジデータ */
 export interface BadgesData {
-  tasks: { pending: number };
+  tasks: {
+    pending: number;
+    acceptedByPriority: {
+      high: number;
+      medium: number;
+      low: number;
+    };
+  };
   learnings: { dueForReview: number };
   slack: { unread: number };
   github: { unread: number };
@@ -1623,4 +1673,102 @@ export interface SSEJobCompletedData {
   jobType: AIJobType;
   status: AIJobStatus;
   resultSummary: string | null;
+}
+
+/** SSE Slack 高優先度メッセージ検出データ */
+export interface SSESlackHighPriorityData {
+  messageId: number;
+  channelName: string | null;
+  userName: string | null;
+  text: string;
+  permalink: string | null;
+  reason: string;
+}
+
+// ========== Summary Source Metadata 型定義 ==========
+
+/** 音声セグメントのソースメタデータ */
+export interface SourceSegment {
+  id: number;
+  startTime: string;
+  speaker: string | null;
+  transcription: string;
+}
+
+/** メモのソースメタデータ */
+export interface SourceMemo {
+  id: number;
+  content: string;
+  createdAt: string;
+}
+
+/** Slack メッセージのソースメタデータ */
+export interface SourceSlackMessage {
+  id: number;
+  permalink: string | null;
+  channelName: string | null;
+  userName: string | null;
+  text: string;
+}
+
+/** Claude Code セッションのソースメタデータ */
+export interface SourceClaudeSession {
+  id: number;
+  sessionId: string;
+  projectName: string | null;
+  summary: string | null;
+  startTime: string | null;
+}
+
+/** タスクのソースメタデータ */
+export interface SourceTask {
+  id: number;
+  title: string;
+  status: TaskStatus;
+  githubIssueUrl: string | null;
+}
+
+/** 学びのソースメタデータ */
+export interface SourceLearning {
+  id: number;
+  content: string;
+  sourceType: LearningSourceType;
+}
+
+/** GitHub Item のソースメタデータ */
+export interface SourceGitHubItem {
+  id: number;
+  url: string;
+  itemType: "issue" | "pull_request";
+  title: string;
+  repoOwner: string;
+  repoName: string;
+  number: number;
+}
+
+/** GitHub Comment のソースメタデータ */
+export interface SourceGitHubComment {
+  id: number;
+  url: string;
+  commentType: "issue_comment" | "review_comment" | "review";
+  body: string;
+  authorLogin: string | null;
+}
+
+/** サマリのソースメタデータ */
+export interface SummarySourceMetadata {
+  segments: SourceSegment[];
+  memos: SourceMemo[];
+  slackMessages: SourceSlackMessage[];
+  claudeSessions: SourceClaudeSession[];
+  tasks: SourceTask[];
+  learnings: SourceLearning[];
+  githubItems: SourceGitHubItem[];
+  githubComments: SourceGitHubComment[];
+}
+
+/** サマリソース取得レスポンス */
+export interface SummarySourcesResponse {
+  summaryId: number;
+  sources: SummarySourceMetadata;
 }

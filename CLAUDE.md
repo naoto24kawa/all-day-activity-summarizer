@@ -2,7 +2,7 @@
 
 Claude Code 向け指示書。
 
-**共通情報**: [AGENTS.md](AGENTS.md) を参照。
+@AGENTS.md
 
 ## 機能別ルール
 

@@ -1,0 +1,180 @@
+/**
+ * Servers Command
+ *
+ * API サーバーと SSE サーバーを同時に起動
+ */
+
+import { setupFileLogger } from "@repo/core";
+import { createDatabase } from "@repo/db";
+import type { Command } from "commander";
+import consola from "consola";
+import { startAIJobScheduler } from "../ai-job/scheduler.js";
+import { startClaudeCodeSystem } from "../claude-code/scheduler.js";
+import type { AdasConfig } from "../config.js";
+import { loadConfig } from "../config.js";
+import { startGitHubSystem } from "../github/scheduler.js";
+import { startPromptImprovementScheduler } from "../prompt-improvement/scheduler.js";
+import { createApp } from "../server/app.js";
+import { startSlackSystem } from "../slack/scheduler.js";
+import { startScheduler } from "../summarizer/scheduler.js";
+import { initSSENotifier } from "../utils/sse-notifier.js";
+import { startVocabularyExtractScheduler } from "../vocabulary/scheduler.js";
+
+// ファイルログを有効化
+setupFileLogger("servers");
+
+/**
+ * AI Worker への接続確認を行う
+ */
+async function checkAIWorkerConnection(config: AdasConfig): Promise<boolean> {
+  const url = config.worker.url;
+  try {
+    const response = await fetch(`${url}/rpc/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(3000),
+    });
+    if (response.ok) {
+      consola.success(`AI Worker connected: ${url}`);
+      return true;
+    }
+    consola.warn(`AI Worker responded with status ${response.status}: ${url}`);
+    return false;
+  } catch (_error) {
+    consola.warn(`AI Worker not available: ${url}`);
+    return false;
+  }
+}
+
+/**
+ * Local Worker への接続確認を行う
+ */
+async function checkLocalWorkerConnection(config: AdasConfig): Promise<boolean> {
+  const url = config.localWorker.url;
+  try {
+    const response = await fetch(`${url}/rpc/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(3000),
+    });
+    if (response.ok) {
+      consola.success(`Local Worker connected: ${url}`);
+      return true;
+    }
+    consola.warn(`Local Worker responded with status ${response.status}: ${url}`);
+    return false;
+  } catch (_error) {
+    consola.warn(`Local Worker not available: ${url}`);
+    return false;
+  }
+}
+
+/**
+ * 接続状態の変化をログ出力
+ */
+function logConnectionChange(name: string, isConnected: boolean, wasConnected: boolean): void {
+  if (isConnected && !wasConnected) {
+    consola.success(`${name} connection established`);
+  } else if (!isConnected && wasConnected) {
+    consola.warn(`${name} connection lost`);
+  }
+}
+
+/**
+ * 定期的に Worker の接続状態を確認する
+ */
+function startWorkerHealthCheck(config: AdasConfig, intervalMs = 30000): void {
+  const state = { ai: false, local: false };
+
+  const check = async () => {
+    const isAI = await checkAIWorkerConnection(config);
+    logConnectionChange("AI Worker", isAI, state.ai);
+    state.ai = isAI;
+
+    const isLocal = await checkLocalWorkerConnection(config);
+    logConnectionChange("Local Worker", isLocal, state.local);
+    state.local = isLocal;
+  };
+
+  // 定期チェック (初回は既に実行済みなのでスキップ)
+  setInterval(check, intervalMs);
+}
+
+export function registerServersCommand(program: Command): void {
+  program
+    .command("servers")
+    .description("Start both API server and SSE server")
+    .option("--api-port <port>", "API server port number")
+    .option("--sse-port <port>", "SSE server port number")
+    .action(async (options: { apiPort?: string; ssePort?: string }) => {
+      const config = loadConfig();
+      const apiPort = options.apiPort ? Number.parseInt(options.apiPort, 10) : config.server.port;
+      const ssePort = options.ssePort
+        ? Number.parseInt(options.ssePort, 10)
+        : config.sseServer.port;
+
+      // SSE サーバー起動
+      consola.info(`Starting SSE server on http://localhost:${ssePort}`);
+      const { createSSEServerApp } = await import("@repo/sse-server");
+      const sseApp = createSSEServerApp();
+
+      Bun.serve({
+        fetch: sseApp.fetch,
+        port: ssePort,
+        idleTimeout: 0, // SSE 接続のためタイムアウト無効
+      });
+
+      consola.success(`SSE server running at http://localhost:${ssePort}`);
+
+      // API サーバー起動
+      const db = createDatabase(config.dbPath);
+      const apiApp = createApp(db, { config });
+
+      consola.info(`Starting API server on http://localhost:${apiPort}`);
+
+      Bun.serve({
+        fetch: apiApp.fetch,
+        port: apiPort,
+        idleTimeout: 0, // SSE 接続のためタイムアウト無効
+      });
+
+      consola.success(`API server running on http://localhost:${apiPort}`);
+
+      // SSE Notifier 初期化
+      initSSENotifier(config);
+      consola.success("SSE Notifier initialized");
+
+      // Worker 接続確認
+      await checkAIWorkerConnection(config);
+      await checkLocalWorkerConnection(config);
+      startWorkerHealthCheck(config);
+
+      startScheduler(db, config);
+      consola.success("Summary scheduler started");
+
+      // Start Slack system if enabled
+      const stopSlack = await startSlackSystem(db, config);
+      if (stopSlack) {
+        consola.success("Slack integration started");
+      }
+
+      // Start Claude Code system if enabled
+      const stopClaudeCode = await startClaudeCodeSystem(db, config);
+      if (stopClaudeCode) {
+        consola.success("Claude Code integration started");
+      }
+
+      // Start GitHub system if enabled
+      const stopGitHub = await startGitHubSystem(db, config);
+      if (stopGitHub) {
+        consola.success("GitHub integration started");
+      }
+
+      // Start Prompt Improvement scheduler
+      startPromptImprovementScheduler(db);
+
+      // Start Vocabulary Extract scheduler
+      startVocabularyExtractScheduler(db);
+
+      // Start AI Job scheduler
+      startAIJobScheduler(db, config);
+    });
+}

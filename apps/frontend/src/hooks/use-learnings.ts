@@ -57,6 +57,7 @@ export function useLearnings(options?: LearningsOptions) {
       options?.sourceType,
       options?.sourceId,
       options?.dueForReview,
+      options,
     ],
   );
 
@@ -169,10 +170,11 @@ export function useLearningsStats() {
   return { stats, error, refetch: fetchStats };
 }
 
-interface ExtractResult {
-  extracted: number;
-  saved: number;
-  message?: string;
+/** 非同期版の抽出結果 (ジョブキュー登録) */
+interface AsyncExtractResult {
+  success: boolean;
+  jobId: number;
+  message: string;
 }
 
 export interface LearningExplanation {
@@ -279,57 +281,75 @@ export function useLearningsExportImport() {
   return { loading, error, exportLearnings, importLearnings };
 }
 
+/**
+ * 学び抽出フック
+ *
+ * 非同期版: ジョブをキューに登録して即座にレスポンスを返す
+ * 実際の抽出結果は SSE 通知 (useJobNotifications) で受け取る
+ */
 export function useLearningsExtract() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const extractFromTranscriptions = useCallback(async (date?: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await postAdasApi<ExtractResult>("/api/learnings/extract/transcriptions", {
-        date,
-      });
-      return result;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to extract");
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const extractFromTranscriptions = useCallback(
+    async (date?: string): Promise<AsyncExtractResult | null> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await postAdasApi<AsyncExtractResult>(
+          "/api/learnings/extract/transcriptions",
+          { date },
+        );
+        return result;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to extract");
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
-  const extractFromGitHubComments = useCallback(async (date?: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await postAdasApi<ExtractResult>("/api/learnings/extract/github-comments", {
-        date,
-      });
-      return result;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to extract");
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const extractFromGitHubComments = useCallback(
+    async (date?: string): Promise<AsyncExtractResult | null> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await postAdasApi<AsyncExtractResult>(
+          "/api/learnings/extract/github-comments",
+          { date },
+        );
+        return result;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to extract");
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
-  const extractFromSlackMessages = useCallback(async (date?: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await postAdasApi<ExtractResult>("/api/learnings/extract/slack-messages", {
-        date,
-      });
-      return result;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to extract");
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const extractFromSlackMessages = useCallback(
+    async (date?: string): Promise<AsyncExtractResult | null> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await postAdasApi<AsyncExtractResult>(
+          "/api/learnings/extract/slack-messages",
+          { date },
+        );
+        return result;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to extract");
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   return {
     loading,
