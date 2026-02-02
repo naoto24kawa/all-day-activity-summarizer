@@ -79,7 +79,8 @@ def main() -> None:
     # transcribe オプション
     transcribe_options = {"batch_size": 16}
     if args.initial_prompt:
-        transcribe_options["initial_prompt"] = args.initial_prompt
+        # WhisperX (faster-whisper) uses "prompt" instead of "initial_prompt"
+        transcribe_options["prompt"] = args.initial_prompt
         print(f"Using initial_prompt: {args.initial_prompt[:100]}...", file=sys.stderr)
 
     result = model.transcribe(audio, **transcribe_options)
