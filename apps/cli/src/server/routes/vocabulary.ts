@@ -1,7 +1,7 @@
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import type { VocabularySuggestionSourceType } from "@repo/types";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { enqueueJob } from "../../ai-job/queue.js";
 import type { AdasConfig } from "../../config.js";
@@ -21,21 +21,26 @@ export function createVocabularyRouter(db: AdasDatabase, _config?: AdasConfig) {
     const status = c.req.query("status"); // pending, accepted, rejected
     const sourceType = c.req.query("sourceType");
 
-    let query = db.select().from(schema.vocabularySuggestions);
-
+    // 条件を動的に構築
+    const conditions: SQL[] = [];
     if (status) {
-      query = query.where(
+      conditions.push(
         eq(schema.vocabularySuggestions.status, status as "pending" | "accepted" | "rejected"),
       );
     }
-
     if (sourceType) {
-      query = query.where(
+      conditions.push(
         eq(schema.vocabularySuggestions.sourceType, sourceType as VocabularySuggestionSourceType),
       );
     }
 
-    const suggestions = query.orderBy(desc(schema.vocabularySuggestions.createdAt)).all();
+    const suggestions = db
+      .select()
+      .from(schema.vocabularySuggestions)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(schema.vocabularySuggestions.createdAt))
+      .all();
+
     return c.json(suggestions);
   });
 

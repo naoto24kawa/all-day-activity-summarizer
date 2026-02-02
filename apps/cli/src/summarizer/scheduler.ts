@@ -13,8 +13,12 @@ import {
   recoverStaleJobs,
 } from "./queue.js";
 
-// Re-export generator functions for backward compatibility
-export { generateDailySummary, generateTimesSummary } from "./generator.js";
+// Re-export generator functions and types for backward compatibility
+export {
+  generateDailySummary,
+  generateTimesSummary,
+  type SummaryGenerateOptions,
+} from "./generator.js";
 
 // ---------------------------------------------------------------------------
 // Enqueue Scheduler - 時間境界を検出してジョブを投入
@@ -109,22 +113,26 @@ async function processJob(db: AdasDatabase, job: SummaryQueueJob): Promise<void>
         throw new Error("startHour and endHour are required for times job");
       }
       consola.info(`Processing times summary for ${date} ${startHour}:00 - ${endHour}:59...`);
-      const result = await generateTimesSummary(db, date, startHour, endHour);
+      // 自動生成では既存サマリがあればスキップ (上書きしない)
+      const result = await generateTimesSummary(db, date, startHour, endHour, { overwrite: false });
       if (result) {
         consola.success(`Times summary generated for ${date} ${startHour}:00 - ${endHour}:59`);
       } else {
-        consola.debug(`No data for times summary ${date} ${startHour}:00 - ${endHour}:59`);
+        consola.debug(
+          `Skipped times summary ${date} ${startHour}:00 - ${endHour}:59 (no data or already exists)`,
+        );
       }
       break;
     }
 
     case "daily": {
       consola.info(`Processing daily summary for ${date}...`);
-      const result = await generateDailySummary(db, date);
+      // 自動生成では既存サマリがあればスキップ (上書きしない)
+      const result = await generateDailySummary(db, date, { overwrite: false });
       if (result) {
         consola.success(`Daily summary generated for ${date}`);
       } else {
-        consola.debug(`No data found for daily summary ${date}`);
+        consola.debug(`Skipped daily summary ${date} (no data or already exists)`);
       }
       break;
     }

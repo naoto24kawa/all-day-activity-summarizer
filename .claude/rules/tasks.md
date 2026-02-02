@@ -10,16 +10,87 @@ Slack/GitHub/メモから AI でタスクを自動抽出し、フィードバッ
 | プロンプト | `packages/core/prompts/task-extract.md` |
 | フロントエンド | `apps/frontend/src/components/app/tasks-panel.tsx` |
 
-## タスクソース
+---
 
-| ソース | エンドポイント | 必要な設定 |
-|--------|---------------|-----------|
-| Slack | `POST /api/tasks/extract` | `slack.userId` |
-| GitHub Items | `POST /api/tasks/extract-github` | `github.username` |
-| GitHub Comments | `POST /api/tasks/extract-github-comments` | `github.username` |
-| Memos | `POST /api/tasks/extract-memos` | - |
-| Server Logs | `POST /api/tasks/extract-logs` | - |
-| Manual | `POST /api/tasks` | - |
+## API エンドポイント一覧
+
+### 基本 CRUD
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `GET` | `/api/tasks` | タスク一覧取得 |
+| `POST` | `/api/tasks` | 手動タスク作成 |
+| `GET` | `/api/tasks/:id` | 単一タスク取得 |
+| `PATCH` | `/api/tasks/:id` | タスク更新 |
+| `DELETE` | `/api/tasks/:id` | タスク削除 |
+| `PATCH` | `/api/tasks/batch` | 複数タスク一括更新 |
+
+### ステータス変更
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `POST` | `/api/tasks/:id/accept` | 承認 (pending → accepted) |
+| `POST` | `/api/tasks/:id/reject` | 却下 (pending → rejected) |
+| `POST` | `/api/tasks/:id/start` | 開始 (accepted → in_progress) |
+| `POST` | `/api/tasks/:id/pause` | 一時停止 (in_progress → paused) |
+| `POST` | `/api/tasks/:id/complete` | 完了 (→ completed) |
+
+### タスク抽出
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `POST` | `/api/tasks/extract` | Slack から抽出 |
+| `POST` | `/api/tasks/extract/async` | Slack から抽出 (非同期) |
+| `POST` | `/api/tasks/extract-github` | GitHub Items から抽出 |
+| `POST` | `/api/tasks/extract-github/async` | GitHub Items から抽出 (非同期) |
+| `POST` | `/api/tasks/extract-github-comments` | GitHub Comments から抽出 |
+| `POST` | `/api/tasks/extract-github-comments/async` | GitHub Comments から抽出 (非同期) |
+| `POST` | `/api/tasks/extract-memos` | メモから抽出 |
+| `POST` | `/api/tasks/extract-memos/async` | メモから抽出 (非同期) |
+| `POST` | `/api/tasks/extract-logs` | サーバーログから抽出 |
+
+### 依存関係
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `GET` | `/api/tasks/:id/dependencies` | 依存関係取得 |
+| `POST` | `/api/tasks/:id/dependencies` | 依存関係追加 |
+| `DELETE` | `/api/tasks/dependencies/:depId` | 依存関係削除 |
+
+### 詳細化 (Elaboration)
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `POST` | `/api/tasks/:id/elaborate` | タスク詳細化実行 |
+| `GET` | `/api/tasks/:id/elaboration` | 詳細化結果取得 |
+| `POST` | `/api/tasks/:id/elaboration/apply` | 詳細化結果を適用 |
+| `POST` | `/api/tasks/:id/elaboration/discard` | 詳細化結果を破棄 |
+| `GET` | `/api/tasks/:id/children` | 子タスク一覧取得 |
+| `POST` | `/api/tasks/bulk-elaborate` | 一括詳細化開始 |
+| `GET` | `/api/tasks/bulk-elaboration-status` | 一括詳細化ステータス |
+
+### 完了検知・重複検知
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `POST` | `/api/tasks/suggest-completions` | 完了候補を提案 |
+| `POST` | `/api/tasks/suggest-completions/async` | 完了候補を提案 (非同期) |
+| `GET` | `/api/tasks/suggest-completions/result/:jobId` | 完了提案結果取得 |
+| `POST` | `/api/tasks/detect-duplicates` | 重複タスク検知 |
+| `POST` | `/api/tasks/:id/check-similarity` | 類似タスクチェック |
+| `POST` | `/api/tasks/check-similarity-batch` | 類似タスク一括チェック |
+| `POST` | `/api/tasks/merge` | タスクマージ |
+
+### その他
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `GET` | `/api/tasks/for-ai` | AI エージェント向けタスク一覧 (Markdown) |
+| `GET` | `/api/tasks/stats` | タスク統計 |
+| `GET` | `/api/tasks/:id/ai-text` | AI 用タスクテキスト取得 |
+| `POST` | `/api/tasks/:id/create-issue` | GitHub Issue 作成 |
+
+---
 
 ## 手動タスク作成
 
@@ -41,6 +112,8 @@ Slack/GitHub/メモから AI でタスクを自動抽出し、フィードバッ
 
 **レスポンス**: 作成されたタスクオブジェクト (HTTP 201)
 
+---
+
 ## タスクライフサイクル
 
 ```
@@ -49,14 +122,16 @@ pending → accepted → in_progress → completed
         → rejected
 ```
 
-| ステータス | 説明 | エンドポイント |
-|-----------|------|---------------|
-| `pending` | 抽出直後、承認待ち | - |
-| `accepted` | 承認済み、未着手 | `POST /api/tasks/:id/accept` |
-| `in_progress` | 実行中 | `POST /api/tasks/:id/start` |
-| `paused` | 中断 | `POST /api/tasks/:id/pause` |
-| `completed` | 完了 | `POST /api/tasks/:id/complete` |
-| `rejected` | 却下済み | `POST /api/tasks/:id/reject` |
+| ステータス | 説明 |
+|-----------|------|
+| `pending` | 抽出直後、承認待ち |
+| `accepted` | 承認済み、未着手 |
+| `in_progress` | 実行中 |
+| `paused` | 中断 |
+| `completed` | 完了 |
+| `rejected` | 却下済み |
+
+---
 
 ## 承認のみタスク
 
@@ -70,6 +145,8 @@ pending → accepted → in_progress → completed
 
 **判定ロジック**: `packages/types/src/adas.ts` の `isApprovalOnlyTask()` 関数
 
+---
+
 ## 類似タスク検知
 
 抽出時に過去の完了・却下タスクとの類似性を AI が判断。
@@ -79,6 +156,8 @@ pending → accepted → in_progress → completed
 | `similarToTitle` | 類似する過去タスクのタイトル |
 | `similarToStatus` | 類似タスクのステータス |
 | `similarToReason` | 類似と判断した理由 |
+
+---
 
 ## タスク間依存関係
 
@@ -91,7 +170,7 @@ pending → accepted → in_progress → completed
 
 **DB テーブル**: `task_dependencies`
 
-**API**: `GET/POST /api/tasks/:id/dependencies`, `DELETE /api/tasks/dependencies/:depId`
+---
 
 ## タスク完了検知
 
@@ -103,6 +182,8 @@ pending → accepted → in_progress → completed
 | Claude Code | セッションログから AI 判定 | 中 |
 | Slack | スレッド後続メッセージから AI 判定 | 中 |
 | Transcribe | 音声書き起こしから AI 判定 | 低 |
+
+---
 
 ## サーバーログからのタスク抽出
 

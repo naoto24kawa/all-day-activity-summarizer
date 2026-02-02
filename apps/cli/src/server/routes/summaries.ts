@@ -85,7 +85,7 @@ export function createSummariesRouter(db: AdasDatabase) {
 
     // デフォルト: Daily と (自動インターバル設定があれば) Times を一括生成
     const dailyJobId = enqueueJob(db, "summarize-daily", { date });
-    const jobIds: string[] = [dailyJobId];
+    const jobIds: number[] = [dailyJobId];
 
     const timesIntervalMinutes = config.summarizer.timesIntervalMinutes;
     if (timesIntervalMinutes > 0) {

@@ -63,7 +63,7 @@ export function getRemoteOriginUrl(gitDir: string): string | null {
     const content = readFileSync(configPath, "utf-8");
     // [remote "origin"] セクションの url を探す
     const remoteOriginMatch = content.match(/\[remote\s+"origin"\]\s*[\s\S]*?url\s*=\s*(.+)/);
-    if (remoteOriginMatch) {
+    if (remoteOriginMatch?.[1]) {
       return remoteOriginMatch[1].trim();
     }
     return null;

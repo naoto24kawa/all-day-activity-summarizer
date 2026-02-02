@@ -28,6 +28,10 @@ export interface AdasConfig {
     url: string;
     timeout: number;
   };
+  localWorker: {
+    url: string;
+    timeout: number;
+  };
   promptImprovement: {
     enabled: boolean;
     badFeedbackThreshold: number;
@@ -119,6 +123,10 @@ const defaultConfig: AdasConfig = {
   },
   worker: {
     url: "http://localhost:3100",
+    timeout: 300000,
+  },
+  localWorker: {
+    url: "http://localhost:3200",
     timeout: 300000,
   },
   promptImprovement: {
@@ -231,6 +239,7 @@ export function loadConfig(): AdasConfig {
     server: { ...defaultConfig.server, ...userConfig.server },
     evaluator: { ...defaultConfig.evaluator, ...userConfig.evaluator },
     worker: { ...defaultConfig.worker, ...userConfig.worker },
+    localWorker: { ...defaultConfig.localWorker, ...userConfig.localWorker },
     promptImprovement: { ...defaultConfig.promptImprovement, ...userConfig.promptImprovement },
     slack: { ...defaultConfig.slack, ...userConfig.slack },
     claudeCode: { ...defaultConfig.claudeCode, ...userConfig.claudeCode },

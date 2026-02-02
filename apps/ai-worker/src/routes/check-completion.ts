@@ -11,7 +11,7 @@ import consola from "consola";
 import { Hono } from "hono";
 import { withProcessingLog } from "../utils/log-processing.js";
 
-const COMPLETION_CHECK_MODEL = "sonnet";
+const COMPLETION_CHECK_MODEL = "haiku";
 
 export function createCheckCompletionRouter() {
   const router = new Hono();

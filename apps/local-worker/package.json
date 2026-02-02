@@ -1,0 +1,24 @@
+{
+  "name": "@repo/local-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/app.ts",
+  "exports": {
+    ".": "./src/app.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "consola": "^3.4.2",
+    "@anthropic-ai/tokenizer": "^0.0.4",
+    "@repo/core": "workspace:*",
+    "@repo/types": "workspace:*",
+    "hono": "^4.10.6",
+    "kuromoji": "^0.1.2"
+  },
+  "devDependencies": {
+    "@types/kuromoji": "^0.1.3"
+  }
+}

@@ -8,7 +8,7 @@ import { Hono } from "hono";
 import { withProcessingLog } from "../utils/log-processing.js";
 
 const WHISPERX_VENV_DIR = join(homedir(), ".adas", "whisperx-venv");
-const TMP_DIR = join(homedir(), ".adas", "worker-tmp");
+const TMP_DIR = join(homedir(), ".adas", "local-worker-tmp");
 
 export function createTranscribeRouter() {
   const router = new Hono();
@@ -60,7 +60,7 @@ export function createTranscribeRouter() {
         }
       }
     } catch (err) {
-      consola.error("[worker/transcribe] Error:", err);
+      consola.error("[local-worker/transcribe] Error:", err);
       return c.json({ error: err instanceof Error ? err.message : "Unknown error" }, 500);
     }
   });
@@ -94,7 +94,7 @@ async function runWhisperX(
   const env: Record<string, string> = { ...process.env } as Record<string, string>;
   // HF_TOKEN は diarization 用なので削除
 
-  consola.info(`[worker/transcribe] Running whisperX on ${audioPath}`);
+  consola.info(`[local-worker/transcribe] Running whisperX on ${audioPath}`);
 
   const proc = Bun.spawn(args, {
     stdout: "pipe",
@@ -106,7 +106,7 @@ async function runWhisperX(
 
   if (proc.exitCode !== 0) {
     const stderr = proc.stderr ? await new Response(proc.stderr).text() : "";
-    consola.error(`[worker/transcribe] whisperX stderr:\n${stderr}`);
+    consola.error(`[local-worker/transcribe] whisperX stderr:\n${stderr}`);
     throw new Error(`whisperX failed (exit ${proc.exitCode}): ${stderr.slice(0, 2000)}`);
   }
 

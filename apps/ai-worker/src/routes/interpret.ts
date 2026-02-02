@@ -4,7 +4,7 @@ import consola from "consola";
 import { Hono } from "hono";
 import { withProcessingLog } from "../utils/log-processing.js";
 
-const INTERPRET_MODEL = "sonnet";
+const INTERPRET_MODEL = "haiku";
 
 interface InterpretRequestBody {
   text: string;

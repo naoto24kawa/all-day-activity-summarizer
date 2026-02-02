@@ -18,9 +18,9 @@ import { startVocabularyExtractScheduler } from "../vocabulary/scheduler.js";
 setupFileLogger("serve");
 
 /**
- * Worker への接続確認を行う
+ * AI Worker への接続確認を行う
  */
-async function checkWorkerConnection(config: AdasConfig): Promise<boolean> {
+async function checkAIWorkerConnection(config: AdasConfig): Promise<boolean> {
   const url = config.worker.url;
   try {
     const response = await fetch(`${url}/rpc/health`, {
@@ -28,13 +28,35 @@ async function checkWorkerConnection(config: AdasConfig): Promise<boolean> {
       signal: AbortSignal.timeout(3000),
     });
     if (response.ok) {
-      consola.success(`Worker connected: ${url}`);
+      consola.success(`AI Worker connected: ${url}`);
       return true;
     }
-    consola.warn(`Worker responded with status ${response.status}: ${url}`);
+    consola.warn(`AI Worker responded with status ${response.status}: ${url}`);
     return false;
   } catch (_error) {
-    consola.warn(`Worker not available: ${url}`);
+    consola.warn(`AI Worker not available: ${url}`);
+    return false;
+  }
+}
+
+/**
+ * Local Worker への接続確認を行う
+ */
+async function checkLocalWorkerConnection(config: AdasConfig): Promise<boolean> {
+  const url = config.localWorker.url;
+  try {
+    const response = await fetch(`${url}/rpc/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(3000),
+    });
+    if (response.ok) {
+      consola.success(`Local Worker connected: ${url}`);
+      return true;
+    }
+    consola.warn(`Local Worker responded with status ${response.status}: ${url}`);
+    return false;
+  } catch (_error) {
+    consola.warn(`Local Worker not available: ${url}`);
     return false;
   }
 }
@@ -43,16 +65,25 @@ async function checkWorkerConnection(config: AdasConfig): Promise<boolean> {
  * 定期的に Worker の接続状態を確認する
  */
 function startWorkerHealthCheck(config: AdasConfig, intervalMs = 30000): void {
-  let wasConnected = false;
+  let wasAIConnected = false;
+  let wasLocalConnected = false;
 
   const check = async () => {
-    const isConnected = await checkWorkerConnection(config);
-    if (isConnected && !wasConnected) {
-      consola.success("Worker connection established");
-    } else if (!isConnected && wasConnected) {
-      consola.warn("Worker connection lost");
+    const isAIConnected = await checkAIWorkerConnection(config);
+    if (isAIConnected && !wasAIConnected) {
+      consola.success("AI Worker connection established");
+    } else if (!isAIConnected && wasAIConnected) {
+      consola.warn("AI Worker connection lost");
     }
-    wasConnected = isConnected;
+    wasAIConnected = isAIConnected;
+
+    const isLocalConnected = await checkLocalWorkerConnection(config);
+    if (isLocalConnected && !wasLocalConnected) {
+      consola.success("Local Worker connection established");
+    } else if (!isLocalConnected && wasLocalConnected) {
+      consola.warn("Local Worker connection lost");
+    }
+    wasLocalConnected = isLocalConnected;
   };
 
   // 定期チェック(初回は既に実行済みなのでスキップ)
@@ -80,7 +111,8 @@ export function registerServeCommand(program: Command): void {
       consola.success(`API server running on http://localhost:${port}`);
 
       // Worker 接続確認
-      await checkWorkerConnection(config);
+      await checkAIWorkerConnection(config);
+      await checkLocalWorkerConnection(config);
       startWorkerHealthCheck(config);
 
       startScheduler(db, config);

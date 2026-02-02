@@ -20,9 +20,9 @@ export async function transcribeAudio(
   config: AdasConfig,
   initialPrompt?: string,
 ): Promise<WhisperResult> {
-  const { url, timeout } = config.worker;
+  const { url, timeout } = config.localWorker;
 
-  consola.info(`[worker] Sending transcription to ${url}/rpc/transcribe`);
+  consola.info(`[local-worker] Sending transcription to ${url}/rpc/transcribe`);
 
   const formData = new FormData();
 
@@ -58,7 +58,7 @@ export async function transcribeAudio(
 
     return {
       text: result.text,
-      segments: result.segments.map((seg) => ({
+      segments: result.segments.map((seg: { start: number; end: number; text: string }) => ({
         start: seg.start,
         end: seg.end,
         text: seg.text,

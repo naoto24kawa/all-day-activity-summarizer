@@ -1,5 +1,5 @@
 import { runClaude } from "@repo/core";
-import type { ExtractedTerm } from "@repo/types";
+import type { ExtractedTerm, TokenCandidate } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
 import { withProcessingLog } from "../utils/log-processing.js";
@@ -7,7 +7,10 @@ import { withProcessingLog } from "../utils/log-processing.js";
 const EXTRACT_TERMS_MODEL = "haiku";
 
 interface ExtractTermsRequestBody {
-  text: string;
+  /** テキスト (candidates がない場合に使用) */
+  text?: string;
+  /** 形態素解析で抽出された候補 (ある場合は text より優先) */
+  candidates?: TokenCandidate[];
   sourceType: "slack" | "github" | "claude-code" | "memo";
   /** 既存の vocabulary 用語リスト (重複除外用) */
   existingTerms?: string[];
@@ -24,27 +27,35 @@ export function createExtractTermsRouter() {
     try {
       const body = await c.req.json<ExtractTermsRequestBody>();
 
-      if (!body.text) {
-        return c.json({ error: "text is required" }, 400);
+      // candidates か text のどちらかが必須
+      if (!body.candidates && !body.text) {
+        return c.json({ error: "text or candidates is required" }, 400);
       }
 
       if (!body.sourceType) {
         return c.json({ error: "sourceType is required" }, 400);
       }
 
+      // candidates がある場合は候補精査モード、ない場合はテキスト抽出モード
+      const hasCandidates = body.candidates && body.candidates.length > 0;
+      const inputSize = hasCandidates ? body.candidates!.length : (body.text?.length ?? 0);
+
       const result = await withProcessingLog(
         "extract-terms",
         EXTRACT_TERMS_MODEL,
-        () => extractTermsWithClaude(body.text, body.sourceType, body.existingTerms),
+        () =>
+          hasCandidates
+            ? refineTermsWithClaude(body.candidates!, body.sourceType, body.existingTerms)
+            : extractTermsWithClaude(body.text!, body.sourceType, body.existingTerms),
         (res) => ({
-          inputSize: body.text.length,
+          inputSize,
           outputSize: res.extractedTerms.length,
-          metadata: { sourceType: body.sourceType },
+          metadata: { sourceType: body.sourceType, mode: hasCandidates ? "refine" : "extract" },
         }),
       );
       return c.json(result);
     } catch (err) {
-      consola.error("[worker/extract-terms] Error:", err);
+      consola.error("[ai-worker/extract-terms] Error:", err);
       return c.json({ error: err instanceof Error ? err.message : "Unknown error" }, 500);
     }
   });
@@ -105,7 +116,7 @@ ${existingTermsSection}
 
 ${text}`;
 
-  consola.info(`[worker/extract-terms] Extracting from ${sourceType} (${text.length} chars)...`);
+  consola.info(`[ai-worker/extract-terms] Extracting from ${sourceType} (${text.length} chars)...`);
 
   const result = await runClaude(prompt, {
     model: EXTRACT_TERMS_MODEL,
@@ -124,7 +135,10 @@ ${text}`;
     // 説明文が含まれている場合、extractedTerms を含む JSON 部分を抽出
     const extractedJson = extractJsonWithExtractedTerms(jsonStr);
     if (!extractedJson) {
-      consola.warn("[worker/extract-terms] No valid JSON found in response:", result.slice(0, 200));
+      consola.warn(
+        "[ai-worker/extract-terms] No valid JSON found in response:",
+        result.slice(0, 200),
+      );
       return { extractedTerms: [] };
     }
     jsonStr = extractedJson;
@@ -132,7 +146,7 @@ ${text}`;
     const parsed = JSON.parse(jsonStr) as ExtractTermsResponse;
 
     consola.info(
-      `[worker/extract-terms] Done (${parsed.extractedTerms?.length ?? 0} terms extracted)`,
+      `[ai-worker/extract-terms] Done (${parsed.extractedTerms?.length ?? 0} terms extracted)`,
     );
 
     return {
@@ -140,7 +154,115 @@ ${text}`;
     };
   } catch (parseErr) {
     consola.warn(
-      "[worker/extract-terms] Failed to parse JSON:",
+      "[ai-worker/extract-terms] Failed to parse JSON:",
+      parseErr,
+      "\nResponse preview:",
+      result.slice(0, 300),
+    );
+    return { extractedTerms: [] };
+  }
+}
+
+/**
+ * 形態素解析で得られた候補を AI で精査
+ */
+async function refineTermsWithClaude(
+  candidates: TokenCandidate[],
+  sourceType: string,
+  existingTerms?: string[],
+): Promise<ExtractTermsResponse> {
+  const existingTermsSection =
+    existingTerms && existingTerms.length > 0
+      ? `\n\n既に登録済みの用語 (これらは除外してください):\n${existingTerms.join(", ")}`
+      : "";
+
+  const sourceDescription = getSourceDescription(sourceType);
+
+  // 候補リストを整形
+  const candidateList = candidates
+    .map((c) => `- ${c.term} (品詞: ${c.posDetail}, 出現: ${c.frequency}回)`)
+    .join("\n");
+
+  const prompt = `以下は${sourceDescription}から形態素解析で抽出された用語候補です。
+この中から、専門用語辞書に登録すべき用語を選別してください。
+
+## 候補リスト
+
+${candidateList}
+
+## 選別基準
+
+### 登録すべき用語
+- 技術用語 (プログラミング言語、フレームワーク、ツール名、ライブラリ名など)
+- プロジェクト固有の用語 (製品名、機能名、コードネーム、モジュール名など)
+- 人名 (固有名詞)
+- 会社名・組織名
+- 略語・アクロニム (API, CI/CD, DDD など)
+- ドメイン固有の専門用語
+
+### 除外すべき用語
+- 一般的な日本語/英語の単語
+- 既に登録済みの用語 (下記参照)
+- 汎用的すぎる単語 (機能、実装、確認 など)
+${existingTermsSection}
+
+## 出力形式
+
+**重要**: 説明文や前置きは一切不要です。JSON のみを出力してください。
+
+{
+  "extractedTerms": [
+    {
+      "term": "用語",
+      "reading": "よみがな (日本語の場合のみ、任意)",
+      "category": "technology/project/person/company/other",
+      "confidence": 0.8,
+      "reason": "選別理由"
+    }
+  ]
+}
+
+該当する用語がない場合: {"extractedTerms": []}`;
+
+  consola.info(
+    `[ai-worker/extract-terms] Refining ${candidates.length} candidates from ${sourceType}...`,
+  );
+
+  const result = await runClaude(prompt, {
+    model: EXTRACT_TERMS_MODEL,
+    disableTools: true,
+  });
+
+  if (!result) {
+    return { extractedTerms: [] };
+  }
+
+  // JSON パース
+  try {
+    let jsonStr = result.replace(/```(?:json)?\s*([\s\S]*?)```/g, "$1").trim();
+
+    const extractedJson = extractJsonWithExtractedTerms(jsonStr);
+    if (!extractedJson) {
+      consola.warn(
+        "[ai-worker/extract-terms] No valid JSON found in refine response:",
+        result.slice(0, 200),
+      );
+      return { extractedTerms: [] };
+    }
+    jsonStr = extractedJson;
+
+    const parsed = JSON.parse(jsonStr) as ExtractTermsResponse;
+
+    consola.info(
+      `[ai-worker/extract-terms] Refined to ${parsed.extractedTerms?.length ?? 0} terms`,
+    );
+
+    return {
+      extractedTerms: parsed.extractedTerms ?? [],
+    };
+  } catch (parseErr) {
+    consola.warn(
+      "[ai-worker/extract-terms] Failed to parse refine JSON:",
       parseErr,
       "\nResponse preview:",
       result.slice(0, 300),

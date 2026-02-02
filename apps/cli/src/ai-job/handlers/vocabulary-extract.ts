@@ -10,7 +10,11 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import type { ExtractedTerm, VocabularySuggestionSourceType } from "@repo/types";
+import type {
+  ExtractedTerm,
+  RpcTokenizeResponse,
+  VocabularySuggestionSourceType,
+} from "@repo/types";
 import consola from "consola";
 import { and, desc, eq, notInArray } from "drizzle-orm";
 import type { AdasConfig } from "../../config.js";
@@ -341,6 +345,12 @@ interface ExtractTermsResult {
   tasksCreated: number;
 }
 
+/**
+ * 用語抽出のハイブリッド処理
+ *
+ * 1. local-worker で形態素解析 → 候補リスト生成
+ * 2. ai-worker で AI 精査 → 最終リスト
+ */
 async function extractAndSaveTerms(
   db: AdasDatabase,
   config: AdasConfig,
@@ -365,33 +375,63 @@ async function extractAndSaveTerms(
     ...pendingSuggestions.map((s) => s.term),
   ];
 
-  // Worker に抽出リクエスト
-  const workerUrl = `${config.worker.url}/rpc/extract-terms`;
-
-  consola.info(
-    `[vocabulary/extract] Requesting extraction from ${sourceType} (${text.length} chars)...`,
-  );
+  consola.info(`[vocabulary/extract] Extracting from ${sourceType} (${text.length} chars)...`);
 
   try {
-    const response = await fetch(workerUrl, {
+    // Step 1: local-worker で形態素解析
+    let candidates: RpcTokenizeResponse["candidates"] = [];
+
+    try {
+      const tokenizeUrl = `${config.localWorker.url}/rpc/tokenize`;
+      consola.info(`[vocabulary/extract] Step 1: Tokenizing with local-worker...`);
+
+      const tokenizeResponse = await fetch(tokenizeUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, existingTerms }),
+        signal: AbortSignal.timeout(config.localWorker.timeout),
+      });
+
+      if (tokenizeResponse.ok) {
+        const tokenizeResult = (await tokenizeResponse.json()) as RpcTokenizeResponse;
+        candidates = tokenizeResult.candidates ?? [];
+        consola.info(`[vocabulary/extract] Tokenizer returned ${candidates.length} candidates`);
+      } else {
+        consola.warn(
+          `[vocabulary/extract] Tokenizer error: ${tokenizeResponse.status}, falling back to AI-only`,
+        );
+      }
+    } catch (tokenizeErr) {
+      consola.warn(
+        `[vocabulary/extract] Tokenizer unavailable, falling back to AI-only:`,
+        tokenizeErr instanceof Error ? tokenizeErr.message : tokenizeErr,
+      );
+    }
+
+    // Step 2: ai-worker で AI 精査
+    const aiWorkerUrl = `${config.worker.url}/rpc/extract-terms`;
+    consola.info(`[vocabulary/extract] Step 2: Refining with ai-worker...`);
+
+    const aiResponse = await fetch(aiWorkerUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        text,
+        text: candidates.length > 0 ? undefined : text,
+        candidates: candidates.length > 0 ? candidates : undefined,
         sourceType,
         existingTerms,
       }),
       signal: AbortSignal.timeout(config.worker.timeout),
     });
 
-    if (!response.ok) {
-      throw new Error(`Worker error: ${response.status} ${response.statusText}`);
+    if (!aiResponse.ok) {
+      throw new Error(`AI Worker error: ${aiResponse.status} ${aiResponse.statusText}`);
     }
 
-    const result = (await response.json()) as { extractedTerms: ExtractedTerm[] };
+    const result = (await aiResponse.json()) as { extractedTerms: ExtractedTerm[] };
     const extractedTerms = result.extractedTerms ?? [];
 
-    consola.info(`[vocabulary/extract] Worker returned ${extractedTerms.length} terms`);
+    consola.info(`[vocabulary/extract] AI Worker returned ${extractedTerms.length} terms`);
 
     let extracted = 0;
     let skippedDuplicate = 0;

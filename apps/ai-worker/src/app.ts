@@ -14,7 +14,6 @@ import { createLogsRouter } from "./routes/logs.js";
 import { createMatchSlackChannelsRouter } from "./routes/match-slack-channels.js";
 import { createSuggestMemoTagsRouter } from "./routes/suggest-memo-tags.js";
 import { createSummarizeRouter } from "./routes/summarize.js";
-import { createTranscribeRouter } from "./routes/transcribe.js";
 
 export function createWorkerApp() {
   const app = new Hono();
@@ -22,7 +21,6 @@ export function createWorkerApp() {
   app.use("*", cors());
   app.use("/rpc/*", timingMiddleware);
 
-  app.route("/rpc/transcribe", createTranscribeRouter());
   app.route("/rpc/summarize", createSummarizeRouter());
   app.route("/rpc/evaluate", createEvaluateRouter());
   app.route("/rpc/interpret", createInterpretRouter());

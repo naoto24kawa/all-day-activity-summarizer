@@ -166,7 +166,6 @@ export async function startSlackSystem(
   // Apply exclusion filter (supports glob patterns like "rss-*", "*-bot")
   const excludePatterns = config.slack.excludeChannels ?? [];
   if (excludePatterns.length > 0) {
-    const _before = channels.length;
     const excluded: string[] = [];
     channels = channels.filter((ch) => {
       if (matchesExcludePattern(ch.name, excludePatterns)) {

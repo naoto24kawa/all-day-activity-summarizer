@@ -6,9 +6,15 @@ export function getTodayDateString(): string {
   return `${year}-${month}-${day}`;
 }
 
-export function getDateString(dateArg?: string): string {
+export function getDateString(dateArg?: string | Date): string {
   if (!dateArg || dateArg === "today") {
     return getTodayDateString();
+  }
+  if (dateArg instanceof Date) {
+    const year = dateArg.getFullYear();
+    const month = String(dateArg.getMonth() + 1).padStart(2, "0");
+    const day = String(dateArg.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
   return dateArg;
 }

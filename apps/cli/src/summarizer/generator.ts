@@ -791,6 +791,15 @@ export function hoursToTimeRange(
 // Times summary (user-specified time range, max 12 hours)
 // ---------------------------------------------------------------------------
 
+export interface SummaryGenerateOptions {
+  /**
+   * 既存のサマリを上書きするかどうか。
+   * - true (デフォルト): 既存サマリを削除して上書き
+   * - false: 既存サマリがあればスキップ
+   */
+  overwrite?: boolean;
+}
+
 /**
  * ユーザー指定の時間範囲の要約を生成する。
  *
@@ -798,15 +807,37 @@ export function hoursToTimeRange(
  * @param date - 対象日 (YYYY-MM-DD形式)
  * @param startHour - 開始時間 (0-23)
  * @param endHour - 終了時間 (0-23)
- * @returns 生成された要約テキスト、データがない場合は null
+ * @param options - 生成オプション
+ * @returns 生成された要約テキスト、データがない場合またはスキップ時は null
  */
 export async function generateTimesSummary(
   db: AdasDatabase,
   date: string,
   startHour: number,
   endHour: number,
+  options?: SummaryGenerateOptions,
 ): Promise<string | null> {
+  const { overwrite = true } = options ?? {};
   const { startTime, endTime } = hoursToTimeRange(date, startHour, endHour);
+
+  // 上書きしない場合、既存サマリがあればスキップ
+  if (!overwrite) {
+    const existing = db
+      .select({ id: schema.summaries.id })
+      .from(schema.summaries)
+      .where(
+        and(
+          eq(schema.summaries.date, date),
+          eq(schema.summaries.summaryType, "times"),
+          eq(schema.summaries.periodStart, startTime),
+          eq(schema.summaries.periodEnd, endTime),
+        ),
+      )
+      .get();
+    if (existing) {
+      return null;
+    }
+  }
 
   const {
     segments,
@@ -892,9 +923,27 @@ export async function generateTimesSummary(
  *
  * @param db - データベース接続
  * @param date - 対象日 (YYYY-MM-DD形式)
- * @returns 生成された要約テキスト、データがない場合は null
+ * @param options - 生成オプション
+ * @returns 生成された要約テキスト、データがない場合またはスキップ時は null
  */
-export async function generateDailySummary(db: AdasDatabase, date: string): Promise<string | null> {
+export async function generateDailySummary(
+  db: AdasDatabase,
+  date: string,
+  options?: SummaryGenerateOptions,
+): Promise<string | null> {
+  const { overwrite = true } = options ?? {};
+
+  // 上書きしない場合、既存サマリがあればスキップ
+  if (!overwrite) {
+    const existing = db
+      .select({ id: schema.summaries.id })
+      .from(schema.summaries)
+      .where(and(eq(schema.summaries.date, date), eq(schema.summaries.summaryType, "daily")))
+      .get();
+    if (existing) {
+      return null;
+    }
+  }
   // プロジェクト名マップを取得
   const projects = fetchActiveProjects(db);
   const projectNameMap = buildProjectNameMap(projects);

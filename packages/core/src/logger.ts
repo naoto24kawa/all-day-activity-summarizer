@@ -15,7 +15,7 @@ const LOG_LEVEL_LABELS: Record<number, string> = {
   5: "TRACE",
 };
 
-export type LogSource = "serve" | "worker";
+export type LogSource = "serve" | "worker" | "ai-worker" | "local-worker";
 
 let currentSource: LogSource = "serve";
 let initialized = false;
@@ -97,12 +97,17 @@ export function listLogFiles(): LogFileInfo[] {
       if (!file.isFile() || !file.name.endsWith(".log")) continue;
 
       // ファイル名パターン: {source}-{YYYY}-{MM}-{DD}.log または adas-{YYYY}-{MM}-{DD}.log (レガシー)
-      const match = file.name.match(/^(serve|worker|adas)-(\d{4})-(\d{2})-(\d{2})\.log$/);
+      const match = file.name.match(
+        /^(serve|worker|ai-worker|local-worker|adas)-(\d{4})-(\d{2})-(\d{2})\.log$/,
+      );
       if (!match) continue;
 
       const [, sourceOrLegacy, year, month, day] = match;
+      // レガシーファイル名 (adas, worker) は ai-worker として扱う
       const source: LogSource =
-        sourceOrLegacy === "adas" ? "worker" : (sourceOrLegacy as LogSource);
+        sourceOrLegacy === "adas" || sourceOrLegacy === "worker"
+          ? "ai-worker"
+          : (sourceOrLegacy as LogSource);
       const date = `${year}-${month}-${day}`;
 
       const stats = Bun.file(join(LOG_DIR, file.name));
@@ -157,7 +162,7 @@ export function readLogFile(
   for (const line of lines) {
     // パターン: 2026-01-29T12:34:56.789Z INFO  message
     const match = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s+(\w+)\s+(.*)$/);
-    if (match) {
+    if (match?.[1] && match[2] && match[3]) {
       entries.push({
         timestamp: match[1],
         level: match[2].trim(),

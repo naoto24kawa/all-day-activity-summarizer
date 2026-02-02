@@ -720,7 +720,9 @@ export function createTasksRouter(db: AdasDatabase) {
       return c.json({ error: "Invalid id" }, 400);
     }
 
-    const body = await c.req.json<CreateGitHubIssueRequest>().catch(() => ({}));
+    const body = await c.req
+      .json<CreateGitHubIssueRequest>()
+      .catch(() => ({}) as CreateGitHubIssueRequest);
 
     // タスク取得
     const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
@@ -2060,7 +2062,19 @@ export function createTasksRouter(db: AdasDatabase) {
           include?: boolean;
         }>;
       }>()
-      .catch(() => ({}));
+      .catch(
+        () =>
+          ({}) as {
+            updateParentDescription?: boolean;
+            createChildTasks?: boolean;
+            childTaskEdits?: Array<{
+              stepNumber: number;
+              title?: string;
+              description?: string;
+              include?: boolean;
+            }>;
+          },
+      );
 
     const updateParentDescription = body.updateParentDescription ?? true;
     const createChildTasks = body.createChildTasks ?? true;
@@ -2107,7 +2121,11 @@ export function createTasksRouter(db: AdasDatabase) {
 
     // 子タスクを作成
     const childTasks: (typeof schema.tasks.$inferSelect)[] = [];
-    if (createChildTasks && elaborationResult.childTasks?.length > 0) {
+    if (
+      createChildTasks &&
+      elaborationResult.childTasks &&
+      elaborationResult.childTasks.length > 0
+    ) {
       // 親タスクが accepted/in_progress なら子も accepted で作成
       const childStatus =
         task.status === "accepted" || task.status === "in_progress" ? "accepted" : "pending";
@@ -3186,10 +3204,8 @@ async function checkTaskSimilarity(
   const prompt = buildSimilarityCheckPrompt(task, processedTasksSection);
 
   try {
-    const response = await runClaude({
+    const response = await runClaude(prompt, {
       model: "haiku",
-      prompt,
-      maxTokens: 1024,
     });
 
     // JSON をパース
@@ -3311,7 +3327,7 @@ function parseExtractResult(response: string): ExtractResult {
   try {
     // JSON ブロックを抽出
     const jsonMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const jsonStr = jsonMatch ? jsonMatch[1].trim() : response.trim();
+    const jsonStr = jsonMatch?.[1] ? jsonMatch[1].trim() : response.trim();
 
     const parsed = JSON.parse(jsonStr);
     return parsed as ExtractResult;
@@ -4266,12 +4282,12 @@ function buildLogExtractionPrompt(groups: GroupedLogEntry[], date: string, sourc
   lines.push("## エラー/警告グループ");
   lines.push("");
 
-  for (let i = 0; i < groups.length; i++) {
-    const group = groups[i];
+  for (const [i, group] of groups.entries()) {
+    const firstEntry = group.entries[0];
     lines.push(`### グループ ${i + 1} (発生回数: ${group.count})`);
     lines.push(`- 初回発生: ${group.firstTimestamp}`);
     lines.push(`- 最終発生: ${group.lastTimestamp}`);
-    lines.push(`- レベル: ${group.entries[0].level}`);
+    lines.push(`- レベル: ${firstEntry?.level ?? "UNKNOWN"}`);
     lines.push(`- サンプルメッセージ:`);
     lines.push("```");
     lines.push(group.sampleMessage);
@@ -4292,7 +4308,7 @@ function buildLogExtractionPrompt(groups: GroupedLogEntry[], date: string, sourc
  */
 function parseLogExtractResult(response: string): LogExtractResult {
   const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
-  const jsonStr = jsonMatch ? jsonMatch[1] : response;
+  const jsonStr = jsonMatch?.[1] ?? response;
 
   try {
     const parsed = JSON.parse(jsonStr.trim());

@@ -1,3 +1,6 @@
+/** 音声ソースタイプ */
+export type AudioSourceType = "mic" | "system";
+
 /** 文字起こしセグメント */
 export interface TranscriptionSegment {
   id: number;
@@ -1544,4 +1547,36 @@ export interface CreateGitHubIssueResponse {
   issueUrl: string;
   /** 更新されたタスク */
   task: Task;
+}
+
+// ========== 形態素解析 型定義 ==========
+
+/** 形態素解析で抽出されたトークン候補 */
+export interface TokenCandidate {
+  /** 用語 */
+  term: string;
+  /** 読み (カタカナ、不明な場合は null) */
+  reading: string | null;
+  /** 品詞 */
+  pos: string;
+  /** 品詞詳細 */
+  posDetail: string;
+  /** 出現頻度 */
+  frequency: number;
+}
+
+/** 形態素解析リクエスト */
+export interface RpcTokenizeRequest {
+  /** 解析対象テキスト */
+  text: string;
+  /** 除外する既存用語リスト */
+  existingTerms?: string[];
+}
+
+/** 形態素解析レスポンス */
+export interface RpcTokenizeResponse {
+  /** 抽出された候補 */
+  candidates: TokenCandidate[];
+  /** トークン総数 */
+  tokenCount: number;
 }
