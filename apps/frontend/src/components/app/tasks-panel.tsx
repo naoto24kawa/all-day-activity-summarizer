@@ -57,7 +57,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -200,6 +200,7 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     error,
     refetch,
     updateTask,
+    updateTaskOptimistic,
     updateBatchTasks,
     deleteTask,
     extractTasksAsync,
@@ -275,6 +276,16 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const [elaborateDialogOpen, setElaborateDialogOpen] = useState(false);
   const [elaborateTargetTask, setElaborateTargetTask] = useState<Task | null>(null);
 
+  // 詳細化ジョブ追跡 (ジョブID -> タスクID のマッピング)
+  const [elaborationJobMap, setElaborationJobMap] = useState<Map<number, number>>(new Map());
+  // 詳細化中のタスクID
+  const elaboratingTaskIds = new Set(elaborationJobMap.values());
+
+  // Claude送信ジョブ追跡 (ジョブID -> タスクID のマッピング)
+  const [claudeChatJobMap, setClaudeChatJobMap] = useState<Map<number, number>>(new Map());
+  // Claude送信中のタスクID
+  const sendingToClaudeTaskIds = new Set(claudeChatJobMap.values());
+
   const openElaborateDialog = (task: Task) => {
     setElaborateTargetTask(task);
     setElaborateDialogOpen(true);
@@ -283,6 +294,36 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   const closeElaborateDialog = () => {
     setElaborateDialogOpen(false);
     setElaborateTargetTask(null);
+  };
+
+  // 詳細化を開始 (モーダルなし) または結果確認 (結果がある場合)
+  const handleElaborate = async (task: Task) => {
+    // 詳細化結果がある場合はダイアログを開いて確認
+    if (task.elaborationStatus === "completed" && task.pendingElaboration) {
+      openElaborateDialog(task);
+      return;
+    }
+
+    // 既に詳細化中の場合はスキップ
+    if (task.elaborationStatus === "pending" || elaboratingTaskIds.has(task.id)) {
+      toast.info("詳細化中です", { description: "しばらくお待ちください" });
+      return;
+    }
+
+    // ジョブを開始
+    try {
+      const result = await startElaborate(task.id);
+      trackElaboration(result.jobId, task.id);
+      toast.success("詳細化を開始しました", {
+        description: `タスク「${task.title}」をバックグラウンドで詳細化中`,
+      });
+      // タスクリストをリフレッシュ (elaborationStatus: pending を反映)
+      refetch();
+    } catch (err) {
+      toast.error("詳細化の開始に失敗しました", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
   };
 
   // 一括詳細化ダイアログ
@@ -366,6 +407,10 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
   // Filter tasks by source type and project
   const filterTasks = (taskList: Task[]) => {
     let result = taskList;
+
+    // Exclude child tasks (show only parent tasks in main list)
+    // Child tasks are displayed within parent task's detail section
+    result = result.filter((t) => !t.parentId);
 
     // Source filter
     if (sourceFilter !== "all") {
@@ -459,6 +504,70 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     },
   });
 
+  // 詳細化ジョブ追跡
+  const { trackJob: trackElaborationJob } = useJobProgress({
+    onJobCompleted: (jobId) => {
+      // ジョブIDからタスクIDを取得
+      setElaborationJobMap((prev) => {
+        const taskId = prev.get(jobId);
+        if (taskId) {
+          toast.success("詳細化が完了しました", {
+            description: `タスク #${taskId} の詳細化が完了しました`,
+          });
+        }
+        const next = new Map(prev);
+        next.delete(jobId);
+        return next;
+      });
+      // タスクリストをリフレッシュ
+      refetch();
+    },
+  });
+
+  // 詳細化ジョブを登録
+  const trackElaboration = useCallback(
+    (jobId: number, taskId: number) => {
+      setElaborationJobMap((prev) => {
+        const next = new Map(prev);
+        next.set(jobId, taskId);
+        return next;
+      });
+      trackElaborationJob(jobId);
+    },
+    [trackElaborationJob],
+  );
+
+  // Claude送信ジョブ追跡
+  const { trackJob: trackClaudeChatJob } = useJobProgress({
+    onJobCompleted: (jobId) => {
+      // ジョブIDからタスクIDを取得
+      setClaudeChatJobMap((prev) => {
+        const taskId = prev.get(jobId);
+        if (taskId) {
+          toast.success("Claude への送信が完了しました", {
+            description: `タスク #${taskId} の情報を送信しました`,
+          });
+        }
+        const next = new Map(prev);
+        next.delete(jobId);
+        return next;
+      });
+    },
+  });
+
+  // Claude送信ジョブを登録
+  const trackClaudeChat = useCallback(
+    (jobId: number, taskId: number) => {
+      setClaudeChatJobMap((prev) => {
+        const next = new Map(prev);
+        next.set(jobId, taskId);
+        return next;
+      });
+      trackClaudeChatJob(jobId);
+    },
+    [trackClaudeChatJob],
+  );
+
   const handleCheckCompletions = async () => {
     setCheckingCompletion(true);
     setCompletionSuggestions([]);
@@ -481,6 +590,39 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
     await updateTask(taskId, { status: "completed" });
     setCompletionSuggestions((prev) => prev.filter((s) => s.taskId !== taskId));
   };
+
+  // ステータスラベルのマップ
+  const statusLabels: Record<TaskStatus, string> = {
+    pending: "承認待ち",
+    accepted: "承認済み",
+    in_progress: "進行中",
+    paused: "中断",
+    completed: "完了",
+    rejected: "却下",
+  };
+
+  // 楽観的更新でタスクを更新 (UIを即座に反映し、完了時にトースト通知)
+  const handleUpdateTaskOptimistic = useCallback(
+    async (taskId: number, updates: Parameters<typeof updateTaskOptimistic>[1]): Promise<void> => {
+      const task = tasks.find((t) => t.id === taskId);
+      const { promise, rollback } = updateTaskOptimistic(taskId, updates);
+
+      promise
+        .then((result) => {
+          const statusLabel = updates.status ? statusLabels[updates.status] : null;
+          const message = statusLabel
+            ? `「${task?.title ?? "タスク"}」を${statusLabel}に変更しました`
+            : `「${task?.title ?? "タスク"}」を更新しました`;
+          toast.success(message);
+        })
+        .catch((err) => {
+          rollback();
+          toast.error(`更新に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`);
+        });
+      // 即座に resolve (楽観的更新なので待たない)
+    },
+    [tasks, updateTaskOptimistic],
+  );
 
   // 重複チェック (pending の類似チェック + accepted の重複検出)
   const handleBulkDuplicateCheck = async () => {
@@ -1361,11 +1503,14 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
               tasks={filteredTasksByStatus}
               projects={projects}
               allTasks={tasks}
-              onUpdateTask={updateTask}
+              onUpdateTask={handleUpdateTaskOptimistic}
               onDeleteTask={deleteTask}
-              onElaborate={openElaborateDialog}
+              onElaborate={handleElaborate}
               onCreateIssue={handleCreateIssue}
               suggestionTaskIds={suggestionTaskIds}
+              elaboratingTaskIds={elaboratingTaskIds}
+              sendingToClaudeTaskIds={sendingToClaudeTaskIds}
+              onSendToClaude={trackClaudeChat}
               selectionMode={selectionMode}
               selectedTaskIds={selectedTaskIds}
               onToggleSelection={toggleTaskSelection}
@@ -1385,7 +1530,12 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
           open={elaborateDialogOpen}
           task={elaborateTargetTask}
           project={projects.find((p) => p.id === elaborateTargetTask.projectId) ?? null}
-          onStartElaborate={startElaborate}
+          onStartElaborate={async (taskId, request) => {
+            const result = await startElaborate(taskId, request);
+            // ジョブを追跡 (ダイアログ閉じても完了通知を受け取れるように)
+            trackElaboration(result.jobId, taskId);
+            return result;
+          }}
           onGetElaborationStatus={getElaborationStatus}
           onApplyElaboration={applyElaboration}
           onDiscardElaboration={discardElaboration}
@@ -1398,7 +1548,18 @@ export function TasksPanel({ date, className }: TasksPanelProps) {
         open={bulkElaborateDialogOpen}
         tasks={tasks.filter((t) => selectedTaskIds.has(t.id))}
         projects={projects}
-        onStartBulkElaborate={startBulkElaborate}
+        onStartBulkElaborate={async (request) => {
+          const result = await startBulkElaborate(request);
+          // 各ジョブを追跡
+          for (let i = 0; i < result.jobIds.length; i++) {
+            const jobId = result.jobIds[i];
+            const taskId = result.taskIds[i];
+            if (jobId !== undefined && taskId !== undefined) {
+              trackElaboration(jobId, taskId);
+            }
+          }
+          return result;
+        }}
         onGetBulkElaborationStatus={getBulkElaborationStatus}
         onApplyElaboration={applyElaboration}
         onRefetch={() => refetch(true)}
@@ -1480,6 +1641,9 @@ function TaskList({
   onElaborate,
   onCreateIssue,
   suggestionTaskIds,
+  elaboratingTaskIds,
+  sendingToClaudeTaskIds,
+  onSendToClaude,
   selectionMode = false,
   selectedTaskIds,
   onToggleSelection,
@@ -1506,6 +1670,9 @@ function TaskList({
   onElaborate?: (task: Task) => void;
   onCreateIssue?: (task: Task) => Promise<void>;
   suggestionTaskIds?: Set<number>;
+  elaboratingTaskIds?: Set<number>;
+  sendingToClaudeTaskIds?: Set<number>;
+  onSendToClaude?: (jobId: number, taskId: number) => void;
   selectionMode?: boolean;
   selectedTaskIds?: Set<number>;
   onToggleSelection?: (taskId: number) => void;
@@ -1547,6 +1714,9 @@ function TaskList({
             onElaborate={onElaborate}
             onCreateIssue={onCreateIssue}
             isSuggested={suggestionTaskIds?.has(task.id)}
+            isElaborating={elaboratingTaskIds?.has(task.id)}
+            isSendingToClaude={sendingToClaudeTaskIds?.has(task.id)}
+            onSendToClaude={onSendToClaude}
             selectionMode={selectionMode}
             isSelected={selectedTaskIds?.has(task.id) ?? false}
             onToggleSelection={onToggleSelection}
@@ -1567,6 +1737,9 @@ function TaskItem({
   onElaborate,
   onCreateIssue,
   isSuggested,
+  isElaborating,
+  isSendingToClaude,
+  onSendToClaude,
   selectionMode = false,
   isSelected = false,
   onToggleSelection,
@@ -1591,6 +1764,9 @@ function TaskItem({
   onElaborate?: (task: Task) => void;
   onCreateIssue?: (task: Task) => Promise<void>;
   isSuggested?: boolean;
+  isElaborating?: boolean;
+  isSendingToClaude?: boolean;
+  onSendToClaude?: (jobId: number, taskId: number) => void;
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelection?: (taskId: number) => void;
@@ -1610,8 +1786,6 @@ function TaskItem({
   const [copied, setCopied] = useState(false);
   // シンプルコピー状態 (タスク情報のみ)
   const [simpleCopied, setSimpleCopied] = useState(false);
-  // Claude に送信中フラグ
-  const [sendingToClaude, setSendingToClaude] = useState(false);
   // プロンプト改善の差分表示
   const [diffDialogOpen, setDiffDialogOpen] = useState(false);
   const { improvement } = usePromptImprovement(
@@ -1712,24 +1886,40 @@ function TaskItem({
     setTimeout(() => setSimpleCopied(false), 2000);
   };
 
+  // ステータスに応じた更新アクションを生成 (パスのみ)
+  const getStatusActions = (
+    taskId: number,
+    status: string,
+  ): { action: string; path: string; body?: string }[] => {
+    const actions: { action: string; path: string; body?: string }[] = [];
+    if (status === "accepted") {
+      actions.push({ action: "開始", path: `/api/tasks/${taskId}/start` });
+      actions.push({ action: "完了", path: `/api/tasks/${taskId}/complete` });
+      actions.push({
+        action: "中断",
+        path: `/api/tasks/${taskId}/pause`,
+        body: '{"reason": "理由"}',
+      });
+    } else if (status === "in_progress") {
+      actions.push({ action: "完了", path: `/api/tasks/${taskId}/complete` });
+      actions.push({
+        action: "中断",
+        path: `/api/tasks/${taskId}/pause`,
+        body: '{"reason": "理由"}',
+      });
+    } else if (status === "paused") {
+      actions.push({ action: "再開", path: `/api/tasks/${taskId}/start` });
+      actions.push({ action: "完了", path: `/api/tasks/${taskId}/complete` });
+    }
+    return actions;
+  };
+
   // クリップボードにコピー (タスク情報 + API コマンド)
   const copyToClipboard = async () => {
+    const baseUrl = ADAS_API_URL;
     let text = `## ${task.title}`;
     if (task.description) {
       text += `\n\n${task.description}`;
-    }
-
-    // 子タスク情報を追加 (親タスクの場合)
-    if (allTasks && task.parentId === null) {
-      const childTasks = allTasks
-        .filter((t) => t.parentId === task.id)
-        .sort((a, b) => (a.stepNumber ?? 0) - (b.stepNumber ?? 0));
-      if (childTasks.length > 0) {
-        text += `\n\n### 子タスク (${childTasks.length}件)\n`;
-        for (const child of childTasks) {
-          text += `${child.stepNumber ?? 0}. [${child.status}] ${child.title}\n`;
-        }
-      }
     }
 
     // 親タスク情報を追加 (子タスクの場合)
@@ -1740,88 +1930,73 @@ function TaskItem({
       }
     }
 
-    // タスク更新API
-    const baseUrl = ADAS_API_URL;
-    const updateUrl = `${baseUrl}/api/tasks/${task.id}`;
+    // 子タスクを取得
+    const childTasks =
+      allTasks && task.parentId === null
+        ? allTasks
+            .filter((t) => t.parentId === task.id)
+            .sort((a, b) => (a.stepNumber ?? 0) - (b.stepNumber ?? 0))
+        : [];
+
+    // --- API セクション ---
     text += "\n\n---\n";
-    text += "### タスク更新API\n";
-    text += "タイトルや説明を変更する場合:\n";
-    text += "```bash\n";
-    text += `curl -X PATCH ${updateUrl} -H "Content-Type: application/json" -d '{"title": "新しいタイトル", "description": "新しい説明"}'\n`;
-    text += "```\n";
-    text +=
-      "更新可能なフィールド: `title`, `description`, `priority` (high/medium/low), `workType`, `dueDate`, `projectId`\n";
+    text += `### API (Base: ${baseUrl})\n\n`;
 
-    // ステータスに応じたアクションコマンドを生成
-    const startUrl = `${baseUrl}/api/tasks/${task.id}/start`;
-    const completeUrl = `${baseUrl}/api/tasks/${task.id}/complete`;
-    const pauseUrl = `${baseUrl}/api/tasks/${task.id}/pause`;
-
-    if (task.status === "accepted") {
-      // 承認済み: 開始 → 完了/中断
-      text += "\n\n---\n";
-      text += "作業開始前に以下を実行してください:\n";
-      text += "```bash\n";
-      text += `curl -X POST ${startUrl}\n`;
-      text += "```\n\n";
-      text += "タスク完了時は以下を実行してください:\n";
-      text += "```bash\n";
-      text += `curl -X POST ${completeUrl}\n`;
-      text += "```\n\n";
-      text += "中断する場合は、中断理由を確認してから以下を実行してください:\n";
-      text += "```bash\n";
-      text += `curl -X POST ${pauseUrl} -H "Content-Type: application/json" -d '{"reason": "中断理由をここに記入"}'\n`;
-      text += "```";
-    } else if (task.status === "in_progress") {
-      // 進行中: 完了/中断
-      text += "\n\n---\n";
-      text += "タスク完了時は以下を実行してください:\n";
-      text += "```bash\n";
-      text += `curl -X POST ${completeUrl}\n`;
-      text += "```\n\n";
-      text += "中断する場合は、中断理由を確認してから以下を実行してください:\n";
-      text += "```bash\n";
-      text += `curl -X POST ${pauseUrl} -H "Content-Type: application/json" -d '{"reason": "中断理由をここに記入"}'\n`;
-      text += "```";
-    } else if (task.status === "paused") {
-      // 中断: 再開 → 完了
-      text += "\n\n---\n";
-      text += "作業再開時は以下を実行してください:\n";
-      text += "```bash\n";
-      text += `curl -X POST ${startUrl}\n`;
-      text += "```\n\n";
-      text += "タスク完了時は以下を実行してください:\n";
-      text += "```bash\n";
-      text += `curl -X POST ${completeUrl}\n`;
-      text += "```";
+    // タスクURL一覧
+    text += "**タスクURL**\n";
+    text += `- #${task.id} (このタスク): /api/tasks/${task.id}\n`;
+    for (const child of childTasks) {
+      text += `- #${child.id} ${child.title}: /api/tasks/${child.id}\n`;
     }
-    // pending, completed, rejected はアクションコマンドなし
+
+    // 更新コマンド
+    text += "\n**更新コマンド** (curl -X POST {Base}{path})\n";
+
+    // 親タスク
+    const parentActions = getStatusActions(task.id, task.status);
+    if (parentActions.length > 0) {
+      text += `\n*#${task.id} (${task.status})*\n`;
+      for (const a of parentActions) {
+        if (a.body) {
+          text += `- ${a.action}: POST ${a.path} + ${a.body}\n`;
+        } else {
+          text += `- ${a.action}: POST ${a.path}\n`;
+        }
+      }
+    }
+
+    // 子タスク
+    for (const child of childTasks) {
+      const childActions = getStatusActions(child.id, child.status);
+      if (childActions.length > 0) {
+        text += `\n*#${child.id} ${child.title} (${child.status})*\n`;
+        for (const a of childActions) {
+          if (a.body) {
+            text += `- ${a.action}: POST ${a.path} + ${a.body}\n`;
+          } else {
+            text += `- ${a.action}: POST ${a.path}\n`;
+          }
+        }
+      }
+    }
+
+    // PATCH (タイトル・説明の更新)
+    text += `\n**フィールド更新** (curl -X PATCH {Base}/api/tasks/{id} -H "Content-Type: application/json" -d '{...}')\n`;
+    text += "更新可能: title, description, priority, workType, dueDate, projectId\n";
 
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Claude Code にタスク情報を送信
+  // Claude Code にタスク情報を送信 (非同期ジョブとして実行)
   const sendToClaude = async () => {
-    if (sendingToClaude) return;
+    if (isSendingToClaude) return;
 
+    const baseUrl = ADAS_API_URL;
     let prompt = `## ${task.title}`;
     if (task.description) {
       prompt += `\n\n${task.description}`;
-    }
-
-    // 子タスク情報を追加 (親タスクの場合)
-    if (allTasks && task.parentId === null) {
-      const childTasks = allTasks
-        .filter((t) => t.parentId === task.id)
-        .sort((a, b) => (a.stepNumber ?? 0) - (b.stepNumber ?? 0));
-      if (childTasks.length > 0) {
-        prompt += `\n\n### 子タスク (${childTasks.length}件)\n`;
-        for (const child of childTasks) {
-          prompt += `${child.stepNumber ?? 0}. [${child.status}] ${child.title}\n`;
-        }
-      }
     }
 
     // 親タスク情報を追加 (子タスクの場合)
@@ -1832,127 +2007,73 @@ function TaskItem({
       }
     }
 
-    // タスク更新API
-    const baseUrl = ADAS_API_URL;
-    const updateUrl = `${baseUrl}/api/tasks/${task.id}`;
+    // 子タスクを取得
+    const childTasks =
+      allTasks && task.parentId === null
+        ? allTasks
+            .filter((t) => t.parentId === task.id)
+            .sort((a, b) => (a.stepNumber ?? 0) - (b.stepNumber ?? 0))
+        : [];
+
+    // --- API セクション ---
     prompt += "\n\n---\n";
-    prompt += "### タスク更新API\n";
-    prompt += "タイトルや説明を変更する場合:\n";
-    prompt += "```bash\n";
-    prompt += `curl -X PATCH ${updateUrl} -H "Content-Type: application/json" -d '{"title": "新しいタイトル", "description": "新しい説明"}'\n`;
-    prompt += "```\n";
-    prompt +=
-      "更新可能なフィールド: `title`, `description`, `priority` (high/medium/low), `workType`, `dueDate`, `projectId`\n";
+    prompt += `### API (Base: ${baseUrl})\n\n`;
 
-    // ステータスに応じたアクションコマンドを生成
-    const startUrl = `${baseUrl}/api/tasks/${task.id}/start`;
-    const completeUrl = `${baseUrl}/api/tasks/${task.id}/complete`;
-    const pauseUrl = `${baseUrl}/api/tasks/${task.id}/pause`;
-
-    if (task.status === "accepted") {
-      prompt += "\n\n---\n";
-      prompt += "作業開始前に以下を実行してください:\n";
-      prompt += "```bash\n";
-      prompt += `curl -X POST ${startUrl}\n`;
-      prompt += "```\n\n";
-      prompt += "タスク完了時は以下を実行してください:\n";
-      prompt += "```bash\n";
-      prompt += `curl -X POST ${completeUrl}\n`;
-      prompt += "```\n\n";
-      prompt += "中断する場合は、中断理由を確認してから以下を実行してください:\n";
-      prompt += "```bash\n";
-      prompt += `curl -X POST ${pauseUrl} -H "Content-Type: application/json" -d '{"reason": "中断理由をここに記入"}'\n`;
-      prompt += "```";
-    } else if (task.status === "in_progress") {
-      prompt += "\n\n---\n";
-      prompt += "タスク完了時は以下を実行してください:\n";
-      prompt += "```bash\n";
-      prompt += `curl -X POST ${completeUrl}\n`;
-      prompt += "```\n\n";
-      prompt += "中断する場合は、中断理由を確認してから以下を実行してください:\n";
-      prompt += "```bash\n";
-      prompt += `curl -X POST ${pauseUrl} -H "Content-Type: application/json" -d '{"reason": "中断理由をここに記入"}'\n`;
-      prompt += "```";
-    } else if (task.status === "paused") {
-      prompt += "\n\n---\n";
-      prompt += "作業再開時は以下を実行してください:\n";
-      prompt += "```bash\n";
-      prompt += `curl -X POST ${startUrl}\n`;
-      prompt += "```\n\n";
-      prompt += "タスク完了時は以下を実行してください:\n";
-      prompt += "```bash\n";
-      prompt += `curl -X POST ${completeUrl}\n`;
-      prompt += "```";
+    // タスクURL一覧
+    prompt += "**タスクURL**\n";
+    prompt += `- #${task.id} (このタスク): /api/tasks/${task.id}\n`;
+    for (const child of childTasks) {
+      prompt += `- #${child.id} ${child.title}: /api/tasks/${child.id}\n`;
     }
 
-    setSendingToClaude(true);
-    const toastId = toast.loading("Claude Code に送信中...");
+    // 更新コマンド
+    prompt += "\n**更新コマンド** (curl -X POST {Base}{path})\n";
 
-    try {
-      const response = await fetch(`${ADAS_API_URL}/api/claude-chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, sessionId: `task-${task.id}` }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error: ${response.status}`);
+    // 親タスク
+    const parentActions = getStatusActions(task.id, task.status);
+    if (parentActions.length > 0) {
+      prompt += `\n*#${task.id} (${task.status})*\n`;
+      for (const a of parentActions) {
+        if (a.body) {
+          prompt += `- ${a.action}: POST ${a.path} + ${a.body}\n`;
+        } else {
+          prompt += `- ${a.action}: POST ${a.path}\n`;
+        }
       }
+    }
 
-      // SSE でレスポンスを受け取る
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("Response body is not readable");
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // SSE イベントをパース
-        const events = buffer.split("\n\n");
-        buffer = events.pop() || "";
-
-        for (const eventStr of events) {
-          if (!eventStr.trim()) continue;
-
-          const lines = eventStr.split("\n");
-          let eventType = "";
-          let data = "";
-
-          for (const line of lines) {
-            if (line.startsWith("event:")) {
-              eventType = line.slice(6).trim();
-            } else if (line.startsWith("data:")) {
-              data = line.slice(5).trim();
-            }
-          }
-
-          if (eventType === "done") {
-            toast.success("Claude Code への送信が完了しました", { id: toastId });
-            return;
-          } else if (eventType === "error") {
-            try {
-              const parsed = JSON.parse(data);
-              throw new Error(parsed.error);
-            } catch {
-              throw new Error("Unknown error");
-            }
+    // 子タスク
+    for (const child of childTasks) {
+      const childActions = getStatusActions(child.id, child.status);
+      if (childActions.length > 0) {
+        prompt += `\n*#${child.id} ${child.title} (${child.status})*\n`;
+        for (const a of childActions) {
+          if (a.body) {
+            prompt += `- ${a.action}: POST ${a.path} + ${a.body}\n`;
+          } else {
+            prompt += `- ${a.action}: POST ${a.path}\n`;
           }
         }
       }
+    }
 
-      toast.success("Claude Code への送信が完了しました", { id: toastId });
+    // PATCH (タイトル・説明の更新)
+    prompt += `\n**フィールド更新** (curl -X PATCH {Base}/api/tasks/{id} -H "Content-Type: application/json" -d '{...}')\n`;
+    prompt += "更新可能: title, description, priority, workType, dueDate, projectId\n";
+
+    try {
+      // 非同期ジョブとして登録
+      const response = await postAdasApi<{ jobId: number; status: string }>(
+        "/api/claude-chat/async",
+        { prompt, taskId: task.id },
+      );
+
+      // ジョブを追跡
+      onSendToClaude?.(response.jobId, task.id);
+      toast.info("Claude Code への送信を開始しました");
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "An error occurred";
-      toast.error(`送信に失敗しました: ${errorMessage}`, { id: toastId });
-    } finally {
-      setSendingToClaude(false);
+      toast.error(`送信に失敗しました: ${errorMessage}`);
     }
   };
 
@@ -1961,139 +2082,151 @@ function TaskItem({
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <div className={`rounded-md border p-3 ${getTaskStyle(task, isSelected, isSuggested)}`}>
           {/* ヘッダー: タイトル + ソースバッジ */}
-          <CollapsibleTrigger className="flex w-full items-start justify-between text-left">
-            {/* 選択モード時のチェックボックス */}
-            {selectionMode && (
-              <button
-                type="button"
-                className="mr-2 flex-shrink-0 p-0.5 rounded hover:bg-muted/50 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleSelection?.(task.id);
-                }}
-              >
-                {isSelected ? (
-                  <CheckSquare className="h-5 w-5 text-blue-500" />
-                ) : (
-                  <Square className="h-5 w-5 text-muted-foreground" />
-                )}
-              </button>
-            )}
-            <div className="flex-1">
-              <div className="mb-1 flex flex-wrap items-center gap-2">
-                <span className="font-medium">{task.title}</span>
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-start justify-between text-left cursor-pointer"
+            >
+              {/* 選択モード時のチェックボックス */}
+              {selectionMode && (
                 <button
                   type="button"
+                  className="mr-2 flex-shrink-0 p-0.5 rounded hover:bg-muted/50 transition-colors"
                   onClick={(e) => {
                     e.stopPropagation();
-                    openEditDialog("edit");
+                    onToggleSelection?.(task.id);
                   }}
-                  className="p-0.5 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-                  title="編集"
                 >
-                  <Pencil className="h-3 w-3" />
+                  {isSelected ? (
+                    <CheckSquare className="h-5 w-5 text-blue-500" />
+                  ) : (
+                    <Square className="h-5 w-5 text-muted-foreground" />
+                  )}
                 </button>
-                {task.sourceType === "slack" && (
-                  <Badge variant="secondary" className="text-xs">
-                    Slack
-                  </Badge>
-                )}
-                {task.sourceType === "github" && (
-                  <Badge variant="secondary" className="text-xs">
-                    GitHub
-                  </Badge>
-                )}
-                {task.sourceType === "github-comment" && (
-                  <Badge variant="secondary" className="text-xs">
-                    GitHub Comment
-                  </Badge>
-                )}
-                {task.sourceType === "memo" && (
-                  <Badge variant="secondary" className="text-xs">
-                    Memo
-                  </Badge>
-                )}
-                {task.sourceType === "prompt-improvement" && (
-                  <Badge variant="default" className="text-xs bg-purple-500">
-                    <Wand2 className="mr-1 h-3 w-3" />
-                    改善
-                  </Badge>
-                )}
-                {task.sourceType === "vocabulary" && (
-                  <>
-                    <Badge variant="default" className="text-xs bg-teal-500">
-                      <BookOpen className="mr-1 h-3 w-3" />
-                      用語
-                    </Badge>
-                    {task.vocabularySuggestionSourceType && (
-                      <Badge variant="secondary" className="text-xs">
-                        {VOCABULARY_SOURCE_LABELS[task.vocabularySuggestionSourceType] ??
-                          task.vocabularySuggestionSourceType}
-                      </Badge>
-                    )}
-                  </>
-                )}
-                {task.sourceType === "merge" && (
-                  <Badge variant="default" className="text-xs bg-amber-500">
-                    <GitMerge className="mr-1 h-3 w-3" />
-                    統合
-                  </Badge>
-                )}
-                {/* 詳細化ステータスインジケーター */}
-                {task.elaborationStatus === "pending" && (
-                  <Badge variant="outline" className="text-xs text-purple-600 border-purple-300">
-                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                    詳細化中
-                  </Badge>
-                )}
-                {task.elaborationStatus === "completed" && task.pendingElaboration && (
-                  <Badge
-                    variant="default"
-                    className="text-xs bg-purple-500 cursor-pointer hover:bg-purple-600"
+              )}
+              <div className="flex-1">
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{task.title}</span>
+                  <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onElaborate?.(task);
+                      openEditDialog("edit");
                     }}
+                    className="p-0.5 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+                    title="編集"
                   >
-                    <Wand2 className="mr-1 h-3 w-3" />
-                    詳細化結果を確認
-                  </Badge>
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                  {task.sourceType === "slack" && (
+                    <Badge variant="secondary" className="text-xs">
+                      Slack
+                    </Badge>
+                  )}
+                  {task.sourceType === "github" && (
+                    <Badge variant="secondary" className="text-xs">
+                      GitHub
+                    </Badge>
+                  )}
+                  {task.sourceType === "github-comment" && (
+                    <Badge variant="secondary" className="text-xs">
+                      GitHub Comment
+                    </Badge>
+                  )}
+                  {task.sourceType === "memo" && (
+                    <Badge variant="secondary" className="text-xs">
+                      Memo
+                    </Badge>
+                  )}
+                  {task.sourceType === "prompt-improvement" && (
+                    <Badge variant="default" className="text-xs bg-purple-500">
+                      <Wand2 className="mr-1 h-3 w-3" />
+                      改善
+                    </Badge>
+                  )}
+                  {task.sourceType === "vocabulary" && (
+                    <>
+                      <Badge variant="default" className="text-xs bg-teal-500">
+                        <BookOpen className="mr-1 h-3 w-3" />
+                        用語
+                      </Badge>
+                      {task.vocabularySuggestionSourceType && (
+                        <Badge variant="secondary" className="text-xs">
+                          {VOCABULARY_SOURCE_LABELS[task.vocabularySuggestionSourceType] ??
+                            task.vocabularySuggestionSourceType}
+                        </Badge>
+                      )}
+                    </>
+                  )}
+                  {task.sourceType === "merge" && (
+                    <Badge variant="default" className="text-xs bg-amber-500">
+                      <GitMerge className="mr-1 h-3 w-3" />
+                      統合
+                    </Badge>
+                  )}
+                  {/* 詳細化ステータスインジケーター */}
+                  {(task.elaborationStatus === "pending" || isElaborating) && (
+                    <Badge variant="outline" className="text-xs text-purple-600 border-purple-300">
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                      詳細化中
+                    </Badge>
+                  )}
+                  {/* Claude送信中インジケーター */}
+                  {isSendingToClaude && (
+                    <Badge variant="outline" className="text-xs text-blue-600 border-blue-300">
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                      Claude送信中
+                    </Badge>
+                  )}
+                  {task.elaborationStatus === "completed" && task.pendingElaboration && (
+                    <Badge
+                      variant="default"
+                      className="text-xs bg-purple-500 cursor-pointer hover:bg-purple-600"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onElaborate?.(task);
+                      }}
+                    >
+                      <Wand2 className="mr-1 h-3 w-3" />
+                      詳細化結果を確認
+                    </Badge>
+                  )}
+                  {task.elaborationStatus === "applied" && (
+                    <Badge variant="outline" className="text-xs text-purple-600 border-purple-400">
+                      <Wand2 className="mr-1 h-3 w-3" />
+                      詳細化済み
+                    </Badge>
+                  )}
+                </div>
+                {task.dueDate && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="outline" className="text-xs">
+                      Due: {task.dueDate}
+                    </Badge>
+                  </div>
                 )}
-                {task.elaborationStatus === "applied" && (
-                  <Badge variant="outline" className="text-xs text-purple-600 border-purple-400">
-                    <Wand2 className="mr-1 h-3 w-3" />
-                    詳細化済み
-                  </Badge>
+                {/* 類似タスク警告 */}
+                {task.similarToTitle && (
+                  <div className="mt-1 flex items-start gap-1 rounded bg-yellow-50 p-1.5 text-xs text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                    <div>
+                      <span className="font-medium">
+                        類似: {task.similarToTitle} (
+                        {task.similarToStatus === "completed" ? "完了" : "却下"})
+                      </span>
+                      {task.similarToReason && (
+                        <span className="ml-1 text-yellow-600 dark:text-yellow-400">
+                          - {task.similarToReason}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
-              {task.dueDate && (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <Badge variant="outline" className="text-xs">
-                    Due: {task.dueDate}
-                  </Badge>
-                </div>
-              )}
-              {/* 類似タスク警告 */}
-              {task.similarToTitle && (
-                <div className="mt-1 flex items-start gap-1 rounded bg-yellow-50 p-1.5 text-xs text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300">
-                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                  <div>
-                    <span className="font-medium">
-                      類似: {task.similarToTitle} (
-                      {task.similarToStatus === "completed" ? "完了" : "却下"})
-                    </span>
-                    {task.similarToReason && (
-                      <span className="ml-1 text-yellow-600 dark:text-yellow-400">
-                        - {task.similarToReason}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            <ChevronDown
-              className={`ml-2 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
-            />
+              <ChevronDown
+                className={`ml-2 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+              />
+            </button>
           </CollapsibleTrigger>
 
           {/* アクションボタン - 常に表示 */}
@@ -2433,10 +2566,10 @@ function TaskItem({
                   variant="outline"
                   size="sm"
                   onClick={sendToClaude}
-                  disabled={sendingToClaude}
+                  disabled={isSendingToClaude}
                   title="Claude Code にタスク情報を送信"
                 >
-                  {sendingToClaude ? (
+                  {isSendingToClaude ? (
                     <>
                       <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                       送信中...
@@ -2524,86 +2657,22 @@ function TaskItem({
                       <ListTree className="h-4 w-4" />
                       子タスク ({childTasks.length}件)
                     </div>
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       {childTasks.map((child) => (
-                        <div
-                          key={child.id}
-                          className="flex items-center gap-2 rounded-md bg-background p-2 text-sm"
-                        >
-                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                        <div key={child.id} className="flex items-start gap-2">
+                          <span className="mt-3 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
                             {child.stepNumber ?? "-"}
                           </span>
-                          <span className="flex-1 truncate">{child.title}</span>
-                          <Badge
-                            variant={
-                              child.status === "completed"
-                                ? "default"
-                                : child.status === "in_progress"
-                                  ? "secondary"
-                                  : "outline"
-                            }
-                            className={`text-xs ${
-                              child.status === "completed"
-                                ? "bg-green-500"
-                                : child.status === "in_progress"
-                                  ? "bg-blue-500 text-white"
-                                  : ""
-                            }`}
-                          >
-                            {child.status === "pending"
-                              ? "未承認"
-                              : child.status === "accepted"
-                                ? "承認済"
-                                : child.status === "in_progress"
-                                  ? "進行中"
-                                  : child.status === "completed"
-                                    ? "完了"
-                                    : child.status === "paused"
-                                      ? "中断"
-                                      : "却下"}
-                          </Badge>
-                          {/* ステータス変更ボタン */}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-6 w-6">
-                                <MoreHorizontal className="h-3 w-3" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              {child.status === "pending" && (
-                                <DropdownMenuItem
-                                  onClick={() => onUpdateTask(child.id, { status: "accepted" })}
-                                >
-                                  <Check className="mr-2 h-4 w-4 text-green-500" />
-                                  承認
-                                </DropdownMenuItem>
-                              )}
-                              {(child.status === "accepted" || child.status === "paused") && (
-                                <DropdownMenuItem
-                                  onClick={() => onUpdateTask(child.id, { status: "in_progress" })}
-                                >
-                                  <Play className="mr-2 h-4 w-4 text-blue-500" />
-                                  開始
-                                </DropdownMenuItem>
-                              )}
-                              {child.status === "in_progress" && (
-                                <>
-                                  <DropdownMenuItem
-                                    onClick={() => onUpdateTask(child.id, { status: "paused" })}
-                                  >
-                                    <Pause className="mr-2 h-4 w-4 text-yellow-500" />
-                                    中断
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => onUpdateTask(child.id, { status: "completed" })}
-                                  >
-                                    <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
-                                    完了
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          <div className="flex-1">
+                            <TaskItem
+                              task={child}
+                              projects={projects}
+                              onUpdateTask={onUpdateTask}
+                              onDeleteTask={onDeleteTask}
+                              onElaborate={onElaborate}
+                              onCreateIssue={onCreateIssue}
+                            />
+                          </div>
                         </div>
                       ))}
                     </div>

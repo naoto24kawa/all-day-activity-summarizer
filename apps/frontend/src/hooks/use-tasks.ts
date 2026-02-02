@@ -50,25 +50,55 @@ export function useTasks() {
     fetchTasks();
   }, [fetchTasks]);
 
+  type TaskUpdates = {
+    status?: TaskStatus;
+    priority?: "high" | "medium" | "low" | null;
+    workType?: WorkType | null;
+    dueDate?: string | null;
+    rejectReason?: string;
+    title?: string;
+    description?: string;
+    projectId?: number | null;
+  };
+
+  // 同期版 (従来の動作)
   const updateTask = useCallback(
-    async (
-      id: number,
-      updates: {
-        status?: TaskStatus;
-        priority?: "high" | "medium" | "low" | null;
-        workType?: WorkType | null;
-        dueDate?: string | null;
-        rejectReason?: string;
-        title?: string;
-        description?: string;
-        projectId?: number | null;
-      },
-    ): Promise<Task> => {
+    async (id: number, updates: TaskUpdates): Promise<Task> => {
       const result = await patchAdasApi<Task>(`/api/tasks/${id}`, updates);
       await fetchTasks(true);
       return result;
     },
     [fetchTasks],
+  );
+
+  // 楽観的更新版 (UIを即座に更新し、バックグラウンドでAPI呼び出し)
+  const updateTaskOptimistic = useCallback(
+    (id: number, updates: TaskUpdates): { promise: Promise<Task>; rollback: () => void } => {
+      // 現在の状態を保存 (ロールバック用)
+      const previousTasks = tasks;
+
+      // UIを即座に更新
+      setTasks((prev) =>
+        prev.map((task) =>
+          task.id === id ? { ...task, ...updates, updatedAt: new Date().toISOString() } : task,
+        ),
+      );
+
+      // バックグラウンドでAPI呼び出し
+      const promise = patchAdasApi<Task>(`/api/tasks/${id}`, updates).then(async (result) => {
+        // 成功したら最新データで同期
+        await fetchTasks(true);
+        return result;
+      });
+
+      // ロールバック関数
+      const rollback = () => {
+        setTasks(previousTasks);
+      };
+
+      return { promise, rollback };
+    },
+    [tasks, fetchTasks],
   );
 
   const deleteTask = useCallback(
@@ -361,6 +391,7 @@ export function useTasks() {
     loading,
     refetch: fetchTasks,
     updateTask,
+    updateTaskOptimistic,
     updateBatchTasks,
     deleteTask,
     extractTasks,

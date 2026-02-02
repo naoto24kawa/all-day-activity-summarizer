@@ -216,14 +216,14 @@ export function loadConfig(): AdasConfig {
 
   if (!existsSync(CONFIG_PATH)) {
     writeFileSync(CONFIG_PATH, JSON.stringify(defaultConfig, null, 2));
-    return defaultConfig;
+    return applyEnvOverrides(defaultConfig);
   }
 
   const raw = readFileSync(CONFIG_PATH, "utf-8");
   const userConfig = JSON.parse(raw) as Partial<AdasConfig>;
 
   // Deep merge nested config objects
-  return {
+  const merged: AdasConfig = {
     ...defaultConfig,
     ...userConfig,
     whisper: { ...defaultConfig.whisper, ...userConfig.whisper },
@@ -252,6 +252,24 @@ export function loadConfig(): AdasConfig {
       },
     },
   };
+
+  return applyEnvOverrides(merged);
+}
+
+/**
+ * 環境変数からトークン等を上書きする。
+ * 環境変数が設定されていれば優先、なければ config.json の値を使用。
+ */
+function applyEnvOverrides(config: AdasConfig): AdasConfig {
+  // Slack tokens: 環境変数 > config.json
+  if (process.env.SLACK_XOXC_TOKEN) {
+    config.slack.xoxcToken = process.env.SLACK_XOXC_TOKEN;
+  }
+  if (process.env.SLACK_XOXD_TOKEN) {
+    config.slack.xoxdToken = process.env.SLACK_XOXD_TOKEN;
+  }
+
+  return config;
 }
 
 export function saveConfig(config: AdasConfig): void {

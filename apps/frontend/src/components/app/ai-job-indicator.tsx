@@ -39,6 +39,7 @@ const JOB_TYPE_LABELS: Record<AIJobType, string> = {
   "profile-analyze": "プロフィール分析",
   "summarize-times": "時間範囲サマリ",
   "summarize-daily": "日次サマリ",
+  "claude-chat": "Claude 送信",
 };
 
 /** ステータスアイコン */

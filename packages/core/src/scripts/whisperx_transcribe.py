@@ -73,17 +73,22 @@ def main() -> None:
     print(f"Using device: {device} (compute_type: {compute_type})", file=sys.stderr)
 
     # 1. Transcribe with whisperX
-    model = whisperx.load_model(args.model, device, compute_type=compute_type, language=args.language)
-    audio = whisperx.load_audio(args.audio_path)
-
-    # transcribe オプション
-    transcribe_options = {"batch_size": 16}
+    # WhisperX requires initial_prompt to be passed via asr_options at model load time
+    asr_options = {}
     if args.initial_prompt:
-        # WhisperX (faster-whisper) uses "prompt" instead of "initial_prompt"
-        transcribe_options["prompt"] = args.initial_prompt
+        asr_options["initial_prompt"] = args.initial_prompt
         print(f"Using initial_prompt: {args.initial_prompt[:100]}...", file=sys.stderr)
 
-    result = model.transcribe(audio, **transcribe_options)
+    model = whisperx.load_model(
+        args.model,
+        device,
+        compute_type=compute_type,
+        language=args.language,
+        asr_options=asr_options if asr_options else None,
+    )
+    audio = whisperx.load_audio(args.audio_path)
+
+    result = model.transcribe(audio, batch_size=16)
 
     # 2. Align whisper output
     try:

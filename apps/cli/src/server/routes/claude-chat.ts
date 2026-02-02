@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
+import type { AdasDatabase } from "@repo/db";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+import { enqueueJob } from "../../ai-job/queue.js";
 
 interface ChatSession {
   summary: string;
@@ -90,7 +92,7 @@ ${currentSummary ? `【これまでの要約】\n${currentSummary}\n\n` : ""}【
   }
 }
 
-export function createClaudeChatRouter() {
+export function createClaudeChatRouter(db: AdasDatabase) {
   const router = new Hono();
 
   router.post("/", async (c) => {
@@ -237,6 +239,29 @@ ${session.summary}
         });
       });
     });
+  });
+
+  /**
+   * POST /api/claude-chat/async
+   *
+   * 非同期版: ジョブをキューに登録して即座にレスポンスを返す
+   * Body: { prompt: string; taskId?: number }
+   * Returns: { jobId, status: "pending" }
+   */
+  router.post("/async", async (c) => {
+    const body = await c.req.json<{ prompt: string; taskId?: number }>();
+    const { prompt, taskId } = body;
+
+    if (!prompt || typeof prompt !== "string") {
+      return c.json({ error: "prompt is required" }, 400);
+    }
+
+    const jobId = enqueueJob(db, "claude-chat", {
+      prompt,
+      taskId,
+    });
+
+    return c.json({ jobId, status: "pending" }, 202);
   });
 
   // セッションをクリア

@@ -64,26 +64,10 @@ export function createAIJobsRouter(db: AdasDatabase) {
   });
 
   /**
-   * GET /api/ai-jobs/:id
-   *
-   * 特定のジョブを取得
-   */
-  router.get("/:id", (c) => {
-    const id = Number.parseInt(c.req.param("id"), 10);
-
-    const job = getJob(db, id);
-
-    if (!job) {
-      return c.json({ error: "Job not found" }, 404);
-    }
-
-    return c.json(job);
-  });
-
-  /**
    * GET /api/ai-jobs/sse
    *
    * SSEでジョブ完了を通知
+   * NOTE: このルートは /:id より前に定義する必要がある
    */
   router.get("/sse", async (c) => {
     return streamSSE(c, async (stream) => {
@@ -122,6 +106,24 @@ export function createAIJobsRouter(db: AdasDatabase) {
       // 接続維持
       await new Promise(() => {});
     });
+  });
+
+  /**
+   * GET /api/ai-jobs/:id
+   *
+   * 特定のジョブを取得
+   * NOTE: このルートは /sse, /stats より後に定義する必要がある
+   */
+  router.get("/:id", (c) => {
+    const id = Number.parseInt(c.req.param("id"), 10);
+
+    const job = getJob(db, id);
+
+    if (!job) {
+      return c.json({ error: "Job not found" }, 404);
+    }
+
+    return c.json(job);
   });
 
   return router;

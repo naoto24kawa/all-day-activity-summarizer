@@ -1367,7 +1367,8 @@ export type AIJobType =
   | "vocabulary-extract"
   | "profile-analyze"
   | "summarize-times"
-  | "summarize-daily";
+  | "summarize-daily"
+  | "claude-chat";
 
 /** AIジョブステータス */
 export type AIJobStatus = "pending" | "processing" | "completed" | "failed";

@@ -798,6 +798,7 @@ export const aiJobQueue = sqliteTable("ai_job_queue", {
       "profile-analyze",
       "summarize-times",
       "summarize-daily",
+      "claude-chat",
     ],
   }).notNull(),
   params: text("params"), // JSON: 入力パラメータ

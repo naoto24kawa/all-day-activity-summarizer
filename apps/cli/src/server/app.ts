@@ -72,7 +72,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/config", createConfigRouter());
   app.route("/api/ai-jobs", createAIJobsRouter(db));
   app.route("/api/rate-limit", createRateLimitRouter(db));
-  app.route("/api/claude-chat", createClaudeChatRouter());
+  app.route("/api/claude-chat", createClaudeChatRouter(db));
 
   if (options?.micCapture || options?.speakerCapture) {
     app.route(

@@ -22,6 +22,7 @@ const JOB_TYPE_LABELS: Record<AIJobType, string> = {
   "profile-analyze": "プロフィール分析",
   "summarize-times": "時間範囲サマリ",
   "summarize-daily": "日次サマリ",
+  "claude-chat": "Claude送信",
 };
 
 interface UseJobNotificationsOptions {
@@ -141,7 +142,11 @@ export function useJobNotifications(
       }
 
       // タスク更新コールバック
-      if (event.jobType.startsWith("task-extract") || event.jobType === "profile-analyze") {
+      if (
+        event.jobType.startsWith("task-extract") ||
+        event.jobType === "task-elaborate" ||
+        event.jobType === "profile-analyze"
+      ) {
         onTasksUpdatedRef.current?.();
       }
     },

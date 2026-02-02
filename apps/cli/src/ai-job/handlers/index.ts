@@ -5,6 +5,7 @@
  */
 
 import { registerJobHandler } from "../worker.js";
+import { handleClaudeChat } from "./claude-chat.js";
 import { handleLearningExtract } from "./learning-extract.js";
 import { handleProfileAnalyze } from "./profile-analyze.js";
 import { handleSummarizeDaily, handleSummarizeTimes } from "./summarize.js";
@@ -40,4 +41,6 @@ export function registerAllHandlers(): void {
   // サマリ生成
   registerJobHandler("summarize-times", handleSummarizeTimes);
   registerJobHandler("summarize-daily", handleSummarizeDaily);
+  // Claude Chat
+  registerJobHandler("claude-chat", handleClaudeChat);
 }
