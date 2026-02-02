@@ -591,7 +591,8 @@ export type TaskSourceType =
   | "vocabulary"
   | "merge"
   | "project-suggestion"
-  | "server-log";
+  | "server-log"
+  | "notion";
 
 /** 承認のみで完了するタスクのソース種別 */
 export const APPROVAL_ONLY_SOURCE_TYPES: TaskSourceType[] = [
@@ -665,6 +666,7 @@ export interface Task {
   projectSuggestionId: number | null;
   projectId: number | null;
   sourceType: TaskSourceType;
+  sourceId: string | null; // 外部ソースの識別子 (Notion page ID など)
   title: string;
   description: string | null;
   status: TaskStatus;

@@ -486,10 +486,12 @@ export const tasks = sqliteTable("tasks", {
       "merge",
       "project-suggestion",
       "server-log",
+      "notion",
     ],
   })
     .notNull()
     .default("slack"),
+  sourceId: text("source_id"), // 外部ソースの識別子 (Notion page ID など)
   title: text("title").notNull(), // AI が生成したタスク文
   description: text("description"), // 詳細説明
   status: text("status", {

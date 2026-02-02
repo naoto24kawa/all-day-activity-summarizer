@@ -218,6 +218,68 @@ export function createTasksRouter(db: AdasDatabase) {
   });
 
   /**
+   * POST /api/tasks
+   *
+   * 手動でタスクを作成
+   *
+   * Request body:
+   * - title: string (必須)
+   * - description?: string
+   * - priority?: "high" | "medium" | "low"
+   * - workType?: WorkType
+   * - dueDate?: string (YYYY-MM-DD)
+   * - projectId?: number
+   * - date?: string (YYYY-MM-DD, デフォルトは今日)
+   * - status?: "pending" | "accepted" (デフォルトは "accepted")
+   * - sourceType?: "manual" | "notion" (デフォルトは "manual")
+   * - sourceId?: string (外部ソースの識別子、例: Notion page ID)
+   */
+  router.post("/", async (c) => {
+    const body = await c.req.json<{
+      title: string;
+      description?: string;
+      priority?: "high" | "medium" | "low";
+      workType?: WorkType;
+      dueDate?: string;
+      projectId?: number;
+      date?: string;
+      status?: "pending" | "accepted";
+      sourceType?: "manual" | "notion";
+      sourceId?: string;
+    }>();
+
+    if (!body.title || body.title.trim() === "") {
+      return c.json({ error: "title is required" }, 400);
+    }
+
+    const date = body.date ?? getTodayDateString();
+    const status = body.status ?? "accepted";
+    const sourceType = body.sourceType ?? "manual";
+
+    const task = db
+      .insert(schema.tasks)
+      .values({
+        date,
+        sourceType,
+        sourceId: body.sourceId ?? null,
+        title: body.title.trim(),
+        description: body.description?.trim() ?? null,
+        priority: body.priority ?? null,
+        workType: body.workType ?? null,
+        dueDate: body.dueDate ?? null,
+        projectId: body.projectId ?? null,
+        status,
+        acceptedAt: status === "accepted" ? new Date().toISOString() : null,
+      })
+      .returning()
+      .get();
+
+    consola.info(`[Tasks] Created ${sourceType} task: ${task.title} (id=${task.id})`);
+
+    return c.json(task, 201);
+  });
+
+  /**
    * GET /api/tasks/for-ai
    *
    * AIエージェント向けのタスク一覧 (Markdown形式)

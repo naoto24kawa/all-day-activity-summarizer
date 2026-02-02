@@ -19,6 +19,27 @@ Slack/GitHub/メモから AI でタスクを自動抽出し、フィードバッ
 | GitHub Comments | `POST /api/tasks/extract-github-comments` | `github.username` |
 | Memos | `POST /api/tasks/extract-memos` | - |
 | Server Logs | `POST /api/tasks/extract-logs` | - |
+| Manual | `POST /api/tasks` | - |
+
+## 手動タスク作成
+
+`POST /api/tasks` で手動タスクを作成。
+
+**リクエスト**:
+```json
+{
+  "title": "タスク名",           // 必須
+  "description": "詳細説明",     // 任意
+  "priority": "high",           // high | medium | low
+  "workType": "create",         // create | investigate | review | communicate | operate | learn | plan | maintain
+  "dueDate": "2026-02-10",      // YYYY-MM-DD
+  "projectId": 1,               // プロジェクトID
+  "date": "2026-02-02",         // 登録日 (デフォルト: 今日)
+  "status": "accepted"          // pending | accepted (デフォルト: accepted)
+}
+```
+
+**レスポンス**: 作成されたタスクオブジェクト (HTTP 201)
 
 ## タスクライフサイクル
 

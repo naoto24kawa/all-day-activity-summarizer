@@ -1356,5 +1356,8 @@ export function createDatabase(dbPath: string) {
   addColumnIfNotExists(sqlite, "tasks", "github_issue_number", "INTEGER");
   addColumnIfNotExists(sqlite, "tasks", "github_issue_url", "TEXT");
 
+  // Migration: add source_id column to tasks (for external sources like Notion)
+  addColumnIfNotExists(sqlite, "tasks", "source_id", "TEXT");
+
   return db;
 }
