@@ -17,6 +17,7 @@ import { LearningsFeed } from "./learnings-feed";
 import { MemoFloatingChat } from "./memo-floating-chat";
 import { MonitoringPanel } from "./monitoring-panel";
 import { ProfilePanel } from "./profile-panel";
+import { RateLimitPanel } from "./rate-limit-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
 import { SummaryView } from "./summary-view";
@@ -176,6 +177,7 @@ export function Dashboard() {
                   </div>
                   <div className="space-y-4">
                     <MonitoringPanel />
+                    <RateLimitPanel />
                   </div>
                 </div>
               </TabsContent>

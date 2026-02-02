@@ -427,7 +427,7 @@ export function TaskElaborateDialog({
   // ポーリングフェーズ
   if (phase === "polling") {
     return (
-      <Dialog open={open} onOpenChange={() => {}}>
+      <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -449,6 +449,12 @@ export function TaskElaborateDialog({
               ページをリロードしても処理は継続されます
             </p>
           </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleClose}>
+              バックグラウンドで続行
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     );
