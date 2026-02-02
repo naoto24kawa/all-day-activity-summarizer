@@ -2046,6 +2046,11 @@ export function createTasksRouter(db: AdasDatabase) {
     // 子タスクを作成
     const childTasks: (typeof schema.tasks.$inferSelect)[] = [];
     if (createChildTasks && elaborationResult.childTasks?.length > 0) {
+      // 親タスクが accepted/in_progress なら子も accepted で作成
+      const childStatus =
+        task.status === "accepted" || task.status === "in_progress" ? "accepted" : "pending";
+      const childAcceptedAt = childStatus === "accepted" ? now : null;
+
       for (const childTask of elaborationResult.childTasks) {
         // 編集がある場合は適用
         const edit = body.childTaskEdits?.find((e) => e.stepNumber === childTask.stepNumber);
@@ -2064,7 +2069,8 @@ export function createTasksRouter(db: AdasDatabase) {
             sourceType: task.sourceType,
             title,
             description,
-            status: "pending",
+            status: childStatus,
+            acceptedAt: childAcceptedAt,
             priority: task.priority,
             workType: task.workType,
             parentId: id,

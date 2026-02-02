@@ -77,6 +77,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -2252,6 +2253,14 @@ function TaskItem({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start">
+                      <DropdownMenuItem
+                        onClick={() => onUpdateTask(task.id, { status: "pending" })}
+                        className={task.status === "pending" ? "bg-accent" : ""}
+                      >
+                        <Circle className="mr-2 h-4 w-4 text-orange-500" />
+                        承認待ちに戻す
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={() => onUpdateTask(task.id, { status: "accepted" })}
                         className={task.status === "accepted" ? "bg-accent" : ""}

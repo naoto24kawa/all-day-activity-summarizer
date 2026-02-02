@@ -63,9 +63,10 @@ export function useTasks() {
         description?: string;
         projectId?: number | null;
       },
-    ) => {
-      await patchAdasApi(`/api/tasks/${id}`, updates);
+    ): Promise<Task> => {
+      const result = await patchAdasApi<Task>(`/api/tasks/${id}`, updates);
       await fetchTasks(true);
+      return result;
     },
     [fetchTasks],
   );

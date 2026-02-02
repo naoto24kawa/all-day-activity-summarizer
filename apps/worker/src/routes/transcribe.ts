@@ -106,7 +106,8 @@ async function runWhisperX(
 
   if (proc.exitCode !== 0) {
     const stderr = proc.stderr ? await new Response(proc.stderr).text() : "";
-    throw new Error(`whisperX failed (exit ${proc.exitCode}): ${stderr.slice(0, 500)}`);
+    consola.error(`[worker/transcribe] whisperX stderr:\n${stderr}`);
+    throw new Error(`whisperX failed (exit ${proc.exitCode}): ${stderr.slice(0, 2000)}`);
   }
 
   const stdout = proc.stdout ? await new Response(proc.stdout).text() : "";
