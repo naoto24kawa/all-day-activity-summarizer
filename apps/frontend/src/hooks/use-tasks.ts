@@ -168,6 +168,30 @@ export function useTasks(status?: TaskStatus) {
     [createExtractFn],
   );
 
+  // AI Processing Log からのタスク抽出 (AI 不使用、キーワードマッチング)
+  type AiLogExtractResult = {
+    extracted: number;
+    processed: number;
+    skipped: number;
+    unmatched: number;
+    grouped: number;
+    tasks: Task[];
+  };
+  const extractAiProcessingLogTasks = useCallback(
+    async (options?: {
+      date?: string;
+      processTypes?: string[];
+      limit?: number;
+    }): Promise<AiLogExtractResult> => {
+      const result = await postAdasApi<AiLogExtractResult>(
+        "/api/tasks/extract-ai-processing-logs",
+        options ?? {},
+      );
+      return result;
+    },
+    [],
+  );
+
   // 非同期版: ジョブをキューに登録して即座にレスポンスを返す
   const extractTasksAsync = useCallback(
     (options?: { date?: string; messageIds?: number[] }) =>
@@ -461,6 +485,7 @@ export function useTasks(status?: TaskStatus) {
     extractGitHubTasks,
     extractGitHubCommentTasks,
     extractMemoTasks,
+    extractAiProcessingLogTasks,
     extractTasksAsync,
     extractGitHubTasksAsync,
     extractGitHubCommentTasksAsync,

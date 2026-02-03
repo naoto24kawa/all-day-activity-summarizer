@@ -7,6 +7,7 @@
 import type { AdasDatabase } from "@repo/db";
 import type { AIJob } from "@repo/types";
 import consola from "consola";
+import { extractTasksFromAiProcessingLogs } from "../ai-processing-log/task-extractor.js";
 import type { AdasConfig } from "../config.js";
 import { cleanupOldUsage } from "../utils/rate-limiter.js";
 import { getSSENotifier } from "../utils/sse-notifier.js";
@@ -16,6 +17,7 @@ import { processJob } from "./worker.js";
 
 const POLL_INTERVAL_MS = 10 * 1000; // 10秒
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24時間
+const AI_LOG_EXTRACT_INTERVAL_MS = 60 * 60 * 1000; // 1時間
 
 /** ジョブ完了リスナー型 */
 export type JobCompletedListener = (
@@ -131,6 +133,20 @@ export function startAIJobScheduler(db: AdasDatabase, config: AdasConfig): () =>
     }
   }, CLEANUP_INTERVAL_MS);
 
+  // AI Processing Log からのタスク抽出タイマー (1時間ごと)
+  const aiLogExtractInterval = setInterval(() => {
+    try {
+      const result = extractTasksFromAiProcessingLogs(db, {});
+      if (result.extracted > 0) {
+        consola.info(
+          `[ai-job] Extracted ${result.extracted} tasks from AI processing logs (${result.processed} processed, ${result.skipped} skipped)`,
+        );
+      }
+    } catch (err) {
+      consola.error("[ai-job] AI log extract error:", err);
+    }
+  }, AI_LOG_EXTRACT_INTERVAL_MS);
+
   // 初回クリーンアップを実行
   try {
     const deletedJobs = cleanupOldJobs(db);
@@ -154,6 +170,7 @@ export function startAIJobScheduler(db: AdasDatabase, config: AdasConfig): () =>
   return () => {
     clearInterval(pollInterval);
     clearInterval(cleanupInterval);
+    clearInterval(aiLogExtractInterval);
     consola.info("[ai-job] AI Job scheduler stopped");
   };
 }

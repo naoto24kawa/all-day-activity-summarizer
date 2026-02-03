@@ -1175,24 +1175,6 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_project_suggestions_path ON project_suggestions(path);
   `);
 
-  // Migration: add project_suggestion_id to tasks and update CHECK constraint to include 'project-suggestion'
-  addColumnIfNotExists(sqlite, "tasks", "project_suggestion_id", "INTEGER");
-  try {
-    const row = sqlite
-      .query<{ sql: string }, []>(
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'",
-      )
-      .get();
-    if (row && !row.sql.includes("'project-suggestion'")) {
-      // Add migration for project-suggestion source type
-      sqlite.exec(`
-        CREATE INDEX IF NOT EXISTS idx_tasks_project_suggestion ON tasks(project_suggestion_id);
-      `);
-    }
-  } catch {
-    // Migration already applied or fresh DB
-  }
-
   // Migration: add excluded_at column to projects
   addColumnIfNotExists(sqlite, "projects", "excluded_at", "TEXT");
 
@@ -1390,13 +1372,6 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_rate_limit_usage_process_type ON rate_limit_usage(process_type);
   `);
 
-  // Migration: add GitHub Issue columns to tasks
-  addColumnIfNotExists(sqlite, "tasks", "github_issue_number", "INTEGER");
-  addColumnIfNotExists(sqlite, "tasks", "github_issue_url", "TEXT");
-
-  // Migration: add source_id column to tasks (for external sources like Notion)
-  addColumnIfNotExists(sqlite, "tasks", "source_id", "TEXT");
-
   // Migration: add source_metadata column to summaries (for source link feature)
   addColumnIfNotExists(sqlite, "summaries", "source_metadata", "TEXT");
 
@@ -1503,6 +1478,29 @@ export function createDatabase(dbPath: string) {
   } catch {
     // Migration already applied or fresh DB
   }
+
+  // Migration: add project_suggestion_id column to tasks
+  addColumnIfNotExists(sqlite, "tasks", "project_suggestion_id", "INTEGER");
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS idx_tasks_project_suggestion ON tasks(project_suggestion_id);
+  `);
+
+  // Migration: add GitHub Issue columns to tasks
+  addColumnIfNotExists(sqlite, "tasks", "github_issue_number", "INTEGER");
+  addColumnIfNotExists(sqlite, "tasks", "github_issue_url", "TEXT");
+
+  // Migration: add source_id column to tasks (for external sources like Notion)
+  addColumnIfNotExists(sqlite, "tasks", "source_id", "TEXT");
+
+  // Migration: add merge columns to tasks (for task merge feature)
+  addColumnIfNotExists(sqlite, "tasks", "merge_source_task_ids", "TEXT");
+  addColumnIfNotExists(sqlite, "tasks", "merge_target_task_id", "INTEGER");
+  addColumnIfNotExists(sqlite, "tasks", "merged_at", "TEXT");
+
+  // Migration: add elaboration columns to tasks (for task elaboration feature)
+  addColumnIfNotExists(sqlite, "tasks", "elaboration_status", "TEXT");
+  addColumnIfNotExists(sqlite, "tasks", "pending_elaboration", "TEXT");
+  addColumnIfNotExists(sqlite, "tasks", "step_number", "INTEGER");
 
   return db;
 }

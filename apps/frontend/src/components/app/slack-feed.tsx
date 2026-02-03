@@ -63,14 +63,15 @@ export function SlackFeed({ className }: SlackFeedProps) {
     messages,
     loading,
     error,
+    markingAllAsRead,
     refetch,
     markAsRead,
     markAllAsRead,
     updateMessage,
     updatePriority,
   } = useSlackMessages();
-  const { counts } = useSlackUnreadCounts(date);
-  const { counts: priorityCounts } = useSlackPriorityCounts();
+  const { counts, refetch: refetchUnreadCounts } = useSlackUnreadCounts(date);
+  const { counts: priorityCounts, refetch: refetchPriorityCounts } = useSlackPriorityCounts();
   const { projects } = useProjects();
   const { updateChannelProject, getChannelProjectId } = useSlackChannels();
   const { users, loading: usersLoading, updateDisplayName, resetDisplayName } = useSlackUsers();
@@ -221,8 +222,21 @@ export function SlackFeed({ className }: SlackFeedProps) {
             </SelectContent>
           </Select>
           {counts.total > 0 && (
-            <Button variant="outline" size="sm" onClick={() => markAllAsRead({ date })}>
-              <CheckCheck className="mr-1 h-3 w-3" />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                await markAllAsRead({ date });
+                refetchUnreadCounts();
+                refetchPriorityCounts();
+              }}
+              disabled={markingAllAsRead}
+            >
+              {markingAllAsRead ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <CheckCheck className="mr-1 h-3 w-3" />
+              )}
               Mark all read
             </Button>
           )}

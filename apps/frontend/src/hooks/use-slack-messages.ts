@@ -18,6 +18,7 @@ export function useSlackMessages() {
   const [messages, setMessages] = useState<SlackMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [markingAllAsRead, setMarkingAllAsRead] = useState(false);
 
   const fetchMessages = useCallback(async (silent = false) => {
     try {
@@ -48,8 +49,13 @@ export function useSlackMessages() {
 
   const markAllAsRead = useCallback(
     async (options?: { date?: string; type?: "mention" | "channel" | "dm" }) => {
-      await postAdasApi("/api/slack-messages/mark-all-read", options || {});
-      await fetchMessages(true);
+      setMarkingAllAsRead(true);
+      try {
+        await postAdasApi("/api/slack-messages/mark-all-read", options || {});
+        await fetchMessages(true);
+      } finally {
+        setMarkingAllAsRead(false);
+      }
     },
     [fetchMessages],
   );
@@ -82,6 +88,7 @@ export function useSlackMessages() {
     messages,
     error,
     loading,
+    markingAllAsRead,
     refetch: fetchMessages,
     markAsRead,
     markAllAsRead,

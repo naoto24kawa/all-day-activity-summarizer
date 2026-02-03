@@ -1,13 +1,24 @@
-import type { AiProcessingLog, AiProcessType } from "@repo/types";
-import { Brain, RefreshCw } from "lucide-react";
+import type { AiProcessingLog, AiProcessType, Task } from "@repo/types";
+import { Brain, ListTodo, RefreshCw } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { postAdasApi } from "@/hooks/use-adas-api";
 import { useAiProcessingLogs, useAiProcessingLogsStats } from "@/hooks/use-ai-processing-logs";
 import { getTodayDateString } from "@/lib/date";
+
+type AiLogExtractResult = {
+  extracted: number;
+  processed: number;
+  skipped: number;
+  unmatched: number;
+  grouped: number;
+  tasks: Task[];
+};
 
 interface AiProcessingLogPanelProps {
   className?: string;
@@ -46,6 +57,7 @@ const PROCESS_TYPE_COLORS: Record<AiProcessType, string> = {
 export function AiProcessingLogPanel(_props: AiProcessingLogPanelProps) {
   const date = getTodayDateString();
   const [filter, setFilter] = useState<AiProcessType | "all">("all");
+  const [extracting, setExtracting] = useState(false);
 
   const { logs, loading, error, refetch } = useAiProcessingLogs({
     date,
@@ -53,6 +65,31 @@ export function AiProcessingLogPanel(_props: AiProcessingLogPanelProps) {
   });
 
   const { stats } = useAiProcessingLogsStats(date);
+
+  const handleExtractTasks = async () => {
+    setExtracting(true);
+    try {
+      const result = await postAdasApi<AiLogExtractResult>(
+        "/api/tasks/extract-ai-processing-logs",
+        { date },
+      );
+      if (result.extracted > 0) {
+        toast.success(`${result.extracted} 件のタスクを抽出しました`);
+      } else if (result.skipped > 0 && result.processed === 0) {
+        toast.info("全て処理済みです");
+      } else {
+        toast.info("抽出対象のエラーがありません");
+      }
+    } catch (err) {
+      toast.error("タスク抽出に失敗しました");
+      console.error(err);
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  // エラー件数を計算
+  const errorCount = stats?.error ?? 0;
 
   return (
     <Card>
@@ -62,9 +99,23 @@ export function AiProcessingLogPanel(_props: AiProcessingLogPanelProps) {
           AI Processing Logs
           {!loading && <Badge variant="secondary">{logs.length}</Badge>}
         </CardTitle>
-        <Button variant="ghost" size="icon" onClick={refetch} title="Refresh">
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          {errorCount > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExtractTasks}
+              disabled={extracting}
+              title="エラーからタスクを抽出"
+            >
+              <ListTodo className="mr-1 h-4 w-4" />
+              {extracting ? "抽出中..." : "タスク抽出"}
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" onClick={refetch} title="Refresh">
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <Tabs value={filter} onValueChange={(v) => setFilter(v as AiProcessType | "all")}>

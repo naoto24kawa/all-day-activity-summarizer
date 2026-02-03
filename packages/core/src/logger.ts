@@ -43,10 +43,17 @@ function getLogFilePath(source: LogSource): string {
  * @param source - ログソース識別子 ("serve" | "worker")
  */
 export function setupFileLogger(source: LogSource = "serve"): void {
-  if (initialized) return;
+  // デバッグ: 初期化状態を出力
+  console.log(`[setupFileLogger] called with source=${source}, initialized=${initialized}`);
+
+  if (initialized) {
+    console.log(`[setupFileLogger] already initialized, skipping (currentSource=${currentSource})`);
+    return;
+  }
   initialized = true;
   currentSource = source;
 
+  console.log(`[setupFileLogger] initializing for source=${source}, LOG_DIR=${LOG_DIR}`);
   mkdirSync(LOG_DIR, { recursive: true });
 
   consola.addReporter({
