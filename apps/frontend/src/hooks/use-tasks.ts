@@ -3,6 +3,7 @@
  */
 
 import type {
+  ApplyCompletionCheckResponse,
   ApplyElaborationRequest,
   ApplyElaborationResponse,
   BulkElaborateStartResponse,
@@ -12,6 +13,7 @@ import type {
   CheckSimilarityBatchResponse,
   CheckTaskSimilarityResponse,
   ChildTasksResponse,
+  CompletionCheckStatusResponse,
   CreateGitHubIssueRequest,
   CreateGitHubIssueResponse,
   CreateMergeTaskResponse,
@@ -19,6 +21,7 @@ import type {
   ElaborateTaskRequest,
   ElaborateTaskResponse,
   ElaborationStatusResponse,
+  StartCompletionCheckResponse,
   StartElaborationResponse,
   Task,
   TaskStats,
@@ -394,6 +397,57 @@ export function useTasks(status?: TaskStatus) {
     [fetchTasks],
   );
 
+  // ========== 完了チェック API ==========
+
+  // 完了チェックを開始
+  const startCompletionCheck = useCallback(
+    async (taskId: number): Promise<StartCompletionCheckResponse> => {
+      const result = await postAdasApi<StartCompletionCheckResponse>(
+        `/api/tasks/${taskId}/check-completion`,
+        {},
+      );
+      return result;
+    },
+    [],
+  );
+
+  // 完了チェック状態を取得
+  const getCompletionCheckStatus = useCallback(
+    async (taskId: number): Promise<CompletionCheckStatusResponse> => {
+      const result = await fetchAdasApi<CompletionCheckStatusResponse>(
+        `/api/tasks/${taskId}/completion-check`,
+      );
+      return result;
+    },
+    [],
+  );
+
+  // 完了チェック結果を適用 (タスクを完了にする)
+  const applyCompletionCheck = useCallback(
+    async (taskId: number): Promise<ApplyCompletionCheckResponse> => {
+      const result = await postAdasApi<ApplyCompletionCheckResponse>(
+        `/api/tasks/${taskId}/completion-check/apply`,
+        {},
+      );
+      await fetchTasks(true);
+      return result;
+    },
+    [fetchTasks],
+  );
+
+  // 完了チェック結果を破棄
+  const discardCompletionCheck = useCallback(
+    async (taskId: number): Promise<{ discarded: boolean }> => {
+      const result = await postAdasApi<{ discarded: boolean }>(
+        `/api/tasks/${taskId}/completion-check/discard`,
+        {},
+      );
+      await fetchTasks(true);
+      return result;
+    },
+    [fetchTasks],
+  );
+
   return {
     tasks,
     error,
@@ -429,6 +483,11 @@ export function useTasks(status?: TaskStatus) {
     checkSimilarityBatch,
     // GitHub Issue 作成
     createGitHubIssue,
+    // 完了チェック
+    startCompletionCheck,
+    getCompletionCheckStatus,
+    applyCompletionCheck,
+    discardCompletionCheck,
   };
 }
 

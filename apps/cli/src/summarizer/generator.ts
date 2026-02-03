@@ -1,5 +1,6 @@
 import type {
   AdasDatabase,
+  CalendarEvent,
   ClaudeCodeSession,
   GitHubComment,
   GitHubItem,
@@ -413,6 +414,31 @@ function formatLearnings(learnings: Learning[]): string {
 }
 
 /**
+ * カレンダーイベントをテキスト形式に変換
+ */
+function formatCalendarEvents(events: CalendarEvent[]): string {
+  return events
+    .map((e) => {
+      const formatTime = (iso: string) => {
+        const date = new Date(iso);
+        const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+        const hours = String(jstDate.getHours()).padStart(2, "0");
+        const minutes = String(jstDate.getMinutes()).padStart(2, "0");
+        return `${hours}:${minutes}`;
+      };
+
+      const timeRange = e.isAllDay ? "終日" : `${formatTime(e.startTime)}-${formatTime(e.endTime)}`;
+
+      const attendeeCount = e.attendees ? JSON.parse(e.attendees).length : 0;
+      const attendeeLabel = attendeeCount > 0 ? ` (${attendeeCount}名)` : "";
+      const locationLabel = e.location ? ` @${e.location}` : "";
+
+      return `[${timeRange}] ${e.summary}${attendeeLabel}${locationLabel}`;
+    })
+    .join("\n");
+}
+
+/**
  * Slack メッセージをテキスト形式に変換
  */
 function formatSlackMessages(slackMessages: SlackMessage[]): string {
@@ -489,6 +515,7 @@ function buildActivityTextWithProjectSections(
   learnings: Learning[],
   githubItems: GitHubItem[],
   githubComments: GitHubComment[],
+  calendarEvents: CalendarEvent[],
   projectNameMap: Map<number | null, string>,
 ): string {
   const classified = classifyActivities(
@@ -624,6 +651,12 @@ function buildActivityTextWithProjectSections(
   // ========== チーム活動セクション ==========
   const teamSections: string[] = [];
 
+  // カレンダーイベント
+  if (calendarEvents.length > 0) {
+    const calendarText = formatCalendarEvents(calendarEvents);
+    teamSections.push(`#### カレンダー\n${calendarText}`);
+  }
+
   // ミーティング音声
   if (classified.team.segments.length > 0) {
     const meetingText = formatSegmentsAndMemos(classified.team.segments, []);
@@ -664,6 +697,7 @@ interface ActivityData {
   learnings: Learning[];
   githubItems: GitHubItem[];
   githubComments: GitHubComment[];
+  calendarEvents: CalendarEvent[];
   projectNameMap: Map<number | null, string>;
 }
 
@@ -787,6 +821,19 @@ function fetchActivityData(
     )
     .all();
 
+  // カレンダーイベント - 該当期間のイベント
+  const calendarEvents = db
+    .select()
+    .from(schema.calendarEvents)
+    .where(
+      and(
+        eq(schema.calendarEvents.date, date),
+        gte(schema.calendarEvents.startTime, utcStartTime),
+        lte(schema.calendarEvents.startTime, utcEndTime),
+      ),
+    )
+    .all();
+
   // アクティブなプロジェクト一覧を取得
   const projects = fetchActiveProjects(db);
   const projectNameMap = buildProjectNameMap(projects);
@@ -800,6 +847,7 @@ function fetchActivityData(
     learnings,
     githubItems,
     githubComments,
+    calendarEvents,
     projectNameMap,
   };
 }
@@ -884,6 +932,7 @@ export async function generateTimesSummary(
     learnings,
     githubItems,
     githubComments,
+    calendarEvents,
     projectNameMap,
   } = fetchActivityData(db, date, startTime, endTime);
 
@@ -895,7 +944,8 @@ export async function generateTimesSummary(
     tasks.length > 0 ||
     learnings.length > 0 ||
     githubItems.length > 0 ||
-    githubComments.length > 0;
+    githubComments.length > 0 ||
+    calendarEvents.length > 0;
 
   if (!hasData) {
     return null;
@@ -911,6 +961,7 @@ export async function generateTimesSummary(
     learnings,
     githubItems,
     githubComments,
+    calendarEvents,
     projectNameMap,
   );
 
@@ -1077,6 +1128,8 @@ export async function generateDailySummary(
       learnings,
       githubItems,
       githubComments,
+      calendarEvents,
+      projectNameMap,
     } = fetchActivityData(db, date, startTime, endTime);
 
     const hasData =
@@ -1087,7 +1140,8 @@ export async function generateDailySummary(
       tasks.length > 0 ||
       learnings.length > 0 ||
       githubItems.length > 0 ||
-      githubComments.length > 0;
+      githubComments.length > 0 ||
+      calendarEvents.length > 0;
 
     if (!hasData) {
       return null;
@@ -1102,6 +1156,7 @@ export async function generateDailySummary(
       learnings,
       githubItems,
       githubComments,
+      calendarEvents,
       projectNameMap,
     );
     allSegmentIds = segments.map((s) => s.id);

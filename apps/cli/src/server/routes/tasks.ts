@@ -10,6 +10,7 @@ import { getPromptFilePath, type LogEntry, readLogFile, runClaude } from "@repo/
 import type { AdasDatabase, SlackMessage } from "@repo/db";
 import { schema } from "@repo/db";
 import {
+  type ApplyCompletionCheckResponse,
   type BulkElaborateStartResponse,
   type BulkElaborateTasksRequest,
   type BulkElaborationStatusResponse,
@@ -19,6 +20,9 @@ import {
   type CheckSimilarityBatchRequest,
   type CheckSimilarityBatchResponse,
   type CheckTaskSimilarityResponse,
+  type CompletionCheckResult,
+  type CompletionCheckStatus,
+  type CompletionCheckStatusResponse,
   type CreateGitHubIssueRequest,
   type CreateGitHubIssueResponse,
   type CreateMergeTaskResponse,
@@ -28,6 +32,7 @@ import {
   isApprovalOnlyTask,
   type PromptTarget,
   type SimilarityCheckResult,
+  type StartCompletionCheckResponse,
   type SuggestCompletionsResponse,
   type Task,
   type TaskCompletionSuggestion,
@@ -38,6 +43,7 @@ import consola from "consola";
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { enqueueJob } from "../../ai-job/queue.js";
+import { extractTasksFromAiProcessingLogs } from "../../ai-processing-log/task-extractor.js";
 import { loadConfig } from "../../config";
 import { createIssue, getItemState } from "../../github/client";
 import { getTodayDateString } from "../../utils/date";
@@ -2222,6 +2228,243 @@ export function createTasksRouter(db: AdasDatabase) {
     return c.json({ discarded: true });
   });
 
+  // ========== 個別タスク完了チェック API ==========
+
+  /**
+   * POST /api/tasks/:id/check-completion
+   *
+   * 個別タスクの完了チェックを開始 (非同期)
+   * Claude Sonnet でコードベースを確認して完了状況を判定
+   */
+  router.post("/:id/check-completion", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    // 既にチェック中の場合はエラー
+    if (task.completionCheckStatus === "pending") {
+      return c.json({ error: "Completion check is already in progress" }, 400);
+    }
+
+    // プロジェクトが未設定の場合はエラー
+    if (!task.projectId) {
+      return c.json({ error: "Task has no project assigned" }, 400);
+    }
+
+    // completionCheckStatus を pending に設定
+    db.update(schema.tasks)
+      .set({
+        completionCheckStatus: "pending",
+        pendingCompletionCheck: null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.tasks.id, id))
+      .run();
+
+    // AI Job キューに登録
+    const jobId = enqueueJob(db, "task-check-completion-individual", {
+      taskId: id,
+    });
+
+    consola.info(`[tasks/check-completion] Queued job ${jobId} for task ${id}`);
+
+    const response: StartCompletionCheckResponse = {
+      jobId,
+      status: "pending",
+    };
+
+    return c.json(response);
+  });
+
+  /**
+   * GET /api/tasks/:id/completion-check
+   *
+   * 完了チェックの状態を取得
+   */
+  router.get("/:id/completion-check", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const task = db
+      .select({
+        id: schema.tasks.id,
+        completionCheckStatus: schema.tasks.completionCheckStatus,
+        pendingCompletionCheck: schema.tasks.pendingCompletionCheck,
+      })
+      .from(schema.tasks)
+      .where(eq(schema.tasks.id, id))
+      .get();
+
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    // pending の場合はジョブ情報を取得
+    let jobId: number | null = null;
+    let jobStatus: string | null = null;
+    let errorMessage: string | null = null;
+
+    if (task.completionCheckStatus === "pending") {
+      const job = db
+        .select({
+          id: schema.aiJobQueue.id,
+          status: schema.aiJobQueue.status,
+        })
+        .from(schema.aiJobQueue)
+        .where(
+          and(
+            eq(schema.aiJobQueue.jobType, "task-check-completion-individual"),
+            eq(schema.aiJobQueue.params, JSON.stringify({ taskId: id })),
+          ),
+        )
+        .orderBy(desc(schema.aiJobQueue.createdAt))
+        .limit(1)
+        .get();
+
+      if (job) {
+        jobId = job.id;
+        jobStatus = job.status;
+      }
+    }
+
+    // 結果を取得
+    let result: CompletionCheckResult | null = null;
+    if (task.completionCheckStatus === "completed" && task.pendingCompletionCheck) {
+      try {
+        result = JSON.parse(task.pendingCompletionCheck) as CompletionCheckResult;
+      } catch {
+        consola.warn(`[tasks/completion-check] Failed to parse result for task ${id}`);
+      }
+    }
+
+    // failed の場合はエラーメッセージを取得
+    if (task.completionCheckStatus === "failed") {
+      const job = db
+        .select({ errorMessage: schema.aiJobQueue.errorMessage })
+        .from(schema.aiJobQueue)
+        .where(
+          and(
+            eq(schema.aiJobQueue.jobType, "task-check-completion-individual"),
+            eq(schema.aiJobQueue.params, JSON.stringify({ taskId: id })),
+          ),
+        )
+        .orderBy(desc(schema.aiJobQueue.createdAt))
+        .limit(1)
+        .get();
+
+      errorMessage = job?.errorMessage ?? null;
+    }
+
+    const response: CompletionCheckStatusResponse = {
+      taskId: id,
+      status: task.completionCheckStatus as CompletionCheckStatus | null,
+      jobId,
+      jobStatus: jobStatus as "pending" | "processing" | "completed" | "failed" | null,
+      result,
+      errorMessage,
+    };
+
+    return c.json(response);
+  });
+
+  /**
+   * POST /api/tasks/:id/completion-check/apply
+   *
+   * 完了チェック結果を適用 (タスクを完了にする)
+   */
+  router.post("/:id/completion-check/apply", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    // 完了チェックが完了していない場合はエラー
+    if (task.completionCheckStatus !== "completed" || !task.pendingCompletionCheck) {
+      return c.json({ error: "No completion check result to apply" }, 400);
+    }
+
+    // 結果を確認
+    let result: CompletionCheckResult | null = null;
+    try {
+      result = JSON.parse(task.pendingCompletionCheck) as CompletionCheckResult;
+    } catch {
+      return c.json({ error: "Failed to parse completion check result" }, 500);
+    }
+
+    // completed=false の結果を適用しようとした場合は警告
+    if (!result.completed) {
+      consola.warn(`[tasks/completion-check/apply] Applying non-completed result for task ${id}`);
+    }
+
+    // タスクを完了状態に更新
+    const now = new Date().toISOString();
+    db.update(schema.tasks)
+      .set({
+        status: "completed",
+        completedAt: now,
+        completionCheckStatus: null,
+        pendingCompletionCheck: null,
+        updatedAt: now,
+      })
+      .where(eq(schema.tasks.id, id))
+      .run();
+
+    consola.info(`[tasks/completion-check/apply] Applied completion for task ${id}`);
+
+    // 更新されたタスクを取得
+    const updatedTask = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+
+    const response: ApplyCompletionCheckResponse = {
+      task: updatedTask as Task,
+    };
+
+    return c.json(response);
+  });
+
+  /**
+   * POST /api/tasks/:id/completion-check/discard
+   *
+   * 完了チェック結果を破棄
+   */
+  router.post("/:id/completion-check/discard", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+    if (!task) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+
+    // 完了チェック状態をクリア
+    db.update(schema.tasks)
+      .set({
+        completionCheckStatus: null,
+        pendingCompletionCheck: null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.tasks.id, id))
+      .run();
+
+    consola.info(`[tasks/completion-check/discard] Discarded completion check for task ${id}`);
+
+    return c.json({ discarded: true });
+  });
+
   /**
    * GET /api/tasks/:id/children
    *
@@ -2389,7 +2632,7 @@ export function createTasksRouter(db: AdasDatabase) {
    * POST /api/tasks/suggest-completions
    *
    * 完了候補を提案
-   * GitHub → Claude Code → Slack → Transcribe の順で評価し、早期リターン
+   * GitHub → Claude Code の順で評価し、早期リターン
    * Body: { date?: string }
    */
   router.post("/suggest-completions", async (c) => {
@@ -2411,12 +2654,12 @@ export function createTasksRouter(db: AdasDatabase) {
     if (acceptedTasks.length === 0) {
       return c.json({
         suggestions: [],
-        evaluated: { total: 0, github: 0, claudeCode: 0, slack: 0, transcribe: 0 },
+        evaluated: { total: 0, github: 0, claudeCode: 0 },
       } satisfies SuggestCompletionsResponse);
     }
 
     const suggestions: TaskCompletionSuggestion[] = [];
-    const evaluated = { total: 0, github: 0, claudeCode: 0, slack: 0, transcribe: 0 };
+    const evaluated = { total: 0, github: 0, claudeCode: 0 };
 
     for (const task of acceptedTasks) {
       evaluated.total++;
@@ -2451,39 +2694,7 @@ export function createTasksRouter(db: AdasDatabase) {
             confidence: result.confidence,
             evidence: result.evidence,
           });
-          continue; // 早期リターン
         }
-      }
-
-      // 3. Slack 評価 (AI判定)
-      if (task.slackMessageId) {
-        evaluated.slack++;
-        const result = await checkSlackCompletion(db, task);
-        if (result) {
-          suggestions.push({
-            taskId: task.id,
-            task: task as Task,
-            source: "slack",
-            reason: result.reason,
-            confidence: result.confidence,
-            evidence: result.evidence,
-          });
-          continue; // 早期リターン
-        }
-      }
-
-      // 4. Transcribe 評価 (AI判定)
-      evaluated.transcribe++;
-      const result = await checkTranscribeCompletion(db, task);
-      if (result) {
-        suggestions.push({
-          taskId: task.id,
-          task: task as Task,
-          source: "transcribe",
-          reason: result.reason,
-          confidence: result.confidence,
-          evidence: result.evidence,
-        });
       }
     }
 
@@ -2960,6 +3171,41 @@ export function createTasksRouter(db: AdasDatabase) {
     } catch (error) {
       consola.error("[tasks/extract-logs] Failed to extract tasks:", error);
       return c.json({ error: "Failed to extract tasks from logs", details: String(error) }, 500);
+    }
+  });
+
+  /**
+   * POST /api/tasks/extract-ai-processing-logs
+   *
+   * AI Processing Logs の status="error" レコードからキーワードベースでタスクを抽出
+   * AI 不使用で高速処理
+   *
+   * Body:
+   * - date?: string (YYYY-MM-DD, デフォルト: 今日)
+   * - processTypes?: string[] (デフォルト: 全て)
+   * - limit?: number (最大: 100, デフォルト: 50)
+   */
+  router.post("/extract-ai-processing-logs", async (c) => {
+    const body = await c.req.json<{
+      date?: string;
+      processTypes?: string[];
+      limit?: number;
+    }>();
+
+    try {
+      const result = extractTasksFromAiProcessingLogs(db, {
+        date: body.date,
+        processTypes: body.processTypes,
+        limit: body.limit,
+      });
+
+      return c.json(result);
+    } catch (error) {
+      consola.error("[tasks/extract-ai-processing-logs] Failed to extract tasks:", error);
+      return c.json(
+        { error: "Failed to extract tasks from AI processing logs", details: String(error) },
+        500,
+      );
     }
   });
 
@@ -3578,12 +3824,6 @@ async function applyProjectSuggestion(
 
 // ========== タスク完了検知関数 ==========
 
-interface CompletionCheckResult {
-  reason: string;
-  confidence: number;
-  evidence?: string;
-}
-
 /**
  * GitHub での完了をチェック
  */
@@ -3807,182 +4047,6 @@ async function checkClaudeCodeCompletion(
     return null;
   } catch (err) {
     consola.warn("[completion-check] Claude Code check failed:", err);
-    return null;
-  }
-}
-
-/**
- * Slack メッセージでの完了をチェック
- */
-async function checkSlackCompletion(
-  db: AdasDatabase,
-  task: {
-    id: number;
-    slackMessageId: number | null;
-    title: string;
-    description: string | null;
-    parentId: number | null;
-  },
-): Promise<CompletionCheckResult | null> {
-  if (!task.slackMessageId) {
-    return null;
-  }
-
-  try {
-    // 元のメッセージを取得
-    const originalMessage = db
-      .select()
-      .from(schema.slackMessages)
-      .where(eq(schema.slackMessages.id, task.slackMessageId))
-      .get();
-
-    if (!originalMessage) {
-      return null;
-    }
-
-    // 同じスレッドの後続メッセージを取得
-    const followUpMessages = db
-      .select()
-      .from(schema.slackMessages)
-      .where(
-        and(
-          eq(schema.slackMessages.channelId, originalMessage.channelId),
-          originalMessage.threadTs
-            ? eq(schema.slackMessages.threadTs, originalMessage.threadTs)
-            : eq(schema.slackMessages.threadTs, originalMessage.messageTs),
-          gte(schema.slackMessages.messageTs, originalMessage.messageTs),
-        ),
-      )
-      .orderBy(schema.slackMessages.messageTs)
-      .limit(20)
-      .all();
-
-    // 元メッセージを除く後続メッセージのみ
-    const laterMessages = followUpMessages.filter((m) => m.messageTs !== originalMessage.messageTs);
-
-    if (laterMessages.length === 0) {
-      return null;
-    }
-
-    // コンテキストを構築
-    const contextParts: string[] = [];
-    contextParts.push(`--- 元のメッセージ ---`);
-    contextParts.push(`[${originalMessage.userName ?? "unknown"}] ${originalMessage.text}`);
-    contextParts.push(`--- 後続メッセージ ---`);
-    for (const msg of laterMessages) {
-      contextParts.push(`[${msg.userName ?? "unknown"}] ${msg.text}`);
-    }
-
-    const context = contextParts.join("\n");
-
-    // 子タスク・親タスク情報を取得
-    const childTasks = getChildTasks(db, task.id);
-    const parentTask = task.parentId ? getParentTask(db, task) : null;
-
-    // Worker で AI 判定
-    const result = await callWorkerCheckCompletion({
-      task: {
-        title: task.title,
-        description: task.description,
-        childTasks: childTasks.length > 0 ? formatChildTasksForCompletion(childTasks) : undefined,
-        parentTask: parentTask ? { id: parentTask.id, title: parentTask.title } : undefined,
-      },
-      context,
-      source: "slack",
-    });
-
-    if (result?.completed) {
-      return {
-        reason: result.reason,
-        confidence: result.confidence,
-        evidence: result.evidence,
-      };
-    }
-
-    return null;
-  } catch (err) {
-    consola.warn("[completion-check] Slack check failed:", err);
-    return null;
-  }
-}
-
-/**
- * Transcribe (音声書き起こし) での完了をチェック
- */
-async function checkTranscribeCompletion(
-  db: AdasDatabase,
-  task: {
-    id: number;
-    date: string;
-    title: string;
-    description: string | null;
-    acceptedAt: string | null;
-    parentId: number | null;
-  },
-): Promise<CompletionCheckResult | null> {
-  try {
-    // タスクの日付以降の音声書き起こしを取得
-    const segments = db
-      .select()
-      .from(schema.transcriptionSegments)
-      .where(
-        and(
-          gte(schema.transcriptionSegments.date, task.date),
-          task.acceptedAt
-            ? gte(schema.transcriptionSegments.startTime, task.acceptedAt)
-            : undefined,
-        ),
-      )
-      .orderBy(desc(schema.transcriptionSegments.startTime))
-      .limit(30)
-      .all();
-
-    if (segments.length === 0) {
-      return null;
-    }
-
-    // interpretedText があるセグメントを優先
-    const contextParts: string[] = [];
-    for (const seg of segments.reverse()) {
-      const text = seg.interpretedText ?? seg.transcription;
-      if (text) {
-        contextParts.push(`[${seg.startTime}] ${text}`);
-      }
-    }
-
-    if (contextParts.length === 0) {
-      return null;
-    }
-
-    const context = contextParts.join("\n");
-
-    // 子タスク・親タスク情報を取得
-    const childTasks = getChildTasks(db, task.id);
-    const parentTask = task.parentId ? getParentTask(db, task) : null;
-
-    // Worker で AI 判定
-    const result = await callWorkerCheckCompletion({
-      task: {
-        title: task.title,
-        description: task.description,
-        childTasks: childTasks.length > 0 ? formatChildTasksForCompletion(childTasks) : undefined,
-        parentTask: parentTask ? { id: parentTask.id, title: parentTask.title } : undefined,
-      },
-      context,
-      source: "transcribe",
-    });
-
-    if (result?.completed) {
-      return {
-        reason: result.reason,
-        confidence: result.confidence,
-        evidence: result.evidence,
-      };
-    }
-
-    return null;
-  } catch (err) {
-    consola.warn("[completion-check] Transcribe check failed:", err);
     return null;
   }
 }

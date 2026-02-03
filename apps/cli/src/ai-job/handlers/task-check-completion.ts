@@ -2,7 +2,7 @@
  * Task Check Completion Handler
  *
  * タスク完了候補をチェックするジョブハンドラー
- * GitHub → Claude Code → Slack → Transcribe の順で評価
+ * GitHub → Claude Code の順で評価
  */
 
 import type { AdasDatabase } from "@repo/db";
@@ -252,184 +252,6 @@ async function checkClaudeCodeCompletion(
   }
 }
 
-/**
- * Slack メッセージでの完了をチェック
- */
-async function checkSlackCompletion(
-  db: AdasDatabase,
-  config: AdasConfig,
-  task: {
-    id: number;
-    slackMessageId: number | null;
-    title: string;
-    description: string | null;
-    parentId: number | null;
-  },
-): Promise<CompletionCheckResult | null> {
-  if (!task.slackMessageId) {
-    return null;
-  }
-
-  try {
-    // 元のメッセージを取得
-    const originalMessage = db
-      .select()
-      .from(schema.slackMessages)
-      .where(eq(schema.slackMessages.id, task.slackMessageId))
-      .get();
-
-    if (!originalMessage) {
-      return null;
-    }
-
-    // 同じスレッドの後続メッセージを取得
-    const followUpMessages = db
-      .select()
-      .from(schema.slackMessages)
-      .where(
-        and(
-          eq(schema.slackMessages.channelId, originalMessage.channelId),
-          originalMessage.threadTs
-            ? eq(schema.slackMessages.threadTs, originalMessage.threadTs)
-            : eq(schema.slackMessages.threadTs, originalMessage.messageTs),
-          gte(schema.slackMessages.messageTs, originalMessage.messageTs),
-        ),
-      )
-      .orderBy(schema.slackMessages.messageTs)
-      .limit(20)
-      .all();
-
-    // 元メッセージを除く後続メッセージのみ
-    const laterMessages = followUpMessages.filter((m) => m.messageTs !== originalMessage.messageTs);
-
-    if (laterMessages.length === 0) {
-      return null;
-    }
-
-    // コンテキストを構築
-    const contextParts: string[] = [];
-    contextParts.push(`--- 元のメッセージ ---`);
-    contextParts.push(`[${originalMessage.userName ?? "unknown"}] ${originalMessage.text}`);
-    contextParts.push(`--- 後続メッセージ ---`);
-    for (const msg of laterMessages) {
-      contextParts.push(`[${msg.userName ?? "unknown"}] ${msg.text}`);
-    }
-
-    const context = contextParts.join("\n");
-
-    // 子タスク・親タスク情報を取得
-    const childTasks = getChildTasks(db, task.id);
-    const parentTask = task.parentId ? getParentTask(db, task) : null;
-
-    // Worker で AI 判定
-    const result = await callWorkerCheckCompletion(config, {
-      task: {
-        title: task.title,
-        description: task.description,
-        childTasks: childTasks.length > 0 ? formatChildTasksForCompletion(childTasks) : undefined,
-        parentTask: parentTask ? { id: parentTask.id, title: parentTask.title } : undefined,
-      },
-      context,
-      source: "slack",
-    });
-
-    if (result?.completed) {
-      return {
-        reason: result.reason,
-        confidence: result.confidence,
-        evidence: result.evidence,
-      };
-    }
-
-    return null;
-  } catch (err) {
-    consola.warn("[completion-check] Slack check failed:", err);
-    return null;
-  }
-}
-
-/**
- * Transcribe (音声書き起こし) での完了をチェック
- */
-async function checkTranscribeCompletion(
-  db: AdasDatabase,
-  config: AdasConfig,
-  task: {
-    id: number;
-    date: string;
-    title: string;
-    description: string | null;
-    acceptedAt: string | null;
-    parentId: number | null;
-  },
-): Promise<CompletionCheckResult | null> {
-  try {
-    // タスクの日付以降の音声書き起こしを取得
-    const segments = db
-      .select()
-      .from(schema.transcriptionSegments)
-      .where(
-        and(
-          gte(schema.transcriptionSegments.date, task.date),
-          task.acceptedAt
-            ? gte(schema.transcriptionSegments.startTime, task.acceptedAt)
-            : undefined,
-        ),
-      )
-      .orderBy(desc(schema.transcriptionSegments.startTime))
-      .limit(30)
-      .all();
-
-    if (segments.length === 0) {
-      return null;
-    }
-
-    // interpretedText があるセグメントを優先
-    const contextParts: string[] = [];
-    for (const seg of segments.reverse()) {
-      const text = seg.interpretedText ?? seg.transcription;
-      if (text) {
-        contextParts.push(`[${seg.startTime}] ${text}`);
-      }
-    }
-
-    if (contextParts.length === 0) {
-      return null;
-    }
-
-    const context = contextParts.join("\n");
-
-    // 子タスク・親タスク情報を取得
-    const childTasks = getChildTasks(db, task.id);
-    const parentTask = task.parentId ? getParentTask(db, task) : null;
-
-    // Worker で AI 判定
-    const result = await callWorkerCheckCompletion(config, {
-      task: {
-        title: task.title,
-        description: task.description,
-        childTasks: childTasks.length > 0 ? formatChildTasksForCompletion(childTasks) : undefined,
-        parentTask: parentTask ? { id: parentTask.id, title: parentTask.title } : undefined,
-      },
-      context,
-      source: "transcribe",
-    });
-
-    if (result?.completed) {
-      return {
-        reason: result.reason,
-        confidence: result.confidence,
-        evidence: result.evidence,
-      };
-    }
-
-    return null;
-  } catch (err) {
-    consola.warn("[completion-check] Transcribe check failed:", err);
-    return null;
-  }
-}
-
 // ========== ジョブハンドラー ==========
 
 /**
@@ -458,7 +280,7 @@ export async function handleTaskCheckCompletion(
   if (acceptedTasks.length === 0) {
     const result: SuggestCompletionsResponse = {
       suggestions: [],
-      evaluated: { total: 0, github: 0, claudeCode: 0, slack: 0, transcribe: 0 },
+      evaluated: { total: 0, github: 0, claudeCode: 0 },
     };
     return {
       success: true,
@@ -468,7 +290,7 @@ export async function handleTaskCheckCompletion(
   }
 
   const suggestions: TaskCompletionSuggestion[] = [];
-  const evaluated = { total: 0, github: 0, claudeCode: 0, slack: 0, transcribe: 0 };
+  const evaluated = { total: 0, github: 0, claudeCode: 0 };
 
   for (const task of acceptedTasks) {
     evaluated.total++;
@@ -503,39 +325,7 @@ export async function handleTaskCheckCompletion(
           confidence: result.confidence,
           evidence: result.evidence,
         });
-        continue; // 早期リターン
       }
-    }
-
-    // 3. Slack 評価 (AI判定)
-    if (task.slackMessageId) {
-      evaluated.slack++;
-      const result = await checkSlackCompletion(db, config, task);
-      if (result) {
-        suggestions.push({
-          taskId: task.id,
-          task: task as Task,
-          source: "slack",
-          reason: result.reason,
-          confidence: result.confidence,
-          evidence: result.evidence,
-        });
-        continue; // 早期リターン
-      }
-    }
-
-    // 4. Transcribe 評価 (AI判定)
-    evaluated.transcribe++;
-    const result = await checkTranscribeCompletion(db, config, task);
-    if (result) {
-      suggestions.push({
-        taskId: task.id,
-        task: task as Task,
-        source: "transcribe",
-        reason: result.reason,
-        confidence: result.confidence,
-        evidence: result.evidence,
-      });
     }
   }
 

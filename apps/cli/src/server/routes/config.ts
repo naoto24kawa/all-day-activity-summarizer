@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { Hono } from "hono";
 import type { AdasConfig, AIProviderConfig, LLMProviderType } from "../../config.js";
 import { loadConfig, saveConfig } from "../../config.js";
@@ -6,6 +7,7 @@ interface IntegrationsUpdateBody {
   whisper?: { enabled: boolean };
   slack?: { enabled: boolean };
   github?: { enabled: boolean };
+  calendar?: { enabled: boolean };
   claudeCode?: { enabled: boolean };
   evaluator?: { enabled: boolean };
   promptImprovement?: { enabled: boolean };
@@ -51,6 +53,7 @@ const INTEGRATION_KEYS = [
   "whisper",
   "slack",
   "github",
+  "calendar",
   "claudeCode",
   "evaluator",
   "promptImprovement",
@@ -278,6 +281,12 @@ export function createConfigRouter() {
         username: config.github.username,
         fetchIntervalMinutes: config.github.fetchIntervalMinutes,
       },
+      calendar: {
+        enabled: config.calendar.enabled,
+        fetchIntervalMinutes: config.calendar.fetchIntervalMinutes,
+        calendarIds: config.calendar.calendarIds,
+        hasCredentials: existsSync(config.calendar.credentialsPath),
+      },
       claudeCode: {
         enabled: config.claudeCode.enabled,
         fetchIntervalMinutes: config.claudeCode.fetchIntervalMinutes,
@@ -354,6 +363,7 @@ export function createConfigRouter() {
         whisper: { enabled: config.whisper.enabled },
         slack: { enabled: config.slack.enabled, watchKeywords: config.slack.watchKeywords },
         github: { enabled: config.github.enabled },
+        calendar: { enabled: config.calendar.enabled },
         claudeCode: { enabled: config.claudeCode.enabled },
         evaluator: { enabled: config.evaluator.enabled },
         promptImprovement: { enabled: config.promptImprovement.enabled },

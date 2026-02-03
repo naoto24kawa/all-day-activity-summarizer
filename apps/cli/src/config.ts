@@ -102,6 +102,14 @@ export interface AdasConfig {
     fetchIntervalMinutes: number; // 取得間隔(分)
     parallelWorkers: number; // 並列ワーカー数
   };
+  calendar: {
+    enabled: boolean; // Google Calendar 統合を有効にする
+    fetchIntervalMinutes: number; // 取得間隔 (分)
+    credentialsPath: string; // OAuth 2.0 credentials.json のパス
+    tokenPath: string; // 認証トークン保存先
+    calendarIds: string[]; // 監視するカレンダーID (空 = プライマリのみ)
+    daysToFetch: number; // 取得する日数 (過去から未来まで)
+  };
   projects: {
     gitScanPaths: string[]; // 探索対象ディレクトリ: ["~/projects"]
     excludePatterns: string[]; // 除外パターン: ["node_modules", ".cache", ...]
@@ -211,6 +219,14 @@ const defaultConfig: AdasConfig = {
     username: undefined,
     fetchIntervalMinutes: 10,
     parallelWorkers: 2,
+  },
+  calendar: {
+    enabled: false,
+    fetchIntervalMinutes: 15,
+    credentialsPath: join(ADAS_HOME, "credentials.json"),
+    tokenPath: join(ADAS_HOME, "calendar-token.json"),
+    calendarIds: [], // 空 = プライマリカレンダーのみ
+    daysToFetch: 7, // 前後7日分を取得
   },
   projects: {
     gitScanPaths: [],
@@ -329,6 +345,7 @@ export function loadConfig(): AdasConfig {
     },
     claudeCode: { ...defaultConfig.claudeCode, ...userConfig.claudeCode },
     github: { ...defaultConfig.github, ...userConfig.github },
+    calendar: { ...defaultConfig.calendar, ...userConfig.calendar },
     projects: { ...defaultConfig.projects, ...userConfig.projects },
     aiProvider: {
       ...defaultConfig.aiProvider,

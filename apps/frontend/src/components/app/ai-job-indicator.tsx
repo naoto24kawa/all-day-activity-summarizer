@@ -34,6 +34,7 @@ const JOB_TYPE_LABELS: Record<AIJobType, string> = {
   "task-extract-memo": "メモ タスク抽出",
   "task-elaborate": "タスク詳細化",
   "task-check-completion": "タスク完了チェック",
+  "task-check-completion-individual": "タスク完了チェック",
   "learning-extract": "学び抽出",
   "vocabulary-extract": "用語抽出",
   "vocabulary-generate-readings": "読み仮名生成",

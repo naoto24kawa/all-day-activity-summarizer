@@ -18,7 +18,8 @@ export type ExtractionSourceType =
   | "claude-code"
   | "transcription"
   | "git-scan"
-  | "server-log";
+  | "server-log"
+  | "ai-processing-log";
 
 /**
  * Check if extraction has already been attempted for this source

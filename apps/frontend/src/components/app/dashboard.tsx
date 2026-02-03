@@ -25,6 +25,92 @@ import { TasksPanel } from "./tasks-panel";
 import { Timeline } from "./timeline";
 import { VocabularyPanel } from "./vocabulary-panel";
 
+// LocalStorage keys
+const STORAGE_KEY_ACTIVE_GROUP = "adas-dashboard-active-group";
+const STORAGE_KEY_ACTIVE_TABS = "adas-dashboard-active-tabs";
+const STORAGE_KEY_MEMO_SIDEBAR = "adas-memo-sidebar";
+const STORAGE_KEY_CLAUDE_CHAT_SIDEBAR = "adas-claude-chat-sidebar";
+const STORAGE_KEY_MEMO_HEIGHT = "adas-memo-height";
+
+const DEFAULT_ACTIVE_TABS: Record<TabGroupId, TabId> = {
+  overview: "activity",
+  feeds: "audio",
+  tools: "learnings",
+  system: "logs",
+};
+
+/** LocalStorage から activeGroup を読み込む */
+function loadActiveGroup(): TabGroupId {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_ACTIVE_GROUP);
+    if (saved && TAB_GROUPS.some((g) => g.id === saved)) {
+      return saved as TabGroupId;
+    }
+  } catch {
+    // LocalStorage アクセスエラーは無視
+  }
+  return "overview";
+}
+
+/** LocalStorage から activeTabs を読み込む */
+function loadActiveTabs(): Record<TabGroupId, TabId> {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_ACTIVE_TABS);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // 各グループに有効なタブがあるか検証
+      const result = { ...DEFAULT_ACTIVE_TABS };
+      for (const group of TAB_GROUPS) {
+        if (parsed[group.id] && group.tabs.some((t) => t.id === parsed[group.id])) {
+          result[group.id] = parsed[group.id];
+        }
+      }
+      return result;
+    }
+  } catch {
+    // LocalStorage アクセスエラーは無視
+  }
+  return DEFAULT_ACTIVE_TABS;
+}
+
+/** LocalStorage から boolean を読み込む */
+function loadBoolean(key: string, defaultValue: boolean): boolean {
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved !== null) {
+      return saved === "true";
+    }
+  } catch {
+    // LocalStorage アクセスエラーは無視
+  }
+  return defaultValue;
+}
+
+/** LocalStorage から number を読み込む */
+function loadNumber(key: string, defaultValue: number): number {
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved !== null) {
+      const num = Number(saved);
+      if (!Number.isNaN(num)) {
+        return num;
+      }
+    }
+  } catch {
+    // LocalStorage アクセスエラーは無視
+  }
+  return defaultValue;
+}
+
+/** LocalStorage に保存 */
+function saveToStorage(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // LocalStorage アクセスエラーは無視
+  }
+}
+
 // バッジのバリアントマッピング
 const BADGE_VARIANTS: Record<string, "destructive" | "secondary" | "default" | "outline"> = {
   tasks: "destructive",
@@ -35,18 +121,17 @@ const BADGE_VARIANTS: Record<string, "destructive" | "secondary" | "default" | "
 
 export function Dashboard() {
   const [now, setNow] = useState(new Date());
-  const [isMemoSidebar, setIsMemoSidebar] = useState(false);
-  const [isClaudeChatSidebar, setIsClaudeChatSidebar] = useState(false);
+  const [isMemoSidebar, setIsMemoSidebar] = useState(() =>
+    loadBoolean(STORAGE_KEY_MEMO_SIDEBAR, false),
+  );
+  const [isClaudeChatSidebar, setIsClaudeChatSidebar] = useState(() =>
+    loadBoolean(STORAGE_KEY_CLAUDE_CHAT_SIDEBAR, false),
+  );
   // フローティングパネルの開閉状態 (アイコン位置調整用)
   const [isMemoOpen, setIsMemoOpen] = useState(true);
-  const [memoHeight, setMemoHeight] = useState(500); // デフォルト高さ
-  const [activeGroup, setActiveGroup] = useState<TabGroupId>("overview");
-  const [activeTabs, setActiveTabs] = useState<Record<TabGroupId, TabId>>({
-    overview: "activity",
-    feeds: "audio",
-    tools: "learnings",
-    system: "logs",
-  });
+  const [memoHeight, setMemoHeight] = useState(() => loadNumber(STORAGE_KEY_MEMO_HEIGHT, 500));
+  const [activeGroup, setActiveGroup] = useState<TabGroupId>(loadActiveGroup);
+  const [activeTabs, setActiveTabs] = useState<Record<TabGroupId, TabId>>(loadActiveTabs);
   const { badges, groupBadges, refetch: refetchBadges } = useTabBadges();
 
   // AI Job通知フック (トースト通知 + リアルタイム統計)
@@ -66,6 +151,27 @@ export function Dashboard() {
     const interval = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // 状態変更時に LocalStorage に保存
+  useEffect(() => {
+    saveToStorage(STORAGE_KEY_ACTIVE_GROUP, activeGroup);
+  }, [activeGroup]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEY_ACTIVE_TABS, JSON.stringify(activeTabs));
+  }, [activeTabs]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEY_MEMO_SIDEBAR, String(isMemoSidebar));
+  }, [isMemoSidebar]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEY_CLAUDE_CHAT_SIDEBAR, String(isClaudeChatSidebar));
+  }, [isClaudeChatSidebar]);
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEY_MEMO_HEIGHT, String(memoHeight));
+  }, [memoHeight]);
 
   const handleGroupChange = (groupId: string) => {
     setActiveGroup(groupId as TabGroupId);

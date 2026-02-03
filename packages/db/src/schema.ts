@@ -489,6 +489,7 @@ export const tasks = sqliteTable("tasks", {
       "project-suggestion",
       "server-log",
       "notion",
+      "ai-processing-log",
     ],
   })
     .notNull()
@@ -547,6 +548,11 @@ export const tasks = sqliteTable("tasks", {
   // GitHub Issue 連携
   githubIssueNumber: integer("github_issue_number"), // 作成した Issue の番号
   githubIssueUrl: text("github_issue_url"), // 作成した Issue の URL
+  // 完了チェック関連
+  completionCheckStatus: text("completion_check_status", {
+    enum: ["pending", "completed", "failed"],
+  }), // 完了チェックステータス
+  pendingCompletionCheck: text("pending_completion_check"), // JSON: CompletionCheckResult
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -612,6 +618,7 @@ export const extractionLogs = sqliteTable("extraction_logs", {
       "transcription",
       "git-scan",
       "server-log",
+      "ai-processing-log",
     ],
   }).notNull(), // ソースの種類
   sourceId: text("source_id").notNull(), // 各ソースの ID (message_id, session_id など)
@@ -797,6 +804,7 @@ export const aiJobQueue = sqliteTable("ai_job_queue", {
       "task-extract-memo",
       "task-elaborate",
       "task-check-completion",
+      "task-check-completion-individual",
       "learning-extract",
       "vocabulary-extract",
       "profile-analyze",
@@ -896,3 +904,65 @@ export const rateLimitUsage = sqliteTable("rate_limit_usage", {
 
 export type RateLimitUsage = typeof rateLimitUsage.$inferSelect;
 export type NewRateLimitUsage = typeof rateLimitUsage.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Calendar Events (Google Calendar イベント)
+// ---------------------------------------------------------------------------
+
+export const calendarEvents = sqliteTable("calendar_events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  date: text("date").notNull(), // YYYY-MM-DD (JST)
+  eventId: text("event_id").notNull(), // Google Calendar Event ID
+  calendarId: text("calendar_id").notNull(), // カレンダーID
+  summary: text("summary").notNull(), // イベントタイトル
+  description: text("description"), // イベント説明
+  startTime: text("start_time").notNull(), // ISO8601
+  endTime: text("end_time").notNull(), // ISO8601
+  isAllDay: integer("is_all_day", { mode: "boolean" }).notNull().default(false),
+  location: text("location"), // 場所
+  attendees: text("attendees"), // JSON array: [{email, displayName, responseStatus}]
+  organizer: text("organizer"), // JSON: {email, displayName}
+  conferenceLink: text("conference_link"), // Google Meet 等のリンク
+  status: text("status", { enum: ["confirmed", "tentative", "cancelled"] })
+    .notNull()
+    .default("confirmed"),
+  isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),
+  projectId: integer("project_id"), // FK to projects (nullable)
+  syncedAt: text("synced_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type CalendarEvent = typeof calendarEvents.$inferSelect;
+export type NewCalendarEvent = typeof calendarEvents.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Calendar Queue (Google Calendar 取得キュー)
+// ---------------------------------------------------------------------------
+
+export const calendarQueue = sqliteTable("calendar_queue", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobType: text("job_type", { enum: ["fetch_events"] }).notNull(),
+  calendarId: text("calendar_id"), // 対象カレンダーID (null = 全カレンダー)
+  status: text("status", { enum: ["pending", "processing", "completed", "failed"] })
+    .notNull()
+    .default("pending"),
+  retryCount: integer("retry_count").notNull().default(0),
+  maxRetries: integer("max_retries").notNull().default(3),
+  errorMessage: text("error_message"),
+  lockedAt: text("locked_at"),
+  runAfter: text("run_after").notNull(),
+  pageToken: text("page_token"), // ページネーション用
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type CalendarQueueJob = typeof calendarQueue.$inferSelect;
+export type NewCalendarQueueJob = typeof calendarQueue.$inferInsert;

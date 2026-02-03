@@ -92,6 +92,11 @@ export interface IntegrationsConfig {
     username?: string;
     fetchIntervalMinutes: number;
   };
+  calendar?: IntegrationStatus & {
+    fetchIntervalMinutes: number;
+    calendarIds: string[];
+    hasCredentials: boolean;
+  };
   claudeCode: IntegrationStatus & {
     fetchIntervalMinutes: number;
     projects: string[];
@@ -119,6 +124,7 @@ interface UpdateIntegrationsResponse {
     whisper: IntegrationStatus;
     slack: IntegrationStatus & { watchKeywords?: string[] };
     github: IntegrationStatus;
+    calendar?: IntegrationStatus;
     claudeCode: IntegrationStatus;
     evaluator: IntegrationStatus;
     promptImprovement: IntegrationStatus;
@@ -157,6 +163,7 @@ export function useConfig() {
         | "whisper"
         | "slack"
         | "github"
+        | "calendar"
         | "claudeCode"
         | "evaluator"
         | "promptImprovement",
@@ -174,11 +181,15 @@ export function useConfig() {
         // ローカル状態を更新
         setIntegrations((prev) => {
           if (!prev) return prev;
+          const responseIntegration = data.integrations[
+            integration as keyof typeof data.integrations
+          ] as IntegrationStatus | undefined;
+          if (!responseIntegration) return prev;
           return {
             ...prev,
             [integration]: {
-              ...prev[integration],
-              enabled: data.integrations[integration].enabled,
+              ...prev[integration as keyof typeof prev],
+              enabled: responseIntegration.enabled,
             },
           };
         });

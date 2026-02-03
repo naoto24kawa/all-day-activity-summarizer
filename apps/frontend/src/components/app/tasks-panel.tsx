@@ -5,6 +5,7 @@
  */
 
 import {
+  type CompletionCheckResult,
   type DuplicateTaskPair,
   isApprovalOnlyTask,
   type Project,
@@ -120,7 +121,7 @@ const TASK_STATUS_STYLES: Record<TaskStatus | "selected" | "suggested", string> 
   completed: "opacity-60",
   rejected: "opacity-50",
   pending: "border-primary/30 bg-primary/5",
-  in_progress: "border-blue-400 bg-blue-50 dark:border-blue-600 dark:bg-blue-950",
+  in_progress: "",
   paused: "border-yellow-400 bg-yellow-50 dark:border-yellow-600 dark:bg-yellow-950",
   suggested: "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-950",
   someday: "opacity-50 border-purple-300 dark:border-purple-700",
@@ -254,8 +255,12 @@ export function TasksPanel({ className }: TasksPanelProps) {
     checkSimilarityBatch,
     // GitHub Issue 作成
     createGitHubIssue,
+    // 完了チェック
+    startCompletionCheck,
+    applyCompletionCheck,
+    discardCompletionCheck,
   } = useTasks(statusFilter);
-  const { stats } = useTaskStats(date);
+  const { stats } = useTaskStats(); // 全タスクを対象にステータスカウント
   const {
     projects,
     loading: projectsLoading,
@@ -319,6 +324,13 @@ export function TasksPanel({ className }: TasksPanelProps) {
   const [claudeChatJobMap, setClaudeChatJobMap] = useState<Map<number, number>>(new Map());
   // Claude送信中のタスクID
   const sendingToClaudeTaskIds = new Set(claudeChatJobMap.values());
+
+  // 完了チェックジョブ追跡 (ジョブID -> タスクID のマッピング)
+  const [completionCheckJobMap, setCompletionCheckJobMap] = useState<Map<number, number>>(
+    new Map(),
+  );
+  // 完了チェック中のタスクID
+  const checkingCompletionTaskIds = new Set(completionCheckJobMap.values());
 
   const openElaborateDialog = (task: Task) => {
     setElaborateTargetTask(task);
@@ -596,6 +608,97 @@ export function TasksPanel({ className }: TasksPanelProps) {
       trackClaudeChatJob(jobId);
     },
     [trackClaudeChatJob],
+  );
+
+  // 個別完了チェックジョブ追跡
+  const { trackJob: trackCompletionCheckIndividualJob } = useJobProgress({
+    onJobCompleted: (jobId) => {
+      // ジョブIDからタスクIDを取得
+      setCompletionCheckJobMap((prev) => {
+        const taskId = prev.get(jobId);
+        if (taskId) {
+          toast.success("完了チェックが完了しました", {
+            description: `タスク #${taskId} の完了チェックが完了しました`,
+          });
+        }
+        const next = new Map(prev);
+        next.delete(jobId);
+        return next;
+      });
+      // タスクリストをリフレッシュ
+      refetch();
+    },
+  });
+
+  // 個別完了チェックジョブを登録
+  const trackCompletionCheckIndividual = useCallback(
+    (jobId: number, taskId: number) => {
+      setCompletionCheckJobMap((prev) => {
+        const next = new Map(prev);
+        next.set(jobId, taskId);
+        return next;
+      });
+      trackCompletionCheckIndividualJob(jobId);
+    },
+    [trackCompletionCheckIndividualJob],
+  );
+
+  // 個別タスクの完了チェックを開始
+  const handleStartCompletionCheck = useCallback(
+    async (task: Task) => {
+      if (checkingCompletionTaskIds.has(task.id)) {
+        toast.info("完了チェック中です", { description: "しばらくお待ちください" });
+        return;
+      }
+      if (!task.projectId) {
+        toast.error("プロジェクトが設定されていません", {
+          description: "完了チェックにはプロジェクトの設定が必要です",
+        });
+        return;
+      }
+      try {
+        const response = await startCompletionCheck(task.id);
+        if (response.jobId) {
+          trackCompletionCheckIndividual(response.jobId, task.id);
+          toast.info("完了チェックを開始しました", { description: `タスク: ${task.title}` });
+        }
+      } catch (err) {
+        toast.error("完了チェックの開始に失敗しました", {
+          description: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+    [checkingCompletionTaskIds, startCompletionCheck, trackCompletionCheckIndividual],
+  );
+
+  // 完了チェック結果を適用 (タスクを完了にする)
+  const handleApplyCompletionCheck = useCallback(
+    async (taskId: number) => {
+      try {
+        await applyCompletionCheck(taskId);
+        toast.success("タスクを完了にしました");
+      } catch (err) {
+        toast.error("適用に失敗しました", {
+          description: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+    [applyCompletionCheck],
+  );
+
+  // 完了チェック結果を破棄
+  const handleDiscardCompletionCheck = useCallback(
+    async (taskId: number) => {
+      try {
+        await discardCompletionCheck(taskId);
+        toast.info("完了チェック結果を破棄しました");
+      } catch (err) {
+        toast.error("破棄に失敗しました", {
+          description: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+    [discardCompletionCheck],
   );
 
   const handleCheckCompletions = async () => {
@@ -1574,6 +1677,10 @@ export function TasksPanel({ className }: TasksPanelProps) {
               elaboratingTaskIds={elaboratingTaskIds}
               sendingToClaudeTaskIds={sendingToClaudeTaskIds}
               onSendToClaude={trackClaudeChat}
+              checkingCompletionTaskIds={checkingCompletionTaskIds}
+              onCheckCompletion={handleStartCompletionCheck}
+              onApplyCompletionCheck={handleApplyCompletionCheck}
+              onDiscardCompletionCheck={handleDiscardCompletionCheck}
               selectionMode={selectionMode}
               selectedTaskIds={selectedTaskIds}
               onToggleSelection={toggleTaskSelection}
@@ -1707,6 +1814,10 @@ function TaskList({
   elaboratingTaskIds,
   sendingToClaudeTaskIds,
   onSendToClaude,
+  checkingCompletionTaskIds,
+  onCheckCompletion,
+  onApplyCompletionCheck,
+  onDiscardCompletionCheck,
   selectionMode = false,
   selectedTaskIds,
   onToggleSelection,
@@ -1736,6 +1847,10 @@ function TaskList({
   elaboratingTaskIds?: Set<number>;
   sendingToClaudeTaskIds?: Set<number>;
   onSendToClaude?: (jobId: number, taskId: number) => void;
+  checkingCompletionTaskIds?: Set<number>;
+  onCheckCompletion?: (task: Task) => void;
+  onApplyCompletionCheck?: (taskId: number) => Promise<void>;
+  onDiscardCompletionCheck?: (taskId: number) => Promise<void>;
   selectionMode?: boolean;
   selectedTaskIds?: Set<number>;
   onToggleSelection?: (taskId: number) => void;
@@ -1780,6 +1895,10 @@ function TaskList({
             isElaborating={elaboratingTaskIds?.has(task.id)}
             isSendingToClaude={sendingToClaudeTaskIds?.has(task.id)}
             onSendToClaude={onSendToClaude}
+            isCheckingCompletion={checkingCompletionTaskIds?.has(task.id)}
+            onCheckCompletion={onCheckCompletion}
+            onApplyCompletionCheck={onApplyCompletionCheck}
+            onDiscardCompletionCheck={onDiscardCompletionCheck}
             selectionMode={selectionMode}
             isSelected={selectedTaskIds?.has(task.id) ?? false}
             onToggleSelection={onToggleSelection}
@@ -1803,6 +1922,10 @@ function TaskItem({
   isElaborating,
   isSendingToClaude,
   onSendToClaude,
+  isCheckingCompletion,
+  onCheckCompletion,
+  onApplyCompletionCheck,
+  onDiscardCompletionCheck,
   selectionMode = false,
   isSelected = false,
   onToggleSelection,
@@ -1830,6 +1953,10 @@ function TaskItem({
   isElaborating?: boolean;
   isSendingToClaude?: boolean;
   onSendToClaude?: (jobId: number, taskId: number) => void;
+  isCheckingCompletion?: boolean;
+  onCheckCompletion?: (task: Task) => void;
+  onApplyCompletionCheck?: (taskId: number) => Promise<void>;
+  onDiscardCompletionCheck?: (taskId: number) => Promise<void>;
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelection?: (taskId: number) => void;
@@ -2662,7 +2789,41 @@ function TaskItem({
                   )}
                 </Button>
               )}
+              {/* 完了チェックボタン (accepted/in_progress のみ) */}
+              {onCheckCompletion &&
+                !isApprovalOnlyTask(task.sourceType) &&
+                (task.status === "accepted" || task.status === "in_progress") &&
+                task.projectId && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onCheckCompletion(task)}
+                    disabled={isCheckingCompletion || task.completionCheckStatus === "pending"}
+                    title="コードベースから完了状況をチェック"
+                  >
+                    {isCheckingCompletion || task.completionCheckStatus === "pending" ? (
+                      <>
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        チェック中...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="mr-1 h-3 w-3" />
+                        完了チェック
+                      </>
+                    )}
+                  </Button>
+                )}
             </div>
+
+            {/* 完了チェック結果表示 */}
+            {task.completionCheckStatus === "completed" && task.pendingCompletionCheck && (
+              <CompletionCheckResultPanel
+                task={task}
+                onApply={onApplyCompletionCheck}
+                onDiscard={onDiscardCompletionCheck}
+              />
+            )}
 
             {/* 詳細: インライン編集 or マークダウン表示 */}
             {inlineEditing ? (
@@ -2907,5 +3068,90 @@ function TaskItem({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * 完了チェック結果表示パネル
+ */
+function CompletionCheckResultPanel({
+  task,
+  onApply,
+  onDiscard,
+}: {
+  task: Task;
+  onApply?: (taskId: number) => Promise<void>;
+  onDiscard?: (taskId: number) => Promise<void>;
+}) {
+  const result = task.pendingCompletionCheck as CompletionCheckResult | null;
+  if (!result) return null;
+
+  const confidencePercent = Math.round(result.confidence * 100);
+  const confidenceColor =
+    result.confidence >= 0.8
+      ? "text-green-600 dark:text-green-400"
+      : result.confidence >= 0.5
+        ? "text-yellow-600 dark:text-yellow-400"
+        : "text-red-600 dark:text-red-400";
+
+  return (
+    <div
+      className={`rounded-md border p-3 ${
+        result.completed
+          ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950"
+          : "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950"
+      }`}
+    >
+      <div className="mb-2 flex items-center gap-2">
+        {result.completed ? (
+          <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+        ) : (
+          <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+        )}
+        <span className="text-sm font-medium">
+          {result.completed ? "完了と判定されました" : "未完了と判定されました"}
+        </span>
+        <span className={`ml-auto text-xs ${confidenceColor}`}>確信度: {confidencePercent}%</span>
+      </div>
+
+      <p className="mb-2 text-sm text-muted-foreground">{result.reason}</p>
+
+      {result.evidence && (
+        <details className="mb-2">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            証拠を表示
+          </summary>
+          <pre className="mt-1 overflow-auto rounded bg-muted p-2 text-xs">{result.evidence}</pre>
+        </details>
+      )}
+
+      {result.referencedFiles && result.referencedFiles.length > 0 && (
+        <details className="mb-2">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            参照ファイル ({result.referencedFiles.length}件)
+          </summary>
+          <ul className="mt-1 list-inside list-disc text-xs text-muted-foreground">
+            {result.referencedFiles.map((file: string) => (
+              <li key={file}>{file}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      <div className="flex items-center gap-2">
+        {result.completed && onApply && (
+          <Button size="sm" onClick={() => onApply(task.id)}>
+            <Check className="mr-1 h-3 w-3" />
+            完了にする
+          </Button>
+        )}
+        {onDiscard && (
+          <Button size="sm" variant="outline" onClick={() => onDiscard(task.id)}>
+            <X className="mr-1 h-3 w-3" />
+            破棄
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }

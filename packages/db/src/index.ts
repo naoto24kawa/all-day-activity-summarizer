@@ -4,6 +4,9 @@ import * as schema from "./schema.js";
 
 export { schema };
 export type {
+  AiProcessingLog,
+  CalendarEvent,
+  CalendarQueueJob,
   ClaudeCodeMessage,
   ClaudeCodePath,
   ClaudeCodeQueueJob,
@@ -16,6 +19,8 @@ export type {
   GitHubQueueJob,
   Learning,
   Memo,
+  NewCalendarEvent,
+  NewCalendarQueueJob,
   NewClaudeCodeMessage,
   NewClaudeCodePath,
   NewClaudeCodeQueueJob,
@@ -489,6 +494,51 @@ export function createDatabase(dbPath: string) {
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_extraction_logs_unique ON extraction_logs(extraction_type, source_type, source_id);
+
+    -- Calendar Events table (Google Calendar イベント)
+    CREATE TABLE IF NOT EXISTS calendar_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      calendar_id TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      description TEXT,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      is_all_day INTEGER NOT NULL DEFAULT 0,
+      location TEXT,
+      attendees TEXT,
+      organizer TEXT,
+      conference_link TEXT,
+      status TEXT NOT NULL DEFAULT 'confirmed' CHECK(status IN ('confirmed', 'tentative', 'cancelled')),
+      is_read INTEGER NOT NULL DEFAULT 0,
+      project_id INTEGER,
+      synced_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_calendar_events_date ON calendar_events(date);
+    CREATE INDEX IF NOT EXISTS idx_calendar_events_calendar ON calendar_events(calendar_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_calendar_events_unique ON calendar_events(calendar_id, event_id);
+
+    -- Calendar Queue table (カレンダー同期ジョブキュー)
+    CREATE TABLE IF NOT EXISTS calendar_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_type TEXT NOT NULL CHECK(job_type IN ('fetch_events')),
+      calendar_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 3,
+      error_message TEXT,
+      locked_at TEXT,
+      run_after TEXT NOT NULL,
+      page_token TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_calendar_queue_status ON calendar_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_calendar_queue_run_after ON calendar_queue(run_after);
   `);
 
   // Migration: update evaluator_logs CHECK constraint to allow 'mixed' judgment
@@ -1384,6 +1434,70 @@ export function createDatabase(dbPath: string) {
         CREATE INDEX IF NOT EXISTS idx_ai_processing_logs_date ON ai_processing_logs(date);
         CREATE INDEX IF NOT EXISTS idx_ai_processing_logs_type ON ai_processing_logs(process_type);
         CREATE INDEX IF NOT EXISTS idx_ai_processing_logs_status ON ai_processing_logs(status);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: add 'someday' status to tasks CHECK constraint
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'",
+      )
+      .get();
+    if (row && !row.sql.includes("'someday'")) {
+      sqlite.exec(`
+        ALTER TABLE tasks RENAME TO tasks_old;
+        CREATE TABLE tasks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          slack_message_id INTEGER,
+          github_comment_id INTEGER,
+          memo_id INTEGER,
+          prompt_improvement_id INTEGER,
+          profile_suggestion_id INTEGER,
+          vocabulary_suggestion_id INTEGER,
+          project_id INTEGER,
+          source_type TEXT NOT NULL DEFAULT 'slack' CHECK(source_type IN ('slack', 'github', 'github-comment', 'memo', 'manual', 'prompt-improvement', 'profile-suggestion', 'vocabulary')),
+          title TEXT NOT NULL,
+          description TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected', 'in_progress', 'paused', 'completed', 'someday')),
+          priority TEXT CHECK(priority IN ('high', 'medium', 'low')),
+          confidence REAL,
+          due_date TEXT,
+          extracted_at TEXT NOT NULL,
+          accepted_at TEXT,
+          rejected_at TEXT,
+          started_at TEXT,
+          paused_at TEXT,
+          completed_at TEXT,
+          reject_reason TEXT,
+          pause_reason TEXT,
+          original_title TEXT,
+          original_description TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          work_type TEXT CHECK(work_type IN ('create', 'investigate', 'review', 'communicate', 'operate', 'learn', 'plan', 'maintain')),
+          similar_to_title TEXT,
+          similar_to_status TEXT,
+          similar_to_reason TEXT,
+          parent_id INTEGER REFERENCES tasks(id),
+          position INTEGER
+        );
+        INSERT INTO tasks SELECT * FROM tasks_old;
+        DROP TABLE tasks_old;
+        CREATE INDEX IF NOT EXISTS idx_tasks_date ON tasks(date);
+        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_slack_message ON tasks(slack_message_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_prompt_improvement ON tasks(prompt_improvement_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_profile_suggestion ON tasks(profile_suggestion_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_vocabulary_suggestion ON tasks(vocabulary_suggestion_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_github_comment ON tasks(github_comment_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_memo ON tasks(memo_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
       `);
     }
   } catch {

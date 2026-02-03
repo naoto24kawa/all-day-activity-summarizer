@@ -24,12 +24,13 @@ export const CLAUDE_CHAT_SIDEBAR_WIDTH = 450;
 /** アイコンの高さ + 余白 */
 const ICON_HEIGHT = 56 + 8; // h-14 + gap
 
-const STORAGE_KEY = "adas-chat-panel-open";
+const STORAGE_KEY_OPEN = "adas-chat-panel-open";
+const STORAGE_KEY_SIZE = "adas-chat-panel-size";
 
 /** LocalStorage から開閉状態を読み込む */
 function loadOpenState(): boolean {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(STORAGE_KEY_OPEN);
     if (saved !== null) {
       return saved === "true";
     }
@@ -39,10 +40,40 @@ function loadOpenState(): boolean {
   return false; // デフォルト: 閉じている
 }
 
+/** LocalStorage からサイズを読み込む */
+function loadSize(): { width: number; height: number } {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_SIZE);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (
+        typeof parsed.width === "number" &&
+        typeof parsed.height === "number" &&
+        parsed.width >= MIN_SIZE.width &&
+        parsed.height >= MIN_SIZE.height
+      ) {
+        return parsed;
+      }
+    }
+  } catch {
+    // LocalStorage アクセスエラーは無視
+  }
+  return DEFAULT_SIZE;
+}
+
 /** LocalStorage に開閉状態を保存 */
 function saveOpenState(isOpen: boolean): void {
   try {
-    localStorage.setItem(STORAGE_KEY, String(isOpen));
+    localStorage.setItem(STORAGE_KEY_OPEN, String(isOpen));
+  } catch {
+    // LocalStorage アクセスエラーは無視
+  }
+}
+
+/** LocalStorage にサイズを保存 */
+function saveSize(size: { width: number; height: number }): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_SIZE, JSON.stringify(size));
   } catch {
     // LocalStorage アクセスエラーは無視
   }
@@ -67,7 +98,12 @@ export function ClaudeChatPanel({
   const { messages, isStreaming, currentResponse, sendMessage, clearMessages } = useClaudeChat();
   const [isOpen, setIsOpen] = useState(loadOpenState);
   const [mode, setMode] = useState<ChatMode>(initialSidebar ? "sidebar" : "floating");
-  const [size, setSize] = useState(DEFAULT_SIZE);
+  const [size, setSize] = useState(loadSize);
+
+  // サイズ変更時に LocalStorage に保存
+  useEffect(() => {
+    saveSize(size);
+  }, [size]);
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -311,6 +347,7 @@ export function ClaudeChatPanel({
             </div>
           ) : (
             <div className="space-y-3">
+              {/* biome-ignore lint/suspicious/noArrayIndexKey: メッセージは追加のみで順序が固定 */}
               {messages.map((msg, index) => (
                 <MessageBubble key={index} role={msg.role} content={msg.content} />
               ))}
@@ -448,6 +485,7 @@ export function ClaudeChatPanel({
           </div>
         ) : (
           <div className="space-y-3">
+            {/* biome-ignore lint/suspicious/noArrayIndexKey: メッセージは追加のみで順序が固定 */}
             {messages.map((msg, index) => (
               <MessageBubble key={index} role={msg.role} content={msg.content} />
             ))}

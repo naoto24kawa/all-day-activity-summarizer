@@ -5,6 +5,7 @@
  */
 
 import {
+  Calendar,
   Github,
   Info,
   MessageSquare,
@@ -64,7 +65,14 @@ export function IntegrationsPanel() {
   }
 
   const handleToggle = async (
-    integration: "whisper" | "slack" | "github" | "claudeCode" | "evaluator" | "promptImprovement",
+    integration:
+      | "whisper"
+      | "slack"
+      | "github"
+      | "calendar"
+      | "claudeCode"
+      | "evaluator"
+      | "promptImprovement",
     enabled: boolean,
   ) => {
     try {
@@ -219,6 +227,29 @@ export function IntegrationsPanel() {
             disabled={updating}
           />
         </div>
+
+        {/* Google Calendar */}
+        {integrations.calendar && (
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="calendar-toggle" className="flex items-center gap-2 text-base">
+                <Calendar className="h-4 w-4" />
+                Google Calendar
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                {integrations.calendar.hasCredentials
+                  ? `カレンダーイベント取得 (${integrations.calendar.fetchIntervalMinutes}分間隔)`
+                  : "credentials.json を ~/.adas/ に配置してください"}
+              </p>
+            </div>
+            <Switch
+              id="calendar-toggle"
+              checked={integrations.calendar.enabled}
+              onCheckedChange={(checked) => handleToggle("calendar", checked)}
+              disabled={updating || !integrations.calendar.hasCredentials}
+            />
+          </div>
+        )}
 
         {/* Claude Code */}
         <div className="flex items-center justify-between">

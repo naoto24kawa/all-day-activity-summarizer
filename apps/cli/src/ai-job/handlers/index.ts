@@ -11,6 +11,7 @@ import { handleProfileAnalyze } from "./profile-analyze.js";
 import { handleSlackPriority } from "./slack-priority.js";
 import { handleSummarizeDaily, handleSummarizeTimes } from "./summarize.js";
 import { handleTaskCheckCompletion } from "./task-check-completion.js";
+import { handleTaskCheckCompletionIndividual } from "./task-check-completion-individual.js";
 import { handleTaskElaborate } from "./task-elaborate.js";
 import {
   handleTaskExtractGitHub,
@@ -32,8 +33,10 @@ export function registerAllHandlers(): void {
   registerJobHandler("task-extract-memo", handleTaskExtractMemo);
   // タスク詳細化
   registerJobHandler("task-elaborate", handleTaskElaborate);
-  // タスク完了チェック
+  // タスク完了チェック (一括)
   registerJobHandler("task-check-completion", handleTaskCheckCompletion);
+  // タスク完了チェック (個別)
+  registerJobHandler("task-check-completion-individual", handleTaskCheckCompletionIndividual);
   // 学び抽出 (claude-code/transcription/github-comment/slack-message)
   registerJobHandler("learning-extract", handleLearningExtract);
   // 用語抽出 (slack/github/claude-code/memo)

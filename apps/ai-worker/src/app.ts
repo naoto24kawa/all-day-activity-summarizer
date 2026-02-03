@@ -1,3 +1,4 @@
+import { setupFileLogger } from "@repo/core";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { timingMiddleware } from "./middleware/timing.js";
@@ -16,6 +17,10 @@ import { createMatchSlackChannelsRouter } from "./routes/match-slack-channels.js
 import { createSlackPriorityRouter } from "./routes/slack-priority.js";
 import { createSuggestMemoTagsRouter } from "./routes/suggest-memo-tags.js";
 import { createSummarizeRouter } from "./routes/summarize.js";
+
+// アプリモジュールがロードされた時点でファイルログを初期化
+// index.ts 経由でも app.ts 直接インポートでもログが有効になる
+setupFileLogger("ai-worker");
 
 export function createWorkerApp() {
   const app = new Hono();

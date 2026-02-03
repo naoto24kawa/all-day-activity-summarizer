@@ -600,7 +600,8 @@ export type TaskSourceType =
   | "merge"
   | "project-suggestion"
   | "server-log"
-  | "notion";
+  | "notion"
+  | "ai-processing-log";
 
 /** 承認のみで完了するタスクのソース種別 */
 export const APPROVAL_ONLY_SOURCE_TYPES: TaskSourceType[] = [
@@ -708,6 +709,9 @@ export interface Task {
   // GitHub Issue 連携
   githubIssueNumber: number | null; // 作成した Issue の番号
   githubIssueUrl: string | null; // 作成した Issue の URL
+  // 完了チェック関連
+  completionCheckStatus: CompletionCheckStatus | null; // 完了チェックステータス
+  pendingCompletionCheck: string | null; // JSON: CompletionCheckResult
   createdAt: string;
   updatedAt: string;
   // 用語タスク用: 抽出元ソース種別 (vocabulary suggestion から取得)
@@ -839,7 +843,24 @@ export interface TaskDependenciesResponse {
 // ========== タスク完了検知 型定義 ==========
 
 /** 完了検知ソース種別 */
-export type CompletionSource = "github" | "claude-code" | "slack" | "transcribe";
+export type CompletionSource = "github" | "claude-code";
+
+/** 完了チェックステータス */
+export type CompletionCheckStatus = "pending" | "completed" | "failed";
+
+/** 完了チェック結果 (pendingCompletionCheck に保存される JSON) */
+export interface CompletionCheckResult {
+  /** 完了しているか */
+  completed: boolean;
+  /** 確信度 (0.0-1.0) */
+  confidence: number;
+  /** 判定理由 */
+  reason: string;
+  /** 証拠 (コード箇所など) */
+  evidence?: string;
+  /** 参照したファイル */
+  referencedFiles?: string[];
+}
 
 /** タスク完了候補 */
 export interface TaskCompletionSuggestion {
@@ -858,8 +879,6 @@ export interface SuggestCompletionsResponse {
     total: number;
     github: number;
     claudeCode: number;
-    slack: number;
-    transcribe: number;
   };
 }
 
@@ -881,7 +900,7 @@ export interface CheckCompletionRequest {
     };
   };
   context: string;
-  source: "claude-code" | "slack" | "transcribe";
+  source: "claude-code";
 }
 
 /** Worker: 完了判定レスポンス */
@@ -1372,6 +1391,36 @@ export interface ChildTasksResponse {
   total: number;
 }
 
+// ========== 個別タスク完了チェック 型定義 ==========
+
+/** 完了チェック開始レスポンス (非同期) */
+export interface StartCompletionCheckResponse {
+  jobId: number;
+  status: "pending";
+}
+
+/** 完了チェック状態取得レスポンス */
+export interface CompletionCheckStatusResponse {
+  /** タスク ID */
+  taskId: number;
+  /** 完了チェックステータス */
+  status: CompletionCheckStatus | null;
+  /** ジョブ ID (pending 状態の場合) */
+  jobId: number | null;
+  /** ジョブステータス (pending 状態の場合) */
+  jobStatus: AIJobStatus | null;
+  /** 完了チェック結果 (completed 状態の場合) */
+  result: CompletionCheckResult | null;
+  /** エラーメッセージ (failed 状態の場合) */
+  errorMessage: string | null;
+}
+
+/** 完了チェック結果適用レスポンス */
+export interface ApplyCompletionCheckResponse {
+  /** 更新されたタスク */
+  task: Task;
+}
+
 // ========== AI Job Queue 型定義 ==========
 
 /** AIジョブタイプ */
@@ -1382,6 +1431,7 @@ export type AIJobType =
   | "task-extract-memo"
   | "task-elaborate"
   | "task-check-completion"
+  | "task-check-completion-individual"
   | "learning-extract"
   | "vocabulary-extract"
   | "vocabulary-generate-readings"

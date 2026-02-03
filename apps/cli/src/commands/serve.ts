@@ -4,6 +4,7 @@ import { createDatabase } from "@repo/db";
 import type { Command } from "commander";
 import consola from "consola";
 import { startAIJobScheduler } from "../ai-job/scheduler.js";
+import { startCalendarSystem } from "../calendar/scheduler.js";
 import { startClaudeCodeSystem } from "../claude-code/scheduler.js";
 import type { AdasConfig } from "../config.js";
 import { loadConfig } from "../config.js";
@@ -168,6 +169,12 @@ export function registerServeCommand(program: Command): void {
       const stopGitHub = await startGitHubSystem(db, config);
       if (stopGitHub) {
         consola.success("GitHub integration started");
+      }
+
+      // Start Calendar system if enabled
+      const stopCalendar = await startCalendarSystem(db, config);
+      if (stopCalendar) {
+        consola.success("Google Calendar integration started");
       }
 
       // Start Prompt Improvement scheduler
