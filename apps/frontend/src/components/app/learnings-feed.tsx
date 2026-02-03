@@ -527,47 +527,54 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
         }`}
       >
         {/* ヘッダー: タイトル + バッジ + 削除ボタン */}
-        <CollapsibleTrigger className="flex w-full items-start justify-between text-left">
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 mb-1">
-              <span className="font-medium text-sm truncate">{title}</span>
-              <Badge variant="outline" className="text-xs shrink-0">
-                {sourceInfo?.icon}
-                <span className="ml-1">{sourceInfo?.label || learning.sourceType}</span>
-              </Badge>
-              {projectName && (
-                <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200 shrink-0">
-                  <FolderGit2 className="mr-1 h-2 w-2" />
-                  {projectName}
+        <div className="flex w-full items-start justify-between">
+          {/* タイトル部分 - クリックで展開 */}
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex-1 min-w-0 text-left cursor-pointer hover:bg-muted/50 rounded -m-1 p-1 transition-colors"
+            >
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <span className="font-medium text-sm truncate">{title}</span>
+                <Badge variant="outline" className="text-xs shrink-0">
+                  {sourceInfo?.icon}
+                  <span className="ml-1">{sourceInfo?.label || learning.sourceType}</span>
                 </Badge>
-              )}
-              {learning.category && (
-                <Badge variant="secondary" className="text-xs shrink-0">
-                  {learning.category}
-                </Badge>
-              )}
-              {isDue && (
-                <Badge variant="destructive" className="text-xs shrink-0">
-                  Review due
-                </Badge>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3 w-3" />
-                {learning.date}
-              </span>
-              {learning.confidence !== null && (
-                <span>{Math.round(learning.confidence * 100)}% confidence</span>
-              )}
-              {tags.length > 0 && (
+                {projectName && (
+                  <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200 shrink-0">
+                    <FolderGit2 className="mr-1 h-2 w-2" />
+                    {projectName}
+                  </Badge>
+                )}
+                {learning.category && (
+                  <Badge variant="secondary" className="text-xs shrink-0">
+                    {learning.category}
+                  </Badge>
+                )}
+                {isDue && (
+                  <Badge variant="destructive" className="text-xs shrink-0">
+                    Review due
+                  </Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
-                  <Tag className="h-3 w-3" />
-                  {tags.length} tags
+                  <Calendar className="h-3 w-3" />
+                  {learning.date}
                 </span>
-              )}
-            </div>
-          </div>
+                {learning.confidence !== null && (
+                  <span>{Math.round(learning.confidence * 100)}% confidence</span>
+                )}
+                {tags.length > 0 && (
+                  <span className="flex items-center gap-1">
+                    <Tag className="h-3 w-3" />
+                    {tags.length} tags
+                  </span>
+                )}
+              </div>
+            </button>
+          </CollapsibleTrigger>
+          {/* アクションボタン (CollapsibleTrigger の外) */}
           <div className="flex items-center gap-1 ml-2 shrink-0">
             <Button
               variant="ghost"
@@ -587,10 +594,7 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
               variant="ghost"
               size="icon"
               className="h-6 w-6 text-muted-foreground hover:text-blue-500"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit();
-              }}
+              onClick={onEdit}
               title="編集"
             >
               <Pencil className="h-3 w-3" />
@@ -599,23 +603,24 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
               variant="ghost"
               size="icon"
               className="h-6 w-6 text-muted-foreground hover:text-destructive"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
+              onClick={onDelete}
               title="削除"
             >
               <Trash2 className="h-3 w-3" />
             </Button>
             {hasMoreContent && (
-              <ChevronDown
-                className={`h-4 w-4 text-muted-foreground transition-transform ${
-                  isOpen ? "rotate-180" : ""
-                }`}
-              />
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-6 w-6">
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition-transform ${
+                      isOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </Button>
+              </CollapsibleTrigger>
             )}
           </div>
-        </CollapsibleTrigger>
+        </div>
 
         {/* 展開時: Markdown コンテンツ + タグ詳細 + AI説明 */}
         <CollapsibleContent className="mt-3 space-y-3">

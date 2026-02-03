@@ -1,12 +1,14 @@
 import {
   Book,
   Check,
+  FolderKanban,
   Languages,
   Pencil,
   RefreshCw,
   Search,
   Sparkles,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -133,6 +135,42 @@ export function VocabularyPanel({ className }: VocabularyPanelProps) {
     }
   };
 
+  // 同期処理の状態
+  const [isSyncingSlackUsers, setIsSyncingSlackUsers] = useState(false);
+  const [isSyncingProjects, setIsSyncingProjects] = useState(false);
+
+  const handleSyncSlackUsers = async () => {
+    setIsSyncingSlackUsers(true);
+    try {
+      const result = (await postAdasApi("/api/vocabulary/sync/slack-users", {})) as {
+        added: number;
+        skipped: number;
+      };
+      console.log(`Synced Slack users: ${result.added} added, ${result.skipped} skipped`);
+      refresh();
+    } catch (err) {
+      console.error("Failed to sync Slack users:", err);
+    } finally {
+      setIsSyncingSlackUsers(false);
+    }
+  };
+
+  const handleSyncProjects = async () => {
+    setIsSyncingProjects(true);
+    try {
+      const result = (await postAdasApi("/api/vocabulary/sync/projects", {})) as {
+        added: number;
+        skipped: number;
+      };
+      console.log(`Synced projects: ${result.added} added, ${result.skipped} skipped`);
+      refresh();
+    } catch (err) {
+      console.error("Failed to sync projects:", err);
+    } finally {
+      setIsSyncingProjects(false);
+    }
+  };
+
   const handleAdd = async () => {
     if (!newTerm.trim()) return;
 
@@ -243,6 +281,26 @@ export function VocabularyPanel({ className }: VocabularyPanelProps) {
             </Badge>
           </CardTitle>
           <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncSlackUsers}
+              disabled={isSyncingSlackUsers}
+              title="Slack ユーザーを同期"
+            >
+              <Users className={`mr-1 h-3 w-3 ${isSyncingSlackUsers ? "animate-spin" : ""}`} />
+              {isSyncingSlackUsers ? "..." : "Users"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncProjects}
+              disabled={isSyncingProjects}
+              title="プロジェクトを同期"
+            >
+              <FolderKanban className={`mr-1 h-3 w-3 ${isSyncingProjects ? "animate-spin" : ""}`} />
+              {isSyncingProjects ? "..." : "Projects"}
+            </Button>
             <Button
               variant="outline"
               size="sm"

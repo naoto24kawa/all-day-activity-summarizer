@@ -333,6 +333,17 @@ export function BulkElaborateDialog({
     });
   };
 
+  // 再試行ハンドラー (すべての早期リターンの前に定義)
+  const handleRetryPolling = useCallback(() => {
+    setError(null);
+    setPollingErrorCount(0);
+    // ポーリングを再開
+    if (pollingTaskIds.length > 0 && !pollingIntervalRef.current) {
+      pollStatus();
+      pollingIntervalRef.current = setInterval(pollStatus, POLLING_INTERVAL);
+    }
+  }, [pollingTaskIds, pollStatus]);
+
   // Cmd+Enter で実行
   useEffect(() => {
     if (!open) return;
@@ -443,17 +454,6 @@ export function BulkElaborateDialog({
       </Dialog>
     );
   }
-
-  // 再試行ハンドラー
-  const handleRetryPolling = useCallback(() => {
-    setError(null);
-    setPollingErrorCount(0);
-    // ポーリングを再開
-    if (pollingTaskIds.length > 0 && !pollingIntervalRef.current) {
-      pollStatus();
-      pollingIntervalRef.current = setInterval(pollStatus, POLLING_INTERVAL);
-    }
-  }, [pollingTaskIds, pollStatus]);
 
   // ポーリングフェーズ
   if (phase === "polling") {

@@ -247,5 +247,134 @@ export function createVocabularyRouter(db: AdasDatabase, _config?: AdasConfig) {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // 同期エンドポイント (Slack Users, Projects → Vocabulary)
+  // ---------------------------------------------------------------------------
+
+  // Slack Users を vocabulary に同期
+  router.post("/sync/slack-users", (c) => {
+    // Slack メッセージからユニークユーザーを取得
+    const usersFromMessages = db
+      .select({
+        userId: schema.slackMessages.userId,
+        userName: schema.slackMessages.userName,
+      })
+      .from(schema.slackMessages)
+      .groupBy(schema.slackMessages.userId)
+      .all();
+
+    // slack_users テーブルのマッピングを取得
+    const userMappings = db.select().from(schema.slackUsers).all();
+    const mappingMap = new Map(userMappings.map((u) => [u.userId, u]));
+
+    // 既存の vocabulary を取得
+    const existingTerms = new Set(
+      db
+        .select({ term: schema.vocabulary.term })
+        .from(schema.vocabulary)
+        .all()
+        .map((v) => v.term.toLowerCase()),
+    );
+
+    let addedCount = 0;
+    let skippedCount = 0;
+
+    for (const user of usersFromMessages) {
+      const mapping = mappingMap.get(user.userId);
+      // displayName を優先、なければ slackName/userName
+      const name = mapping?.displayName || mapping?.slackName || user.userName;
+
+      if (!name || name.trim() === "") {
+        skippedCount++;
+        continue;
+      }
+
+      const trimmedName = name.trim();
+
+      // 既に登録済みならスキップ
+      if (existingTerms.has(trimmedName.toLowerCase())) {
+        skippedCount++;
+        continue;
+      }
+
+      // vocabulary に追加
+      db.insert(schema.vocabulary)
+        .values({
+          term: trimmedName,
+          reading: null,
+          category: "person",
+          source: "manual",
+        })
+        .run();
+
+      existingTerms.add(trimmedName.toLowerCase());
+      addedCount++;
+    }
+
+    return c.json({
+      success: true,
+      added: addedCount,
+      skipped: skippedCount,
+      message: `${addedCount}件の Slack ユーザーを vocabulary に追加しました`,
+    });
+  });
+
+  // Projects を vocabulary に同期
+  router.post("/sync/projects", (c) => {
+    // アクティブなプロジェクトを取得
+    const projects = db
+      .select()
+      .from(schema.projects)
+      .where(eq(schema.projects.isActive, true))
+      .all();
+
+    // 既存の vocabulary を取得
+    const existingTerms = new Set(
+      db
+        .select({ term: schema.vocabulary.term })
+        .from(schema.vocabulary)
+        .all()
+        .map((v) => v.term.toLowerCase()),
+    );
+
+    let addedCount = 0;
+    let skippedCount = 0;
+
+    for (const project of projects) {
+      const name = project.name?.trim();
+
+      if (!name || name === "") {
+        skippedCount++;
+        continue;
+      }
+
+      // 既に登録済みならスキップ
+      if (existingTerms.has(name.toLowerCase())) {
+        skippedCount++;
+        continue;
+      }
+
+      // vocabulary に追加
+      db.insert(schema.vocabulary)
+        .values({
+          term: name,
+          reading: null,
+          category: "project",
+          source: "manual",
+        })
+        .run();
+
+      existingTerms.add(name.toLowerCase());
+      addedCount++;
+    }
+
+    return c.json({
+      success: true,
+      added: addedCount,
+      skipped: skippedCount,
+      message: `${addedCount}件のプロジェクトを vocabulary に追加しました`,
+    });
+  });
+
   return router;
 }
