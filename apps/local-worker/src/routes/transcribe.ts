@@ -1,9 +1,8 @@
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { getScriptPath } from "@repo/core";
+import { consola, getScriptPath } from "@repo/core";
 import type { RpcTranscribeConfig, RpcTranscribeResponse } from "@repo/types";
-import consola from "consola";
 import { Hono } from "hono";
 import { withProcessingLog } from "../utils/log-processing.js";
 

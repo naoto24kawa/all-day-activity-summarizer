@@ -1,3 +1,6 @@
+// consola インスタンスを共有するためにエクスポート
+// setupFileLogger で addReporter した consola を使う必要がある
+export { default as consola } from "consola";
 export type { RunClaudeOptions } from "./claude-runner.js";
 export { getPromptFilePath, runClaude } from "./claude-runner.js";
 export { getDateString, getTodayDateString } from "./date.js";

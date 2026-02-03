@@ -4,7 +4,7 @@
  * kuromoji.js を使用してテキストから名詞・固有名詞を抽出
  */
 
-import consola from "consola";
+import { consola } from "@repo/core";
 import { Hono } from "hono";
 import type { IpadicFeatures, Tokenizer } from "kuromoji";
 import kuromoji from "kuromoji";

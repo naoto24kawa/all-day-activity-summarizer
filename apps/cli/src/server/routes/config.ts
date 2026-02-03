@@ -11,6 +11,7 @@ interface IntegrationsUpdateBody {
   claudeCode?: { enabled: boolean };
   evaluator?: { enabled: boolean };
   promptImprovement?: { enabled: boolean };
+  aiProcessingLogExtract?: { enabled?: boolean; intervalMinutes?: number };
   summarizer?: {
     provider?: "claude" | "lmstudio";
     dailyScheduleHour?: number;
@@ -57,6 +58,7 @@ const INTEGRATION_KEYS = [
   "claudeCode",
   "evaluator",
   "promptImprovement",
+  "aiProcessingLogExtract",
 ] as const;
 
 /**
@@ -232,6 +234,31 @@ function updateAIProviderConfig(
 }
 
 /**
+ * AI Processing Log Extract 設定を更新
+ */
+function updateAiProcessingLogExtractConfig(
+  config: AdasConfig,
+  aiProcessingLogExtract: IntegrationsUpdateBody["aiProcessingLogExtract"],
+): boolean {
+  if (!aiProcessingLogExtract) return false;
+
+  let updated = false;
+
+  if (aiProcessingLogExtract.enabled !== undefined) {
+    config.aiProcessingLogExtract.enabled = aiProcessingLogExtract.enabled;
+    updated = true;
+  }
+  if (aiProcessingLogExtract.intervalMinutes !== undefined) {
+    // 0 以上でバリデーション (0 = 無効)
+    const interval = Math.max(0, aiProcessingLogExtract.intervalMinutes);
+    config.aiProcessingLogExtract.intervalMinutes = interval;
+    updated = true;
+  }
+
+  return updated;
+}
+
+/**
  * Slack キーワード設定を更新
  */
 function updateSlackKeywordsConfig(
@@ -300,6 +327,10 @@ export function createConfigRouter() {
         enabled: config.promptImprovement.enabled,
         badFeedbackThreshold: config.promptImprovement.badFeedbackThreshold,
       },
+      aiProcessingLogExtract: {
+        enabled: config.aiProcessingLogExtract.enabled,
+        intervalMinutes: config.aiProcessingLogExtract.intervalMinutes,
+      },
       summarizer: {
         provider: config.summarizer.provider,
         dailyScheduleHour: config.summarizer.dailyScheduleHour ?? 23,
@@ -343,13 +374,18 @@ export function createConfigRouter() {
     const rateLimitUpdated = updateRateLimitConfig(config, body.rateLimit);
     const aiProviderUpdated = updateAIProviderConfig(config, body.aiProvider);
     const slackKeywordsUpdated = updateSlackKeywordsConfig(config, body.slackKeywords);
+    const aiLogExtractUpdated = updateAiProcessingLogExtractConfig(
+      config,
+      body.aiProcessingLogExtract,
+    );
     const updated =
       enabledUpdated ||
       summarizerUpdated ||
       taskElaborationUpdated ||
       rateLimitUpdated ||
       aiProviderUpdated ||
-      slackKeywordsUpdated;
+      slackKeywordsUpdated ||
+      aiLogExtractUpdated;
 
     if (updated) {
       saveConfig(config);
@@ -367,6 +403,10 @@ export function createConfigRouter() {
         claudeCode: { enabled: config.claudeCode.enabled },
         evaluator: { enabled: config.evaluator.enabled },
         promptImprovement: { enabled: config.promptImprovement.enabled },
+        aiProcessingLogExtract: {
+          enabled: config.aiProcessingLogExtract.enabled,
+          intervalMinutes: config.aiProcessingLogExtract.intervalMinutes,
+        },
         summarizer: {
           provider: config.summarizer.provider,
           dailyScheduleHour: config.summarizer.dailyScheduleHour ?? 23,

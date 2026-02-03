@@ -4,8 +4,8 @@
  * Worker ルートから CLI Server にログを送信するヘルパー
  */
 
+import { consola } from "@repo/core";
 import type { AiProcessType, CreateAiProcessingLogRequest } from "@repo/types";
-import consola from "consola";
 
 /**
  * CLI Server の URL を環境変数から取得

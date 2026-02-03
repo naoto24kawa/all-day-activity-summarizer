@@ -9,7 +9,6 @@ import { AiProcessingLogPanel } from "./ai-processing-log-panel";
 import { AISettingsPanel } from "./ai-settings-panel";
 import { ClaudeChatPanel } from "./claude-chat-panel";
 import { ClaudeCodeFeed } from "./claude-code-feed";
-import { EvaluatorLogPanel } from "./evaluator-log-panel";
 import { GitHubFeed } from "./github-feed";
 import { HeaderControls } from "./header-controls";
 import { IntegrationsPanel } from "./integrations-panel";
@@ -268,7 +267,6 @@ export function Dashboard() {
                   <div className="space-y-4">
                     <AiProcessingLogPanel />
                     <ServerLogsPanel />
-                    <EvaluatorLogPanel />
                   </div>
                 </TabsContent>
                 <TabsContent value="settings" className="min-h-0 flex-1 overflow-auto">

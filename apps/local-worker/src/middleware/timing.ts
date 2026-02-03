@@ -1,4 +1,4 @@
-import consola from "consola";
+import { consola } from "@repo/core";
 import type { Context, Next } from "hono";
 
 /**

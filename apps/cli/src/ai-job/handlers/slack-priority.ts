@@ -77,6 +77,21 @@ export async function handleSlackPriority(
     };
   }
 
+  // テキストが空の場合はデフォルト優先度を設定
+  if (!message.text || message.text.trim() === "") {
+    const defaultPriority = "low";
+    db.update(schema.slackMessages)
+      .set({ priority: defaultPriority })
+      .where(eq(schema.slackMessages.id, messageId))
+      .run();
+
+    return {
+      success: true,
+      resultSummary: `テキストが空のためデフォルト優先度を設定: ${defaultPriority}`,
+      data: { priority: defaultPriority },
+    };
+  }
+
   // Worker に優先度判定をリクエスト
   const workerUrl = config.worker.url;
   const request: RpcSlackPriorityRequest = {

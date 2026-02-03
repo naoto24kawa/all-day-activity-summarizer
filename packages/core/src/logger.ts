@@ -64,10 +64,14 @@ export function setupFileLogger(source: LogSource = "serve"): void {
         .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
         .join(" ");
       const line = `${timestamp} ${level} ${args}\n`;
+      const filePath = getLogFilePath(currentSource);
+      // デバッグ: reporter が呼ばれたことを確認
+      console.log(`[setupFileLogger/reporter] writing to ${filePath}: ${line.substring(0, 50)}...`);
       try {
-        appendFileSync(getLogFilePath(currentSource), line);
-      } catch {
-        // ログ書き込み失敗時はサイレントに無視(コンソール出力は継続)
+        appendFileSync(filePath, line);
+      } catch (err) {
+        // デバッグ: エラーを出力
+        console.error(`[setupFileLogger/reporter] write error:`, err);
       }
     },
   });

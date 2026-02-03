@@ -1,5 +1,4 @@
-import { setupFileLogger } from "@repo/core";
-import consola from "consola";
+import { consola, setupFileLogger } from "@repo/core";
 import { createLocalWorkerApp } from "./app.js";
 
 setupFileLogger("local-worker");

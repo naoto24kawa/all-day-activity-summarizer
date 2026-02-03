@@ -107,6 +107,9 @@ export interface IntegrationsConfig {
   promptImprovement: IntegrationStatus & {
     badFeedbackThreshold: number;
   };
+  aiProcessingLogExtract: IntegrationStatus & {
+    intervalMinutes: number;
+  };
   summarizer: SummarizerConfig;
   taskElaboration: TaskElaborationConfig;
   rateLimit: RateLimitConfig;
@@ -128,6 +131,7 @@ interface UpdateIntegrationsResponse {
     claudeCode: IntegrationStatus;
     evaluator: IntegrationStatus;
     promptImprovement: IntegrationStatus;
+    aiProcessingLogExtract: IntegrationStatus & { intervalMinutes: number };
     summarizer: SummarizerConfig;
     taskElaboration: TaskElaborationConfig;
     rateLimit: { enabled: boolean; limits: RateLimitLimits };
@@ -166,7 +170,8 @@ export function useConfig() {
         | "calendar"
         | "claudeCode"
         | "evaluator"
-        | "promptImprovement",
+        | "promptImprovement"
+        | "aiProcessingLogExtract",
       enabled: boolean,
     ) => {
       try {
@@ -344,6 +349,38 @@ export function useConfig() {
     }
   }, []);
 
+  const updateAiProcessingLogExtractConfig = useCallback(
+    async (config: { enabled?: boolean; intervalMinutes?: number }) => {
+      try {
+        setUpdating(true);
+        setError(null);
+        const body = { aiProcessingLogExtract: config };
+        const data = await patchAdasApi<UpdateIntegrationsResponse>(
+          "/api/config/integrations",
+          body,
+        );
+
+        // ローカル状態を更新
+        setIntegrations((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            aiProcessingLogExtract: data.integrations.aiProcessingLogExtract,
+          };
+        });
+
+        return data;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "設定の更新に失敗しました";
+        setError(message);
+        throw err;
+      } finally {
+        setUpdating(false);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     fetchConfig();
   }, [fetchConfig]);
@@ -359,5 +396,6 @@ export function useConfig() {
     updateRateLimitConfig,
     updateAIProviderConfig,
     updateSlackKeywords,
+    updateAiProcessingLogExtractConfig,
   };
 }

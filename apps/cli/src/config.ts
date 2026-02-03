@@ -60,6 +60,10 @@ export interface AdasConfig {
     enabled: boolean;
     autoApplyPatterns: boolean;
   };
+  aiProcessingLogExtract: {
+    enabled: boolean;
+    intervalMinutes: number; // 抽出間隔 (分)。0 = 無効
+  };
   worker: {
     url: string;
     timeout: number;
@@ -177,6 +181,10 @@ const defaultConfig: AdasConfig = {
   evaluator: {
     enabled: true,
     autoApplyPatterns: true,
+  },
+  aiProcessingLogExtract: {
+    enabled: true,
+    intervalMinutes: 60, // 1時間ごと
   },
   worker: {
     url: "http://localhost:3100",
@@ -332,6 +340,10 @@ export function loadConfig(): AdasConfig {
     audio: { ...defaultConfig.audio, ...userConfig.audio },
     server: { ...defaultConfig.server, ...userConfig.server },
     evaluator: { ...defaultConfig.evaluator, ...userConfig.evaluator },
+    aiProcessingLogExtract: {
+      ...defaultConfig.aiProcessingLogExtract,
+      ...userConfig.aiProcessingLogExtract,
+    },
     worker: { ...defaultConfig.worker, ...userConfig.worker },
     localWorker: { ...defaultConfig.localWorker, ...userConfig.localWorker },
     promptImprovement: { ...defaultConfig.promptImprovement, ...userConfig.promptImprovement },

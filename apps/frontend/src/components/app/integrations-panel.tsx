@@ -5,6 +5,7 @@
  */
 
 import {
+  AlertTriangle,
   Calendar,
   Github,
   Info,
@@ -28,8 +29,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useConfig } from "@/hooks/use-config";
 
 export function IntegrationsPanel() {
-  const { integrations, loading, error, updating, updateIntegration, updateSlackKeywords } =
-    useConfig();
+  const {
+    integrations,
+    loading,
+    error,
+    updating,
+    updateIntegration,
+    updateSlackKeywords,
+    updateAiProcessingLogExtractConfig,
+  } = useConfig();
   const [newKeyword, setNewKeyword] = useState("");
 
   if (loading) {
@@ -72,7 +80,8 @@ export function IntegrationsPanel() {
       | "calendar"
       | "claudeCode"
       | "evaluator"
-      | "promptImprovement",
+      | "promptImprovement"
+      | "aiProcessingLogExtract",
     enabled: boolean,
   ) => {
     try {
@@ -306,6 +315,47 @@ export function IntegrationsPanel() {
             onCheckedChange={(checked) => handleToggle("promptImprovement", checked)}
             disabled={updating}
           />
+        </div>
+
+        {/* AI Processing Log Extract */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="ailog-toggle" className="flex items-center gap-2 text-base">
+                <AlertTriangle className="h-4 w-4" />
+                AI Processing Log Extract
+              </Label>
+              <p className="text-sm text-muted-foreground">AI 処理エラーからタスク自動抽出</p>
+            </div>
+            <Switch
+              id="ailog-toggle"
+              checked={integrations.aiProcessingLogExtract.enabled}
+              onCheckedChange={(checked) => handleToggle("aiProcessingLogExtract", checked)}
+              disabled={updating}
+            />
+          </div>
+
+          {/* 間隔設定 */}
+          {integrations.aiProcessingLogExtract.enabled && (
+            <div className="ml-6 space-y-2 border-l-2 border-muted pl-4">
+              <Label className="text-sm text-muted-foreground">抽出間隔 (分)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  max={1440}
+                  value={integrations.aiProcessingLogExtract.intervalMinutes}
+                  onChange={(e) => {
+                    const value = Math.max(0, Math.min(1440, Number(e.target.value) || 0));
+                    updateAiProcessingLogExtractConfig({ intervalMinutes: value });
+                  }}
+                  className="h-8 w-20"
+                  disabled={updating}
+                />
+                <span className="text-xs text-muted-foreground">(0 = 無効)</span>
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

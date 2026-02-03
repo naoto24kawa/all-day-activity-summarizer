@@ -4,7 +4,7 @@
  * kuromoji.js を使用して用語から読み仮名を取得
  */
 
-import consola from "consola";
+import { consola } from "@repo/core";
 import { Hono } from "hono";
 import type { IpadicFeatures, Tokenizer } from "kuromoji";
 import kuromoji from "kuromoji";

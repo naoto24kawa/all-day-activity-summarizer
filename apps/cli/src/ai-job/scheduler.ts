@@ -17,7 +17,6 @@ import { processJob } from "./worker.js";
 
 const POLL_INTERVAL_MS = 10 * 1000; // 10秒
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24時間
-const AI_LOG_EXTRACT_INTERVAL_MS = 60 * 60 * 1000; // 1時間
 
 /** ジョブ完了リスナー型 */
 export type JobCompletedListener = (
@@ -133,19 +132,28 @@ export function startAIJobScheduler(db: AdasDatabase, config: AdasConfig): () =>
     }
   }, CLEANUP_INTERVAL_MS);
 
-  // AI Processing Log からのタスク抽出タイマー (1時間ごと)
-  const aiLogExtractInterval = setInterval(() => {
-    try {
-      const result = extractTasksFromAiProcessingLogs(db, {});
-      if (result.extracted > 0) {
-        consola.info(
-          `[ai-job] Extracted ${result.extracted} tasks from AI processing logs (${result.processed} processed, ${result.skipped} skipped)`,
-        );
+  // AI Processing Log からのタスク抽出タイマー
+  let aiLogExtractInterval: ReturnType<typeof setInterval> | null = null;
+  const aiLogExtractConfig = config.aiProcessingLogExtract;
+
+  if (aiLogExtractConfig.enabled && aiLogExtractConfig.intervalMinutes > 0) {
+    const intervalMs = aiLogExtractConfig.intervalMinutes * 60 * 1000;
+    aiLogExtractInterval = setInterval(() => {
+      try {
+        const result = extractTasksFromAiProcessingLogs(db, {});
+        if (result.extracted > 0) {
+          consola.info(
+            `[ai-job] Extracted ${result.extracted} tasks from AI processing logs (${result.processed} processed, ${result.skipped} skipped)`,
+          );
+        }
+      } catch (err) {
+        consola.error("[ai-job] AI log extract error:", err);
       }
-    } catch (err) {
-      consola.error("[ai-job] AI log extract error:", err);
-    }
-  }, AI_LOG_EXTRACT_INTERVAL_MS);
+    }, intervalMs);
+    consola.info(
+      `[ai-job] AI Processing Log extract enabled (every ${aiLogExtractConfig.intervalMinutes} min)`,
+    );
+  }
 
   // 初回クリーンアップを実行
   try {
@@ -170,7 +178,9 @@ export function startAIJobScheduler(db: AdasDatabase, config: AdasConfig): () =>
   return () => {
     clearInterval(pollInterval);
     clearInterval(cleanupInterval);
-    clearInterval(aiLogExtractInterval);
+    if (aiLogExtractInterval) {
+      clearInterval(aiLogExtractInterval);
+    }
     consola.info("[ai-job] AI Job scheduler stopped");
   };
 }
