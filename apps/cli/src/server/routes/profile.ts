@@ -28,6 +28,10 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
       db.insert(schema.userProfile)
         .values({
           id: 1,
+          displayName: null,
+          slackUserId: null,
+          githubUsername: null,
+          responsibilities: null,
           experienceYears: null,
           specialties: null,
           knownTechnologies: null,
@@ -51,6 +55,10 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
     const body = await c.req.json<UpdateProfileRequest>();
 
     const updateData: Partial<{
+      displayName: string | null;
+      slackUserId: string | null;
+      githubUsername: string | null;
+      responsibilities: string | null;
       experienceYears: number | null;
       specialties: string | null;
       knownTechnologies: string | null;
@@ -60,6 +68,25 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
       updatedAt: new Date().toISOString(),
     };
 
+    // 基本情報
+    if (body.displayName !== undefined) {
+      updateData.displayName = body.displayName;
+    }
+
+    if (body.slackUserId !== undefined) {
+      updateData.slackUserId = body.slackUserId;
+    }
+
+    if (body.githubUsername !== undefined) {
+      updateData.githubUsername = body.githubUsername;
+    }
+
+    // 役割・責任
+    if (body.responsibilities !== undefined) {
+      updateData.responsibilities = JSON.stringify(body.responsibilities);
+    }
+
+    // 技術スキル
     if (body.experienceYears !== undefined) {
       updateData.experienceYears = body.experienceYears;
     }
@@ -83,6 +110,10 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
       db.insert(schema.userProfile)
         .values({
           id: 1,
+          displayName: updateData.displayName ?? null,
+          slackUserId: updateData.slackUserId ?? null,
+          githubUsername: updateData.githubUsername ?? null,
+          responsibilities: updateData.responsibilities ?? null,
           experienceYears: updateData.experienceYears ?? null,
           specialties: updateData.specialties ?? null,
           knownTechnologies: updateData.knownTechnologies ?? null,
@@ -164,6 +195,7 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
 
     const now = new Date().toISOString();
 
+    // 数値フィールド
     if (suggestion.field === "experienceYears") {
       db.update(schema.userProfile)
         .set({
@@ -172,15 +204,25 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
         })
         .where(eq(schema.userProfile.id, 1))
         .run();
-    } else {
-      // JSON配列フィールド (specialties, knownTechnologies, learningGoals)
-      const fieldMap: Record<string, keyof typeof profile> = {
+    }
+    // 単一値フィールド (displayName, slackUserId, githubUsername)
+    else if (["displayName", "slackUserId", "githubUsername"].includes(suggestion.field)) {
+      const updateObj: Record<string, string> = {
+        [suggestion.field]: suggestion.value,
+        updatedAt: now,
+      };
+      db.update(schema.userProfile).set(updateObj).where(eq(schema.userProfile.id, 1)).run();
+    }
+    // JSON配列フィールド
+    else {
+      const arrayFieldMap: Record<string, keyof typeof profile> = {
+        responsibilities: "responsibilities",
         specialties: "specialties",
         knownTechnologies: "knownTechnologies",
         learningGoals: "learningGoals",
       };
 
-      const fieldKey = fieldMap[suggestion.field];
+      const fieldKey = arrayFieldMap[suggestion.field];
       if (fieldKey) {
         const currentValue = profile[fieldKey] as string | null;
         const currentArray: string[] = currentValue ? JSON.parse(currentValue) : [];
@@ -305,6 +347,10 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
  * プロフィール情報を取得するヘルパー関数 (他モジュールから使用)
  */
 export function getUserProfile(db: AdasDatabase): {
+  displayName?: string;
+  slackUserId?: string;
+  githubUsername?: string;
+  responsibilities?: string[];
   experienceYears?: number;
   specialties?: string[];
   knownTechnologies?: string[];
@@ -317,6 +363,10 @@ export function getUserProfile(db: AdasDatabase): {
   }
 
   return {
+    displayName: profile.displayName ?? undefined,
+    slackUserId: profile.slackUserId ?? undefined,
+    githubUsername: profile.githubUsername ?? undefined,
+    responsibilities: profile.responsibilities ? JSON.parse(profile.responsibilities) : undefined,
     experienceYears: profile.experienceYears ?? undefined,
     specialties: profile.specialties ? JSON.parse(profile.specialties) : undefined,
     knownTechnologies: profile.knownTechnologies

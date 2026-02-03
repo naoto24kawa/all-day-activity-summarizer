@@ -33,6 +33,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAIJobs } from "@/hooks/use-ai-jobs";
 import {
@@ -112,76 +119,114 @@ interface FilterBarProps {
   stats: LearningsStats;
   sourceFilter: LearningSourceType | null;
   categoryFilter: string | null;
+  projectFilter: number | "all" | "none";
+  projects: Project[];
+  projectCount: Map<number | "none", number>;
   onSourceFilterChange: (filter: LearningSourceType | null) => void;
   onCategoryFilterChange: (filter: string | null) => void;
+  onProjectFilterChange: (filter: number | "all" | "none") => void;
 }
 
 function FilterBar({
   stats,
   sourceFilter,
   categoryFilter,
+  projectFilter,
+  projects,
+  projectCount,
   onSourceFilterChange,
   onCategoryFilterChange,
+  onProjectFilterChange,
 }: FilterBarProps) {
   const sourceTypes = Object.entries(stats.bySourceType).sort((a, b) => b[1] - a[1]);
   const categories = Object.entries(stats.byCategory).sort((a, b) => b[1] - a[1]);
+  const projectsWithLearnings = projects.filter(
+    (p) => projectCount.has(p.id) && (projectCount.get(p.id) ?? 0) > 0,
+  );
+
+  const hasFilters =
+    sourceTypes.length > 0 || categories.length > 0 || projectsWithLearnings.length > 0;
+
+  if (!hasFilters) return null;
 
   return (
-    <>
-      {sourceTypes.length > 0 && (
-        <div className="shrink-0 border-b px-6 py-2">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={sourceFilter === null ? "default" : "outline"}
-              size="sm"
-              onClick={() => onSourceFilterChange(null)}
-            >
-              All Sources
-            </Button>
-            {sourceTypes.map(([source, count]) => {
-              const info = SOURCE_TYPE_LABELS[source as LearningSourceType];
-              return (
-                <Button
-                  key={source}
-                  variant={sourceFilter === source ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => onSourceFilterChange(source as LearningSourceType)}
-                >
-                  {info?.icon}
-                  <span className="ml-1">
+    <div className="shrink-0 border-b px-6 py-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Source Filter */}
+        {sourceTypes.length > 0 && (
+          <Select
+            value={sourceFilter ?? "all"}
+            onValueChange={(value) =>
+              onSourceFilterChange(value === "all" ? null : (value as LearningSourceType))
+            }
+          >
+            <SelectTrigger className="h-7 w-auto min-w-[100px] text-xs">
+              <SelectValue placeholder="ソース" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全ソース ({stats.total})</SelectItem>
+              {sourceTypes.map(([source, count]) => {
+                const info = SOURCE_TYPE_LABELS[source as LearningSourceType];
+                return (
+                  <SelectItem key={source} value={source}>
                     {info?.label || source} ({count})
-                  </span>
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        )}
 
-      {categories.length > 0 && (
-        <div className="shrink-0 border-b px-6 py-2">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={categoryFilter === null ? "default" : "outline"}
-              size="sm"
-              onClick={() => onCategoryFilterChange(null)}
-            >
-              All Categories
-            </Button>
-            {categories.map(([category, count]) => (
-              <Button
-                key={category}
-                variant={categoryFilter === category ? "default" : "outline"}
-                size="sm"
-                onClick={() => onCategoryFilterChange(category)}
-              >
-                {category} ({count})
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-    </>
+        {/* Category Filter */}
+        {categories.length > 0 && (
+          <Select
+            value={categoryFilter ?? "all"}
+            onValueChange={(value) => onCategoryFilterChange(value === "all" ? null : value)}
+          >
+            <SelectTrigger className="h-7 w-auto min-w-[110px] text-xs">
+              <SelectValue placeholder="カテゴリ" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全カテゴリ</SelectItem>
+              {categories.map(([category, count]) => (
+                <SelectItem key={category} value={category}>
+                  {category} ({count})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {/* Project Filter */}
+        {projectsWithLearnings.length > 0 && (
+          <Select
+            value={String(projectFilter)}
+            onValueChange={(value) => {
+              if (value === "all" || value === "none") {
+                onProjectFilterChange(value);
+              } else {
+                onProjectFilterChange(Number(value));
+              }
+            }}
+          >
+            <SelectTrigger className="h-7 w-auto min-w-[120px] text-xs">
+              <SelectValue placeholder="プロジェクト" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全プロジェクト</SelectItem>
+              {projectsWithLearnings.map((project) => (
+                <SelectItem key={project.id} value={String(project.id)}>
+                  {project.name} ({projectCount.get(project.id) ?? 0})
+                </SelectItem>
+              ))}
+              {(projectCount.get("none") ?? 0) > 0 && (
+                <SelectItem value="none">未分類 ({projectCount.get("none")})</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -236,11 +281,6 @@ export function LearningsFeed({ className }: LearningsFeedProps) {
       projectCount.set(learning.projectId, (projectCount.get(learning.projectId) ?? 0) + 1);
     }
   }
-
-  // Get projects that have learnings
-  const projectsWithLearnings = projects.filter(
-    (p) => projectCount.has(p.id) && (projectCount.get(p.id) ?? 0) > 0,
-  );
 
   // 非同期版: ジョブをキューに登録 (結果はSSE通知で受け取る)
   const handleExtractAll = async () => {
@@ -409,44 +449,13 @@ export function LearningsFeed({ className }: LearningsFeedProps) {
         stats={stats}
         sourceFilter={sourceFilter}
         categoryFilter={categoryFilter}
+        projectFilter={projectFilter}
+        projects={projects}
+        projectCount={projectCount}
         onSourceFilterChange={setSourceFilter}
         onCategoryFilterChange={setCategoryFilter}
+        onProjectFilterChange={setProjectFilter}
       />
-
-      {/* Project Filter */}
-      {projectsWithLearnings.length > 0 && (
-        <div className="shrink-0 border-b px-6 py-2">
-          <div className="flex flex-wrap gap-2">
-            <FolderGit2 className="mr-1 h-4 w-4 text-muted-foreground" />
-            <Button
-              variant={projectFilter === "all" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setProjectFilter("all")}
-            >
-              All Projects
-            </Button>
-            {projectsWithLearnings.map((project) => (
-              <Button
-                key={project.id}
-                variant={projectFilter === project.id ? "default" : "outline"}
-                size="sm"
-                onClick={() => setProjectFilter(project.id)}
-              >
-                {project.name} ({projectCount.get(project.id) ?? 0})
-              </Button>
-            ))}
-            {(projectCount.get("none") ?? 0) > 0 && (
-              <Button
-                variant={projectFilter === "none" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setProjectFilter("none")}
-              >
-                Unassigned ({projectCount.get("none")})
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
 
       <CardContent className="min-h-0 flex-1 overflow-auto pt-4">
         {filteredLearnings.length === 0 ? (

@@ -7,10 +7,15 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import type { RpcSlackPriorityRequest, RpcSlackPriorityResponse } from "@repo/types";
+import type {
+  RpcSlackPriorityRequest,
+  RpcSlackPriorityResponse,
+  SlackPriorityUserProfile,
+} from "@repo/types";
 import consola from "consola";
 import { eq } from "drizzle-orm";
 import type { AdasConfig } from "../../config.js";
+import { getUserProfile } from "../../server/routes/profile.js";
 import { getSSENotifier } from "../../utils/sse-notifier.js";
 import type { JobResult } from "../worker.js";
 
@@ -92,6 +97,18 @@ export async function handleSlackPriority(
     };
   }
 
+  // ユーザープロフィールを取得
+  const profile = getUserProfile(db);
+  const userProfile: SlackPriorityUserProfile | undefined = profile
+    ? {
+        displayName: profile.displayName,
+        slackUserId: profile.slackUserId,
+        githubUsername: profile.githubUsername,
+        responsibilities: profile.responsibilities,
+        specialties: profile.specialties,
+      }
+    : undefined;
+
   // Worker に優先度判定をリクエスト
   const workerUrl = config.worker.url;
   const request: RpcSlackPriorityRequest = {
@@ -100,6 +117,7 @@ export async function handleSlackPriority(
     userName: message.userName,
     channelName: message.channelName,
     messageType: message.messageType as "mention" | "channel" | "dm" | "keyword",
+    userProfile,
   };
 
   try {

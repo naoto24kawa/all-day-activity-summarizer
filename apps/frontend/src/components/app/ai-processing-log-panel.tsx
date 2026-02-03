@@ -5,8 +5,14 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { postAdasApi } from "@/hooks/use-adas-api";
 import { useAiProcessingLogs, useAiProcessingLogsStats } from "@/hooks/use-ai-processing-logs";
 import { getTodayDateString } from "@/lib/date";
@@ -118,29 +124,28 @@ export function AiProcessingLogPanel(_props: AiProcessingLogPanelProps) {
         </div>
       </CardHeader>
       <CardContent>
-        <Tabs value={filter} onValueChange={(v) => setFilter(v as AiProcessType | "all")}>
-          <TabsList className="mb-4 flex-wrap">
-            <TabsTrigger value="all" className="gap-1">
-              All
-              {stats && <Badge variant="secondary">{stats.total}</Badge>}
-            </TabsTrigger>
-            {Object.entries(PROCESS_TYPE_LABELS).map(([key, label]) => {
-              const typeStats = stats?.byProcessType[key];
-              const count = typeStats ? typeStats.success + typeStats.error : 0;
-              const errorCount = typeStats?.error ?? 0;
-              return (
-                <TabsTrigger key={key} value={key} className="gap-1">
-                  {label}
-                  {count > 0 && (
-                    <Badge variant={errorCount > 0 ? "destructive" : "secondary"}>
-                      {errorCount > 0 ? `${count}/${errorCount}err` : count}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-        </Tabs>
+        <div className="mb-4">
+          <Select value={filter} onValueChange={(v) => setFilter(v as AiProcessType | "all")}>
+            <SelectTrigger className="h-7 w-auto min-w-[140px] text-xs">
+              <SelectValue placeholder="フィルタ" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All ({stats?.total ?? 0})</SelectItem>
+              {Object.entries(PROCESS_TYPE_LABELS).map(([key, label]) => {
+                const typeStats = stats?.byProcessType[key];
+                const count = typeStats ? typeStats.success + typeStats.error : 0;
+                const errCount = typeStats?.error ?? 0;
+                if (count === 0) return null;
+                return (
+                  <SelectItem key={key} value={key}>
+                    {label} ({count}
+                    {errCount > 0 ? `/${errCount}err` : ""})
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
 
         {loading ? (
           <div className="space-y-2">

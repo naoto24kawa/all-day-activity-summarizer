@@ -56,12 +56,50 @@ export function createSlackPriorityRouter() {
   return router;
 }
 
+/**
+ * ユーザープロフィールをテキスト形式に変換
+ */
+function formatUserProfile(request: RpcSlackPriorityRequest): string {
+  const profile = request.userProfile;
+  if (!profile) {
+    return "(プロフィール未設定)";
+  }
+
+  const lines: string[] = [];
+
+  if (profile.displayName) {
+    lines.push(`- 名前: ${profile.displayName}`);
+  }
+
+  if (profile.slackUserId) {
+    lines.push(`- Slack ID: ${profile.slackUserId}`);
+  }
+
+  if (profile.githubUsername) {
+    lines.push(`- GitHub: ${profile.githubUsername}`);
+  }
+
+  if (profile.responsibilities && profile.responsibilities.length > 0) {
+    lines.push(`- 担当領域: ${profile.responsibilities.join(", ")}`);
+  }
+
+  if (profile.specialties && profile.specialties.length > 0) {
+    lines.push(`- 専門分野: ${profile.specialties.join(", ")}`);
+  }
+
+  return lines.length > 0 ? lines.join("\n") : "(プロフィール未設定)";
+}
+
 async function determinePriorityWithLLM(
   request: RpcSlackPriorityRequest,
 ): Promise<RpcSlackPriorityResponse> {
   // プロンプトを読み込み
   const promptPath = getPromptFilePath("slack-priority");
-  const basePrompt = readFileSync(promptPath, "utf-8");
+  let basePrompt = readFileSync(promptPath, "utf-8");
+
+  // ユーザープロフィールを挿入
+  const userProfileText = formatUserProfile(request);
+  basePrompt = basePrompt.replace("{{USER_PROFILE}}", userProfileText);
 
   const prompt = `${basePrompt}
 

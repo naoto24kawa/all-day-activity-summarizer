@@ -1037,6 +1037,13 @@ export interface CheckSimilarityBatchResponse {
 /** ユーザープロフィール */
 export interface UserProfile {
   id: number;
+  // 基本情報
+  displayName: string | null; // 名前 (Slackでの呼ばれ方)
+  slackUserId: string | null; // Slack ユーザーID
+  githubUsername: string | null; // GitHub ユーザー名
+  // 役割・責任
+  responsibilities: string | null; // JSON string: ["インフラ担当", "レビュアー"]
+  // 技術スキル
   experienceYears: number | null;
   specialties: string | null; // JSON string
   knownTechnologies: string | null; // JSON string
@@ -1049,7 +1056,11 @@ export type ProfileSuggestionType =
   | "add_technology"
   | "add_specialty"
   | "add_goal"
-  | "update_experience";
+  | "add_responsibility"
+  | "update_experience"
+  | "set_display_name"
+  | "set_slack_user_id"
+  | "set_github_username";
 
 /** プロフィール提案ソースタイプ */
 export type ProfileSuggestionSourceType =
@@ -1077,6 +1088,13 @@ export interface ProfileSuggestion {
 
 /** プロフィール更新リクエスト */
 export interface UpdateProfileRequest {
+  // 基本情報
+  displayName?: string | null;
+  slackUserId?: string | null;
+  githubUsername?: string | null;
+  // 役割・責任
+  responsibilities?: string[];
+  // 技術スキル
   experienceYears?: number | null;
   specialties?: string[];
   knownTechnologies?: string[];
@@ -1649,6 +1667,15 @@ export interface RpcTokenizeResponse {
 
 // ========== Slack Priority 型定義 ==========
 
+/** ユーザープロフィール (優先度判定用) */
+export interface SlackPriorityUserProfile {
+  displayName?: string;
+  slackUserId?: string;
+  githubUsername?: string;
+  responsibilities?: string[];
+  specialties?: string[];
+}
+
 /** RPC Slack Priority リクエスト */
 export interface RpcSlackPriorityRequest {
   messageId: number;
@@ -1656,6 +1683,8 @@ export interface RpcSlackPriorityRequest {
   userName: string | null;
   channelName: string | null;
   messageType: "mention" | "channel" | "dm" | "keyword";
+  /** ユーザープロフィール (優先度判定用) */
+  userProfile?: SlackPriorityUserProfile;
 }
 
 /** RPC Slack Priority レスポンス */

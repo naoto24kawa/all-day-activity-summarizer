@@ -1,4 +1,4 @@
-import { Bot, Cpu, RefreshCw, Server, Terminal } from "lucide-react";
+import { Bot, Cpu, Radio, RefreshCw, Server, Terminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,7 @@ type ServerLogsPanelProps = {};
 export function ServerLogsPanel(_props: ServerLogsPanelProps) {
   const date = getTodayDateString();
   const serveData = useServerLogs("serve", date);
+  const sseServerData = useServerLogs("sse-server", date);
   const aiWorkerData = useServerLogs("ai-worker", date);
   const localWorkerData = useServerLogs("local-worker", date);
 
@@ -24,13 +25,20 @@ export function ServerLogsPanel(_props: ServerLogsPanelProps) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-4">
           <LogView
             source="serve"
             entries={serveData.entries}
             loading={serveData.loading}
             error={serveData.error}
             refetch={serveData.refetch}
+          />
+          <LogView
+            source="sse-server"
+            entries={sseServerData.entries}
+            loading={sseServerData.loading}
+            error={sseServerData.error}
+            refetch={sseServerData.refetch}
           />
           <LogView
             source="ai-worker"
@@ -64,6 +72,8 @@ function getSourceIcon(source: LogSource) {
   switch (source) {
     case "serve":
       return <Server className="h-4 w-4" />;
+    case "sse-server":
+      return <Radio className="h-4 w-4" />;
     case "ai-worker":
       return <Bot className="h-4 w-4" />;
     case "local-worker":
@@ -76,7 +86,9 @@ function getSourceIcon(source: LogSource) {
 function getSourceTitle(source: LogSource) {
   switch (source) {
     case "serve":
-      return "Serve";
+      return "CLI API";
+    case "sse-server":
+      return "SSE Server";
     case "ai-worker":
       return "AI Worker";
     case "local-worker":

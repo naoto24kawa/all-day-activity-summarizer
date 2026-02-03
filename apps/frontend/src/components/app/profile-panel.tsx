@@ -1,4 +1,15 @@
-import { Info, Lightbulb, Plus, Sparkles, Target, User, Wrench } from "lucide-react";
+import {
+  Briefcase,
+  Github,
+  Info,
+  Lightbulb,
+  MessageSquare,
+  Plus,
+  Sparkles,
+  Target,
+  User,
+  Wrench,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,10 +21,25 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useProfile, useProfileSuggestions } from "@/hooks/use-profile";
 
 export function ProfilePanel() {
-  const { profile, specialties, knownTechnologies, learningGoals, loading, error, updateProfile } =
-    useProfile();
+  const {
+    profile,
+    responsibilities,
+    specialties,
+    knownTechnologies,
+    learningGoals,
+    loading,
+    error,
+    updateProfile,
+  } = useProfile();
   const { generating, generateSuggestions } = useProfileSuggestions();
 
+  // 基本情報
+  const [displayName, setDisplayName] = useState<string>("");
+  const [slackUserId, setSlackUserId] = useState<string>("");
+  const [githubUsername, setGithubUsername] = useState<string>("");
+  // 役割・責任
+  const [newResponsibility, setNewResponsibility] = useState("");
+  // 技術スキル
   const [experienceYears, setExperienceYears] = useState<string>("");
   const [newSpecialty, setNewSpecialty] = useState("");
   const [newTechnology, setNewTechnology] = useState("");
@@ -21,12 +47,30 @@ export function ProfilePanel() {
   const [updating, setUpdating] = useState(false);
   const [generateResult, setGenerateResult] = useState<{ count: number } | null>(null);
 
-  // プロフィールが読み込まれたら経験年数を設定
+  // プロフィールが読み込まれたら値を設定
   useEffect(() => {
-    if (profile?.experienceYears !== null && profile?.experienceYears !== undefined) {
-      setExperienceYears(profile.experienceYears.toString());
+    if (profile) {
+      setDisplayName(profile.displayName ?? "");
+      setSlackUserId(profile.slackUserId ?? "");
+      setGithubUsername(profile.githubUsername ?? "");
+      if (profile.experienceYears !== null && profile.experienceYears !== undefined) {
+        setExperienceYears(profile.experienceYears.toString());
+      }
     }
-  }, [profile?.experienceYears]);
+  }, [profile]);
+
+  const handleUpdateBasicInfo = async () => {
+    setUpdating(true);
+    try {
+      await updateProfile({
+        displayName: displayName.trim() || null,
+        slackUserId: slackUserId.trim() || null,
+        githubUsername: githubUsername.trim() || null,
+      });
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const handleUpdateExperience = async () => {
     const years = experienceYears.trim() ? Number.parseInt(experienceYears, 10) : null;
@@ -41,7 +85,7 @@ export function ProfilePanel() {
   };
 
   const handleAddItem = async (
-    field: "specialties" | "knownTechnologies" | "learningGoals",
+    field: "responsibilities" | "specialties" | "knownTechnologies" | "learningGoals",
     value: string,
     currentArray: string[],
     clearFn: () => void,
@@ -59,7 +103,7 @@ export function ProfilePanel() {
   };
 
   const handleRemoveItem = async (
-    field: "specialties" | "knownTechnologies" | "learningGoals",
+    field: "responsibilities" | "specialties" | "knownTechnologies" | "learningGoals",
     value: string,
     currentArray: string[],
   ) => {
@@ -138,6 +182,124 @@ export function ProfilePanel() {
             {generateResult.count} 件の提案を生成しました。Tasks タブで確認してください。
           </p>
         )}
+
+        {/* 基本情報 */}
+        <div className="space-y-3">
+          <Label className="flex items-center gap-2 text-base font-semibold">
+            <User className="h-4 w-4 text-orange-500" />
+            基本情報
+          </Label>
+          <div className="grid gap-3">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="displayName" className="w-24 shrink-0 text-sm">
+                名前
+              </Label>
+              <Input
+                id="displayName"
+                placeholder="例: 西川、にしかわ、nishikawa"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="flex-1"
+                disabled={updating}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label
+                htmlFor="slackUserId"
+                className="flex w-24 shrink-0 items-center gap-1 text-sm"
+              >
+                <MessageSquare className="h-3 w-3" />
+                Slack ID
+              </Label>
+              <Input
+                id="slackUserId"
+                placeholder="例: U12345678"
+                value={slackUserId}
+                onChange={(e) => setSlackUserId(e.target.value)}
+                className="flex-1"
+                disabled={updating}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label
+                htmlFor="githubUsername"
+                className="flex w-24 shrink-0 items-center gap-1 text-sm"
+              >
+                <Github className="h-3 w-3" />
+                GitHub
+              </Label>
+              <Input
+                id="githubUsername"
+                placeholder="例: naoto24kawa"
+                value={githubUsername}
+                onChange={(e) => setGithubUsername(e.target.value)}
+                className="flex-1"
+                disabled={updating}
+              />
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleUpdateBasicInfo}
+              disabled={updating}
+              className="w-fit"
+            >
+              基本情報を更新
+            </Button>
+          </div>
+        </div>
+
+        {/* 役割・責任 */}
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            <Briefcase className="h-4 w-4 text-purple-500" />
+            役割・担当 (優先度判定に使用)
+          </Label>
+          <div className="flex flex-wrap gap-2">
+            {responsibilities.map((r) => (
+              <Badge
+                key={r}
+                variant="secondary"
+                className="cursor-pointer bg-purple-500/10 hover:bg-destructive hover:text-destructive-foreground"
+                onClick={() => handleRemoveItem("responsibilities", r, responsibilities)}
+              >
+                {r} ×
+              </Badge>
+            ))}
+            <div className="flex gap-1">
+              <Input
+                placeholder="追加..."
+                value={newResponsibility}
+                onChange={(e) => setNewResponsibility(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleAddItem("responsibilities", newResponsibility, responsibilities, () =>
+                      setNewResponsibility(""),
+                    );
+                  }
+                }}
+                className="h-6 w-32 text-xs"
+                disabled={updating}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2"
+                onClick={() =>
+                  handleAddItem("responsibilities", newResponsibility, responsibilities, () =>
+                    setNewResponsibility(""),
+                  )
+                }
+                disabled={updating || !newResponsibility.trim()}
+              >
+                <Plus className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            例: インフラ担当、レビュアー、ジョブアンテナ、フロントエンド
+          </p>
+        </div>
 
         {/* 経験年数 */}
         <div className="space-y-2">

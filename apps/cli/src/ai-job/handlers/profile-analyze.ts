@@ -13,6 +13,10 @@ import type { JobResult } from "../worker.js";
 
 // フィールドラベル
 const FIELD_LABELS: Record<string, string> = {
+  displayName: "名前",
+  slackUserId: "Slack ID",
+  githubUsername: "GitHub ユーザー名",
+  responsibilities: "役割・担当",
   experienceYears: "経験年数",
   specialties: "専門分野",
   knownTechnologies: "既知の技術",
@@ -49,6 +53,10 @@ export async function handleProfileAnalyze(
     db.insert(schema.userProfile)
       .values({
         id: 1,
+        displayName: null,
+        slackUserId: null,
+        githubUsername: null,
+        responsibilities: null,
         experienceYears: null,
         specialties: null,
         knownTechnologies: null,
@@ -104,7 +112,11 @@ export async function handleProfileAnalyze(
             | "add_technology"
             | "add_specialty"
             | "add_goal"
-            | "update_experience",
+            | "add_responsibility"
+            | "update_experience"
+            | "set_display_name"
+            | "set_slack_user_id"
+            | "set_github_username",
           field: suggestion.field,
           value: suggestion.value,
           reason: suggestion.reason,
@@ -210,6 +222,10 @@ async function analyzeProfileWithWorker(
 
   const requestBody = {
     currentProfile: {
+      displayName: profile.displayName,
+      slackUserId: profile.slackUserId,
+      githubUsername: profile.githubUsername,
+      responsibilities: profile.responsibilities ? JSON.parse(profile.responsibilities) : [],
       experienceYears: profile.experienceYears,
       specialties: profile.specialties ? JSON.parse(profile.specialties) : [],
       knownTechnologies: profile.knownTechnologies ? JSON.parse(profile.knownTechnologies) : [],
@@ -244,17 +260,32 @@ function isValueInProfile(
   field: string,
   value: string,
 ): boolean {
+  // 数値フィールド
   if (field === "experienceYears") {
     return profile.experienceYears === Number.parseInt(value, 10);
   }
 
-  const fieldMap: Record<string, keyof typeof profile> = {
+  // 単一値フィールド
+  const singleValueFields: Record<string, keyof typeof profile> = {
+    displayName: "displayName",
+    slackUserId: "slackUserId",
+    githubUsername: "githubUsername",
+  };
+
+  if (field in singleValueFields) {
+    const fieldKey = singleValueFields[field];
+    return profile[fieldKey] === value;
+  }
+
+  // 配列フィールド
+  const arrayFields: Record<string, keyof typeof profile> = {
+    responsibilities: "responsibilities",
     specialties: "specialties",
     knownTechnologies: "knownTechnologies",
     learningGoals: "learningGoals",
   };
 
-  const fieldKey = fieldMap[field];
+  const fieldKey = arrayFields[field];
   if (!fieldKey) return false;
 
   const currentValue = profile[fieldKey] as string | null;

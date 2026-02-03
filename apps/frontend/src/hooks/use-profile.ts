@@ -52,6 +52,9 @@ export function useProfile() {
   }, [fetchProfile]);
 
   // パース済みのプロフィール配列
+  const responsibilities: string[] = profile?.responsibilities
+    ? JSON.parse(profile.responsibilities)
+    : [];
   const specialties: string[] = profile?.specialties ? JSON.parse(profile.specialties) : [];
   const knownTechnologies: string[] = profile?.knownTechnologies
     ? JSON.parse(profile.knownTechnologies)
@@ -60,6 +63,7 @@ export function useProfile() {
 
   return {
     profile,
+    responsibilities,
     specialties,
     knownTechnologies,
     learningGoals,

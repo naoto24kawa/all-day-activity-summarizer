@@ -133,6 +133,7 @@ export type {
   SlackMessage,
   SlackMessagePriority,
   SlackPriorityCounts,
+  SlackPriorityUserProfile,
   SourceClaudeSession,
   SourceGitHubComment,
   SourceGitHubItem,

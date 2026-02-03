@@ -637,6 +637,13 @@ export type NewExtractionLog = typeof extractionLogs.$inferInsert;
 
 export const userProfile = sqliteTable("user_profile", {
   id: integer("id").primaryKey().default(1),
+  // 基本情報
+  displayName: text("display_name"), // 名前 (Slackでの呼ばれ方: 西川、にしかわ等)
+  slackUserId: text("slack_user_id"), // Slack ユーザーID
+  githubUsername: text("github_username"), // GitHub ユーザー名
+  // 役割・責任
+  responsibilities: text("responsibilities"), // JSON: ["インフラ担当", "レビュアー", "ジョブアンテナ"]
+  // 技術スキル
   experienceYears: integer("experience_years"),
   specialties: text("specialties"), // JSON: ["frontend", "typescript"]
   knownTechnologies: text("known_technologies"), // JSON: ["React", "Hono", ...]
@@ -656,7 +663,16 @@ export type NewUserProfile = typeof userProfile.$inferInsert;
 export const profileSuggestions = sqliteTable("profile_suggestions", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   suggestionType: text("suggestion_type", {
-    enum: ["add_technology", "add_specialty", "add_goal", "update_experience"],
+    enum: [
+      "add_technology",
+      "add_specialty",
+      "add_goal",
+      "add_responsibility",
+      "update_experience",
+      "set_display_name",
+      "set_slack_user_id",
+      "set_github_username",
+    ],
   }).notNull(),
   field: text("field").notNull(), // "knownTechnologies" | "specialties" | ...
   value: text("value").notNull(), // 提案する値

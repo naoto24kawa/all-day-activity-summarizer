@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchAdasApi } from "@/lib/adas-api";
 
-export type LogSource = "serve" | "worker" | "ai-worker" | "local-worker";
+export type LogSource = "serve" | "sse-server" | "worker" | "ai-worker" | "local-worker";
 
 export interface LogEntry {
   timestamp: string;
