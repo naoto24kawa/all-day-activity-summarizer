@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "dev:all": "bun run scripts/dev-launcher.ts",
     "dev": "cd apps/frontend && bun run dev",
     "dev:backend": "cd apps/backend && bun run dev",
     "build": "cd apps/frontend && bun run build",

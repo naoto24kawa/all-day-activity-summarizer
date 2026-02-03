@@ -20,6 +20,7 @@ import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
 import { SubTabNav } from "./sub-tab-nav";
 import { SummaryView } from "./summary-view";
+import { SystemControlPanel } from "./system-control-panel";
 import { TasksPanel } from "./tasks-panel";
 import { Timeline } from "./timeline";
 import { VocabularyPanel } from "./vocabulary-panel";
@@ -277,6 +278,7 @@ export function Dashboard() {
                     </div>
                     <div className="space-y-4">
                       <AISettingsPanel />
+                      <SystemControlPanel />
                       <MonitoringPanel />
                     </div>
                   </div>

@@ -51,15 +51,22 @@ export function useProfile() {
     fetchProfile();
   }, [fetchProfile]);
 
+  // JSON配列を安全にパースするヘルパー
+  const safeParseJsonArray = (value: string | null | undefined): string[] => {
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
   // パース済みのプロフィール配列
-  const responsibilities: string[] = profile?.responsibilities
-    ? JSON.parse(profile.responsibilities)
-    : [];
-  const specialties: string[] = profile?.specialties ? JSON.parse(profile.specialties) : [];
-  const knownTechnologies: string[] = profile?.knownTechnologies
-    ? JSON.parse(profile.knownTechnologies)
-    : [];
-  const learningGoals: string[] = profile?.learningGoals ? JSON.parse(profile.learningGoals) : [];
+  const responsibilities: string[] = safeParseJsonArray(profile?.responsibilities);
+  const specialties: string[] = safeParseJsonArray(profile?.specialties);
+  const knownTechnologies: string[] = safeParseJsonArray(profile?.knownTechnologies);
+  const learningGoals: string[] = safeParseJsonArray(profile?.learningGoals);
 
   return {
     profile,

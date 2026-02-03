@@ -114,6 +114,10 @@ export interface IntegrationsConfig {
   taskElaboration: TaskElaborationConfig;
   rateLimit: RateLimitConfig;
   aiProvider: AIProviderConfig;
+  launcher: {
+    url: string;
+    token: string;
+  };
 }
 
 interface ConfigResponse {

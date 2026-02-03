@@ -52,7 +52,7 @@ function extractSummary(messages: Array<{ role: string; text: string }>): string
 
 /**
  * Save messages for a session
- * Deletes existing messages and inserts new ones
+ * Deletes existing messages and inserts new ones in a transaction
  */
 function saveMessages(
   db: AdasDatabase,
@@ -60,25 +60,29 @@ function saveMessages(
   date: string,
   messages: Array<{ role: string; text: string; timestamp?: string }>,
 ): void {
-  // Delete existing messages for this session
-  db.delete(schema.claudeCodeMessages)
-    .where(eq(schema.claudeCodeMessages.sessionId, sessionId))
-    .run();
-
-  // Insert new messages
-  for (const msg of messages) {
-    if (msg.role !== "user" && msg.role !== "assistant") {
-      continue;
-    }
-    const newMessage: NewClaudeCodeMessage = {
+  // Filter valid messages first
+  const validMessages: NewClaudeCodeMessage[] = messages
+    .filter((msg) => msg.role === "user" || msg.role === "assistant")
+    .map((msg) => ({
       sessionId,
       date,
-      role: msg.role,
+      role: msg.role as "user" | "assistant",
       content: msg.text,
       timestamp: msg.timestamp ?? null,
-    };
-    db.insert(schema.claudeCodeMessages).values(newMessage).run();
-  }
+    }));
+
+  // Use transaction to ensure atomicity and reduce lock contention
+  db.transaction((tx) => {
+    // Delete existing messages for this session
+    tx.delete(schema.claudeCodeMessages)
+      .where(eq(schema.claudeCodeMessages.sessionId, sessionId))
+      .run();
+
+    // Batch insert all messages at once
+    if (validMessages.length > 0) {
+      tx.insert(schema.claudeCodeMessages).values(validMessages).run();
+    }
+  });
 }
 
 /**

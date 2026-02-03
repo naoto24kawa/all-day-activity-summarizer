@@ -155,6 +155,11 @@ export interface AdasConfig {
     url: string;
     port: number;
   };
+  launcher: {
+    url: string;
+    port: number;
+    token: string;
+  };
 }
 
 const ADAS_HOME = join(homedir(), ".adas");
@@ -309,6 +314,11 @@ const defaultConfig: AdasConfig = {
     url: "http://localhost:3002",
     port: 3002,
   },
+  launcher: {
+    url: "http://localhost:3999",
+    port: 3999,
+    token: "",
+  },
 };
 
 export function getAdasHome(): string {
@@ -381,6 +391,7 @@ export function loadConfig(): AdasConfig {
       },
     },
     sseServer: { ...defaultConfig.sseServer, ...userConfig.sseServer },
+    launcher: { ...defaultConfig.launcher, ...userConfig.launcher },
   };
 
   return applyEnvOverrides(merged);

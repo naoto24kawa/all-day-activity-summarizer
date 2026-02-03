@@ -358,6 +358,10 @@ export function createConfigRouter() {
         providers: config.aiProvider.providers,
         enableFallback: config.aiProvider.enableFallback,
       },
+      launcher: {
+        url: config.launcher?.url ?? "http://localhost:3999",
+        token: config.launcher?.token ?? "",
+      },
     };
 
     return c.json({ integrations });
