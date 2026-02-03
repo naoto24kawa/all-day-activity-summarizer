@@ -60,7 +60,7 @@ async function determinePriorityWithLLM(
   request: RpcSlackPriorityRequest,
 ): Promise<RpcSlackPriorityResponse> {
   // プロンプトを読み込み
-  const promptPath = getPromptFilePath("slack-priority.md");
+  const promptPath = getPromptFilePath("slack-priority");
   const basePrompt = readFileSync(promptPath, "utf-8");
 
   const prompt = `${basePrompt}
