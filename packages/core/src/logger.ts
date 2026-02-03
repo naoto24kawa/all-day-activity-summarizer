@@ -43,17 +43,10 @@ function getLogFilePath(source: LogSource): string {
  * @param source - ログソース識別子 ("serve" | "worker")
  */
 export function setupFileLogger(source: LogSource = "serve"): void {
-  // デバッグ: 初期化状態を出力
-  console.log(`[setupFileLogger] called with source=${source}, initialized=${initialized}`);
-
-  if (initialized) {
-    console.log(`[setupFileLogger] already initialized, skipping (currentSource=${currentSource})`);
-    return;
-  }
+  if (initialized) return;
   initialized = true;
   currentSource = source;
 
-  console.log(`[setupFileLogger] initializing for source=${source}, LOG_DIR=${LOG_DIR}`);
   mkdirSync(LOG_DIR, { recursive: true });
 
   consola.addReporter({
@@ -64,14 +57,10 @@ export function setupFileLogger(source: LogSource = "serve"): void {
         .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
         .join(" ");
       const line = `${timestamp} ${level} ${args}\n`;
-      const filePath = getLogFilePath(currentSource);
-      // デバッグ: reporter が呼ばれたことを確認
-      console.log(`[setupFileLogger/reporter] writing to ${filePath}: ${line.substring(0, 50)}...`);
       try {
-        appendFileSync(filePath, line);
-      } catch (err) {
-        // デバッグ: エラーを出力
-        console.error(`[setupFileLogger/reporter] write error:`, err);
+        appendFileSync(getLogFilePath(currentSource), line);
+      } catch {
+        // ログ書き込み失敗時はサイレントに無視(コンソール出力は継続)
       }
     },
   });
