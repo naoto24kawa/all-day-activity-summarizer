@@ -24,6 +24,7 @@ export interface TabBadges {
   learnings: number; // 復習期限の学び数
   slack: number; // 未読 Slack メッセージ数
   github: number; // 未読 GitHub アイテム数
+  notion: number; // 未読 Notion アイテム数
 }
 
 export type GroupBadges = Record<TabGroupId, number>;
@@ -43,6 +44,12 @@ interface GitHubUnreadCount {
   reviewRequest: number;
 }
 
+interface NotionUnreadCount {
+  total: number;
+  database: number;
+  page: number;
+}
+
 export function useTabBadges(date?: string) {
   const [badges, setBadges] = useState<TabBadges>({
     tasks: 0,
@@ -55,11 +62,12 @@ export function useTabBadges(date?: string) {
     learnings: 0,
     slack: 0,
     github: 0,
+    notion: 0,
   });
 
   // SSE でバッジ更新を受信
   const handleBadgesUpdated = useCallback((data: BadgesData) => {
-    setBadges({
+    setBadges((prev) => ({
       tasks: data.tasks.pending,
       taskBadges: {
         pending: data.tasks.pending,
@@ -70,7 +78,8 @@ export function useTabBadges(date?: string) {
       learnings: data.learnings.dueForReview,
       slack: data.slack.unread,
       github: data.github.unread,
-    });
+      notion: prev.notion, // SSE には notion が含まれないので前の値を維持
+    }));
   }, []);
 
   useSSE({
@@ -83,16 +92,20 @@ export function useTabBadges(date?: string) {
       const params = new URLSearchParams();
       if (date) params.set("date", date);
 
-      const [taskStats, learningsStats, slackUnread, githubUnread] = await Promise.all([
-        fetchAdasApi<TaskStats>(`/api/tasks/stats?${params}`),
-        fetchAdasApi<LearningsStats>("/api/learnings/stats"),
-        fetchAdasApi<SlackUnreadCount>(`/api/slack-messages/unread-count?${params}`).catch(
-          () => ({ total: 0 }) as SlackUnreadCount,
-        ),
-        fetchAdasApi<GitHubUnreadCount>(`/api/github-items/unread-count?${params}`).catch(
-          () => ({ total: 0 }) as GitHubUnreadCount,
-        ),
-      ]);
+      const [taskStats, learningsStats, slackUnread, githubUnread, notionUnread] =
+        await Promise.all([
+          fetchAdasApi<TaskStats>(`/api/tasks/stats?${params}`),
+          fetchAdasApi<LearningsStats>("/api/learnings/stats"),
+          fetchAdasApi<SlackUnreadCount>(`/api/slack-messages/unread-count?${params}`).catch(
+            () => ({ total: 0 }) as SlackUnreadCount,
+          ),
+          fetchAdasApi<GitHubUnreadCount>(`/api/github-items/unread-count?${params}`).catch(
+            () => ({ total: 0 }) as GitHubUnreadCount,
+          ),
+          fetchAdasApi<NotionUnreadCount>(`/api/notion-items/unread-count?${params}`).catch(
+            () => ({ total: 0 }) as NotionUnreadCount,
+          ),
+        ]);
 
       setBadges({
         tasks: taskStats.pending,
@@ -105,6 +118,7 @@ export function useTabBadges(date?: string) {
         learnings: learningsStats.dueForReview,
         slack: slackUnread.total,
         github: githubUnread.total,
+        notion: notionUnread.total,
       });
     } catch {
       // エラー時はバッジを表示しない

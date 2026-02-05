@@ -1,105 +1,26 @@
 /**
  * Servers Command
  *
- * API サーバーと SSE サーバーを同時に起動
+ * API サーバーと SSE サーバーを子プロセスとして起動
  * Launcher エンドポイント (再起動用) も提供
  */
 
-import { setupFileLogger } from "@repo/core";
-import { createDatabase } from "@repo/db";
+import type { Subprocess } from "bun";
 import type { Command } from "commander";
 import consola from "consola";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { startAIJobScheduler } from "../ai-job/scheduler.js";
-import { startClaudeCodeSystem } from "../claude-code/scheduler.js";
-import type { AdasConfig } from "../config.js";
 import { loadConfig } from "../config.js";
-import { startGitHubSystem } from "../github/scheduler.js";
-import { startPromptImprovementScheduler } from "../prompt-improvement/scheduler.js";
-import { createApp } from "../server/app.js";
-import { startSlackSystem } from "../slack/scheduler.js";
-import { startScheduler } from "../summarizer/scheduler.js";
-import { initSSENotifier } from "../utils/sse-notifier.js";
-import { startVocabularyExtractScheduler } from "../vocabulary/scheduler.js";
 
-// ファイルログを有効化
-setupFileLogger("servers");
-
-/**
- * AI Worker への接続確認を行う
- */
-async function checkAIWorkerConnection(config: AdasConfig): Promise<boolean> {
-  const url = config.worker.url;
-  try {
-    const response = await fetch(`${url}/rpc/health`, {
-      method: "GET",
-      signal: AbortSignal.timeout(3000),
-    });
-    if (response.ok) {
-      consola.success(`AI Worker connected: ${url}`);
-      return true;
-    }
-    consola.warn(`AI Worker responded with status ${response.status}: ${url}`);
-    return false;
-  } catch (_error) {
-    consola.warn(`AI Worker not available: ${url}`);
-    return false;
-  }
+interface ServerProcess {
+  name: string;
+  proc: Subprocess | null;
+  command: string[];
+  env: Record<string, string>;
 }
 
-/**
- * Local Worker への接続確認を行う
- */
-async function checkLocalWorkerConnection(config: AdasConfig): Promise<boolean> {
-  const url = config.localWorker.url;
-  try {
-    const response = await fetch(`${url}/rpc/health`, {
-      method: "GET",
-      signal: AbortSignal.timeout(3000),
-    });
-    if (response.ok) {
-      consola.success(`Local Worker connected: ${url}`);
-      return true;
-    }
-    consola.warn(`Local Worker responded with status ${response.status}: ${url}`);
-    return false;
-  } catch (_error) {
-    consola.warn(`Local Worker not available: ${url}`);
-    return false;
-  }
-}
-
-/**
- * 接続状態の変化をログ出力
- */
-function logConnectionChange(name: string, isConnected: boolean, wasConnected: boolean): void {
-  if (isConnected && !wasConnected) {
-    consola.success(`${name} connection established`);
-  } else if (!isConnected && wasConnected) {
-    consola.warn(`${name} connection lost`);
-  }
-}
-
-/**
- * 定期的に Worker の接続状態を確認する
- */
-function startWorkerHealthCheck(config: AdasConfig, intervalMs = 30000): void {
-  const state = { ai: false, local: false };
-
-  const check = async () => {
-    const isAI = await checkAIWorkerConnection(config);
-    logConnectionChange("AI Worker", isAI, state.ai);
-    state.ai = isAI;
-
-    const isLocal = await checkLocalWorkerConnection(config);
-    logConnectionChange("Local Worker", isLocal, state.local);
-    state.local = isLocal;
-  };
-
-  // 定期チェック (初回は既に実行済みなのでスキップ)
-  setInterval(check, intervalMs);
-}
+let serverProcess: ServerProcess | null = null;
+let isRestarting = false;
 
 /**
  * git pull を実行
@@ -129,6 +50,101 @@ async function gitPull(): Promise<{ success: boolean; output: string }> {
 }
 
 /**
+ * Server プロセスを起動
+ */
+function startServer(server: ServerProcess): void {
+  consola.info(`Starting ${server.name}...`);
+
+  server.proc = Bun.spawn(server.command, {
+    env: { ...process.env, ...server.env, FORCE_COLOR: "1" },
+    stdout: "inherit",
+    stderr: "inherit",
+    onExit: (_proc, exitCode) => {
+      if (isRestarting) {
+        // 再起動中の終了はログのみ
+        if (exitCode !== 0) {
+          consola.error(`${server.name} exited with code ${exitCode} during restart`);
+        }
+      } else {
+        consola.warn(`${server.name} exited with code ${exitCode}`);
+        // 自動再起動
+        setTimeout(() => {
+          if (!isRestarting) {
+            consola.info(`Auto-restarting ${server.name}...`);
+            startServer(server);
+          }
+        }, 2000);
+      }
+    },
+  });
+
+  consola.success(`${server.name} started (pid: ${server.proc.pid})`);
+}
+
+/**
+ * Server プロセスを停止
+ */
+async function stopServer(server: ServerProcess): Promise<void> {
+  if (!server.proc) return;
+
+  try {
+    server.proc.kill("SIGTERM");
+    const timeout = setTimeout(() => {
+      consola.warn(`Force killing ${server.name}...`);
+      server.proc?.kill("SIGKILL");
+    }, 5000);
+
+    await server.proc.exited;
+    clearTimeout(timeout);
+    consola.info(`${server.name} stopped`);
+  } catch {
+    // Already exited
+  }
+  server.proc = null;
+}
+
+/**
+ * Server を再起動
+ */
+async function restartServer(): Promise<{ gitPull: { success: boolean; output: string } }> {
+  if (isRestarting) {
+    return { gitPull: { success: false, output: "Already restarting" } };
+  }
+
+  if (!serverProcess) {
+    return { gitPull: { success: false, output: "Server not initialized" } };
+  }
+
+  isRestarting = true;
+  consola.info("=== RESTART REQUESTED ===");
+
+  // Server を停止
+  await stopServer(serverProcess);
+
+  // git pull を実行
+  const gitResult = await gitPull();
+
+  // 少し待機
+  await Bun.sleep(1000);
+
+  // Server を起動
+  consola.info("Restarting servers...");
+  startServer(serverProcess);
+
+  // プロセスが安定して起動したか確認
+  await Bun.sleep(3000);
+
+  if (serverProcess.proc && !serverProcess.proc.killed) {
+    consola.success("Servers restarted successfully");
+  } else {
+    consola.error("Servers failed to restart - check logs");
+  }
+
+  isRestarting = false;
+  return { gitPull: gitResult };
+}
+
+/**
  * トークン認証
  */
 function validateToken(authHeader: string | undefined, expectedToken: string): boolean {
@@ -142,17 +158,32 @@ function validateToken(authHeader: string | undefined, expectedToken: string): b
 /**
  * Launcher エンドポイントを作成
  */
-function createLauncherApp(config: AdasConfig): Hono {
+function createLauncherApp(token: string): Hono {
   const app = new Hono();
-  const token = config.launcher?.token ?? "";
 
   app.use("*", cors());
 
   app.get("/status", (c) => {
+    const isRunning = serverProcess?.proc !== null && !serverProcess?.proc?.killed;
+    const pid = serverProcess?.proc?.pid ?? 0;
+
     return c.json({
       type: "server",
-      processes: [{ name: "servers", pid: process.pid, running: true }],
-      isRestarting: false,
+      processes: serverProcess
+        ? [
+            {
+              name: "API Server",
+              pid,
+              running: isRunning,
+            },
+            {
+              name: "SSE Server",
+              pid,
+              running: isRunning,
+            },
+          ]
+        : [],
+      isRestarting,
     });
   });
 
@@ -161,20 +192,10 @@ function createLauncherApp(config: AdasConfig): Hono {
       return c.json({ error: "Unauthorized" }, 401);
     }
 
-    consola.info("=== RESTART REQUESTED ===");
-
-    // git pull を実行
-    const gitResult = await gitPull();
-
-    // レスポンスを返してからプロセスを終了
-    setTimeout(() => {
-      consola.info("Restarting servers...");
-      process.exit(0); // 外部の launcher/systemd が再起動
-    }, 100);
-
+    const result = await restartServer();
     return c.json({
-      message: "Restarting...",
-      gitPull: gitResult,
+      message: "Restart completed",
+      gitPull: result.gitPull,
     });
   });
 
@@ -197,81 +218,55 @@ export function registerServersCommand(program: Command): void {
       const launcherPort = options.launcherPort
         ? Number.parseInt(options.launcherPort, 10)
         : (config.launcher?.port ?? 3999);
+      const token = config.launcher?.token ?? "";
 
-      // SSE サーバー起動
-      consola.info(`Starting SSE server on http://localhost:${ssePort}`);
-      const { createSSEServerApp } = await import("@repo/sse-server");
-      const sseApp = createSSEServerApp();
+      consola.info("========================================");
+      consola.info("  ADAS Servers");
+      consola.info("  (API + SSE + Schedulers)");
+      consola.info("========================================");
+      consola.info("");
 
-      Bun.serve({
-        fetch: sseApp.fetch,
-        port: ssePort,
-        idleTimeout: 0, // SSE 接続のためタイムアウト無効
-      });
+      // Server プロセス設定を初期化
+      serverProcess = {
+        name: "servers-main",
+        proc: null,
+        command: ["bun", "run", "apps/cli/src/commands/servers-main.ts"],
+        env: {
+          SERVERS_API_PORT: String(apiPort),
+          SERVERS_SSE_PORT: String(ssePort),
+        },
+      };
 
-      consola.success(`SSE server running at http://localhost:${ssePort}`);
+      // Server を起動
+      startServer(serverProcess);
 
-      // API サーバー起動
-      const db = createDatabase(config.dbPath);
-      const apiApp = createApp(db, { config });
-
-      consola.info(`Starting API server on http://localhost:${apiPort}`);
-
-      Bun.serve({
-        fetch: apiApp.fetch,
-        port: apiPort,
-        idleTimeout: 0, // SSE 接続のためタイムアウト無効
-      });
-
-      consola.success(`API server running on http://localhost:${apiPort}`);
-
-      // SSE Notifier 初期化
-      initSSENotifier(config);
-      consola.success("SSE Notifier initialized");
-
-      // Worker 接続確認
-      await checkAIWorkerConnection(config);
-      await checkLocalWorkerConnection(config);
-      startWorkerHealthCheck(config);
-
-      startScheduler(db, config);
-      consola.success("Summary scheduler started");
-
-      // Start Slack system if enabled
-      const stopSlack = await startSlackSystem(db, config);
-      if (stopSlack) {
-        consola.success("Slack integration started");
-      }
-
-      // Start Claude Code system if enabled
-      const stopClaudeCode = await startClaudeCodeSystem(db, config);
-      if (stopClaudeCode) {
-        consola.success("Claude Code integration started");
-      }
-
-      // Start GitHub system if enabled
-      const stopGitHub = await startGitHubSystem(db, config);
-      if (stopGitHub) {
-        consola.success("GitHub integration started");
-      }
-
-      // Start Prompt Improvement scheduler
-      startPromptImprovementScheduler(db);
-
-      // Start Vocabulary Extract scheduler
-      startVocabularyExtractScheduler(db);
-
-      // Start AI Job scheduler
-      startAIJobScheduler(db, config);
-
-      // Start Launcher server
-      const launcherApp = createLauncherApp(config);
+      // Launcher サーバーを起動
+      const launcherApp = createLauncherApp(token);
       Bun.serve({
         fetch: launcherApp.fetch,
         port: launcherPort,
       });
+
       consola.success(`Launcher running on http://localhost:${launcherPort}`);
-      consola.info("  POST /restart - Restart servers (git pull + exit)");
+      consola.info("  POST /restart - Restart servers (git pull + restart)");
       consola.info("  GET  /status  - Get process status");
+      consola.info("");
+      consola.info("Press Ctrl+C to stop servers");
+
+      // Graceful shutdown
+      const shutdown = async () => {
+        consola.info("Shutting down...");
+        isRestarting = true;
+        if (serverProcess) {
+          await stopServer(serverProcess);
+        }
+        process.exit(0);
+      };
+
+      process.on("SIGINT", shutdown);
+      process.on("SIGTERM", shutdown);
+
+      // Keep process running
+      await new Promise(() => {});
     });
 }

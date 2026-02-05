@@ -120,6 +120,13 @@ export interface AdasConfig {
     calendarIds: string[]; // 監視するカレンダーID (空 = プライマリのみ)
     daysToFetch: number; // 取得する日数 (過去から未来まで)
   };
+  notion: {
+    enabled: boolean; // Notion 統合を有効にする
+    token?: string; // Notion Internal Integration Token
+    fetchIntervalMinutes: number; // 取得間隔 (分)
+    parallelWorkers: number; // 並列ワーカー数
+    databaseIds: string[]; // 監視するデータベースID
+  };
   projects: {
     gitScanPaths: string[]; // 探索対象ディレクトリ: ["~/projects"]
     excludePatterns: string[]; // 除外パターン: ["node_modules", ".cache", ...]
@@ -260,6 +267,13 @@ const defaultConfig: AdasConfig = {
     calendarIds: [], // 空 = プライマリカレンダーのみ
     daysToFetch: 7, // 前後7日分を取得
   },
+  notion: {
+    enabled: false,
+    token: undefined,
+    fetchIntervalMinutes: 10,
+    parallelWorkers: 2,
+    databaseIds: [],
+  },
   projects: {
     gitScanPaths: [],
     excludePatterns: [
@@ -396,6 +410,7 @@ export function loadConfig(): AdasConfig {
     claudeCode: { ...defaultConfig.claudeCode, ...userConfig.claudeCode },
     github: { ...defaultConfig.github, ...userConfig.github },
     calendar: { ...defaultConfig.calendar, ...userConfig.calendar },
+    notion: { ...defaultConfig.notion, ...userConfig.notion },
     projects: { ...defaultConfig.projects, ...userConfig.projects },
     aiProvider: {
       ...defaultConfig.aiProvider,

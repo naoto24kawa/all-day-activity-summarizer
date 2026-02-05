@@ -10,6 +10,7 @@ import { Hono } from "hono";
 import { enqueueJob } from "../../ai-job/queue.js";
 import type { AdasConfig } from "../../config.js";
 import { getTodayDateString } from "../../utils/date.js";
+import { getSSENotifier } from "../../utils/sse-notifier.js";
 import { getVocabularyTerms } from "../../utils/vocabulary.js";
 
 interface ExplainLearningResponse {
@@ -392,6 +393,9 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
       .run();
 
     const updated = db.select().from(schema.learnings).where(eq(schema.learnings.id, id)).get();
+
+    // SSE でバッジ更新を通知
+    getSSENotifier()?.emitBadgesUpdated(db);
 
     return c.json(updated);
   });

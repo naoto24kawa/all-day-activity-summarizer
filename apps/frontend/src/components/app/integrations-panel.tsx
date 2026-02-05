@@ -7,6 +7,7 @@
 import {
   AlertTriangle,
   Calendar,
+  FileText,
   Github,
   Info,
   MessageSquare,
@@ -78,6 +79,7 @@ export function IntegrationsPanel() {
       | "slack"
       | "github"
       | "calendar"
+      | "notion"
       | "claudeCode"
       | "evaluator"
       | "promptImprovement"
@@ -256,6 +258,29 @@ export function IntegrationsPanel() {
               checked={integrations.calendar.enabled}
               onCheckedChange={(checked) => handleToggle("calendar", checked)}
               disabled={updating || !integrations.calendar.hasCredentials}
+            />
+          </div>
+        )}
+
+        {/* Notion */}
+        {integrations.notion && (
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="notion-toggle" className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4" />
+                Notion
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                {integrations.notion.hasToken
+                  ? `データベース監視 (${integrations.notion.databaseIds.length} databases)`
+                  : "config.json で token を設定してください"}
+              </p>
+            </div>
+            <Switch
+              id="notion-toggle"
+              checked={integrations.notion.enabled}
+              onCheckedChange={(checked) => handleToggle("notion", checked)}
+              disabled={updating || !integrations.notion.hasToken}
             />
           </div>
         )}

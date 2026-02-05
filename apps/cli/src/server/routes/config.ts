@@ -8,6 +8,7 @@ interface IntegrationsUpdateBody {
   slack?: { enabled: boolean };
   github?: { enabled: boolean };
   calendar?: { enabled: boolean };
+  notion?: { enabled: boolean };
   claudeCode?: { enabled: boolean };
   evaluator?: { enabled: boolean };
   promptImprovement?: { enabled: boolean };
@@ -55,6 +56,7 @@ const INTEGRATION_KEYS = [
   "slack",
   "github",
   "calendar",
+  "notion",
   "claudeCode",
   "evaluator",
   "promptImprovement",
@@ -314,6 +316,12 @@ export function createConfigRouter() {
         calendarIds: config.calendar.calendarIds,
         hasCredentials: existsSync(config.calendar.credentialsPath),
       },
+      notion: {
+        enabled: config.notion.enabled,
+        fetchIntervalMinutes: config.notion.fetchIntervalMinutes,
+        databaseIds: config.notion.databaseIds,
+        hasToken: !!config.notion.token,
+      },
       claudeCode: {
         enabled: config.claudeCode.enabled,
         fetchIntervalMinutes: config.claudeCode.fetchIntervalMinutes,
@@ -418,6 +426,7 @@ export function createConfigRouter() {
         slack: { enabled: config.slack.enabled, watchKeywords: config.slack.watchKeywords },
         github: { enabled: config.github.enabled },
         calendar: { enabled: config.calendar.enabled },
+        notion: { enabled: config.notion.enabled },
         claudeCode: { enabled: config.claudeCode.enabled },
         evaluator: { enabled: config.evaluator.enabled },
         promptImprovement: { enabled: config.promptImprovement.enabled },

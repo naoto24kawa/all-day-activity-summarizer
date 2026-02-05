@@ -20,7 +20,7 @@ export function useSummarySources(): UseSummarySourcesReturn {
     setError(null);
     try {
       const response = await fetchAdasApi<SummarySourcesResponse>(
-        `/summaries/${summaryId}/sources`,
+        `/api/summaries/${summaryId}/sources`,
       );
       setSources(response);
     } catch (err) {

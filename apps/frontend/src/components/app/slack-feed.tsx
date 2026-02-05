@@ -22,9 +22,10 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Sparkles,
   Users,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,6 +86,21 @@ export function SlackFeed({ className }: SlackFeedProps) {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [userNameInput, setUserNameInput] = useState("");
   const [pendingUserAction, setPendingUserAction] = useState<string | null>(null);
+  // 優先度セクションの開閉状態
+  const [prioritySectionOpen, setPrioritySectionOpen] = useState(true);
+
+  // 優先度の高い未読メッセージ (最大5件)
+  const priorityMessages = useMemo(() => {
+    const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    return messages
+      .filter((m) => m.priority !== null && !m.isRead)
+      .sort((a, b) => {
+        const orderA = priorityOrder[a.priority ?? ""] ?? 3;
+        const orderB = priorityOrder[b.priority ?? ""] ?? 3;
+        return orderA - orderB;
+      })
+      .slice(0, 5);
+  }, [messages]);
 
   const handleStartUserEdit = (userId: string, currentName: string | null) => {
     setEditingUserId(userId);
@@ -370,6 +386,39 @@ export function SlackFeed({ className }: SlackFeedProps) {
           <p className="text-sm text-muted-foreground">No Slack messages for this date.</p>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
+            {/* 優先メッセージセクション */}
+            {priorityMessages.length > 0 && (
+              <Collapsible
+                open={prioritySectionOpen}
+                onOpenChange={setPrioritySectionOpen}
+                className="mb-3 shrink-0"
+              >
+                <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-left hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:hover:bg-amber-950/50">
+                  <Sparkles className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <span className="font-medium text-sm text-amber-800 dark:text-amber-300">
+                    Priority Messages
+                  </span>
+                  <Badge
+                    variant="secondary"
+                    className="ml-1 bg-amber-200 text-amber-800 dark:bg-amber-800 dark:text-amber-200"
+                  >
+                    {priorityMessages.length}
+                  </Badge>
+                  <ChevronDown
+                    className={`ml-auto h-4 w-4 text-amber-600 transition-transform dark:text-amber-400 ${prioritySectionOpen ? "rotate-180" : ""}`}
+                  />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-2 space-y-2">
+                  {priorityMessages.map((message) => (
+                    <PriorityMessageItem
+                      key={message.id}
+                      message={message}
+                      onMarkAsRead={markAsRead}
+                    />
+                  ))}
+                </CollapsibleContent>
+              </Collapsible>
+            )}
             <SegmentedTabs
               tabs={[
                 { id: "mention", label: "Mentions", icon: AtSign, badge: counts.mention },
@@ -753,6 +802,90 @@ function SlackMessageItem({
         </div>
       </div>
       <p className="whitespace-pre-wrap text-sm">{message.text}</p>
+    </div>
+  );
+}
+
+/**
+ * 優先メッセージアイテム (コンパクト版)
+ */
+function PriorityMessageItem({
+  message,
+  onMarkAsRead,
+}: {
+  message: SlackMessage;
+  onMarkAsRead: (id: number) => void;
+}) {
+  const getPriorityIcon = (p: SlackMessagePriority | null) => {
+    switch (p) {
+      case "high":
+        return <AlertTriangle className="h-3 w-3 text-red-500" />;
+      case "medium":
+        return <ArrowRight className="h-3 w-3 text-yellow-500" />;
+      case "low":
+        return <ArrowDown className="h-3 w-3 text-green-500" />;
+      default:
+        return null;
+    }
+  };
+
+  const getMessageTypeIcon = (type: string | null) => {
+    switch (type) {
+      case "mention":
+        return <AtSign className="h-3 w-3" />;
+      case "channel":
+        return <Hash className="h-3 w-3" />;
+      case "dm":
+        return <MessageSquare className="h-3 w-3" />;
+      case "keyword":
+        return <Search className="h-3 w-3" />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div
+      className={`flex items-start gap-2 rounded-md border p-2 ${
+        message.priority === "high"
+          ? "border-l-4 border-l-red-500 bg-red-50/50 dark:bg-red-950/20"
+          : message.priority === "medium"
+            ? "border-l-4 border-l-yellow-500 bg-yellow-50/50 dark:bg-yellow-950/20"
+            : "border-l-4 border-l-green-500 bg-green-50/50 dark:bg-green-950/20"
+      }`}
+    >
+      <div className="mt-0.5 shrink-0">{getPriorityIcon(message.priority)}</div>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="flex items-center gap-0.5">
+            {getMessageTypeIcon(message.messageType)}
+            {message.messageType === "dm" ? message.channelName : `#${message.channelName}`}
+          </span>
+          {message.userName && (
+            <span className="flex items-center gap-0.5 font-medium">@{message.userName}</span>
+          )}
+          <span className="opacity-60">{formatSlackTsJST(message.messageTs)}</span>
+        </div>
+        <p className="line-clamp-2 text-sm">{message.text}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        {message.permalink && (
+          <Button variant="ghost" size="icon" className="h-6 w-6" asChild>
+            <a href={message.permalink} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={() => onMarkAsRead(message.id)}
+          title="Mark as read"
+        >
+          <Check className="h-3 w-3" />
+        </Button>
+      </div>
     </div>
   );
 }

@@ -33,6 +33,9 @@ export type {
   NewGitHubQueueJob,
   NewLearning,
   NewMemo,
+  NewNotionDatabase,
+  NewNotionItem,
+  NewNotionQueueJob,
   NewProfileSuggestion,
   NewProject,
   NewProjectSuggestion,
@@ -49,6 +52,9 @@ export type {
   NewTranscriptionSegment,
   NewUserProfile,
   NewVocabularySuggestion,
+  NotionDatabase,
+  NotionItem,
+  NotionQueueJob,
   ProfileSuggestion,
   Project,
   ProjectSuggestion,
@@ -1501,6 +1507,72 @@ export function createDatabase(dbPath: string) {
   addColumnIfNotExists(sqlite, "tasks", "elaboration_status", "TEXT");
   addColumnIfNotExists(sqlite, "tasks", "pending_elaboration", "TEXT");
   addColumnIfNotExists(sqlite, "tasks", "step_number", "INTEGER");
+
+  // Migration: create Notion tables
+  sqlite.exec(`
+    -- Notion Items table (データベースアイテム・ページ)
+    CREATE TABLE IF NOT EXISTS notion_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      page_id TEXT NOT NULL UNIQUE,
+      parent_id TEXT,
+      parent_type TEXT NOT NULL CHECK(parent_type IN ('database', 'page', 'workspace')),
+      database_id TEXT,
+      title TEXT NOT NULL,
+      url TEXT NOT NULL,
+      icon TEXT,
+      properties TEXT,
+      last_edited_time TEXT NOT NULL,
+      last_edited_by TEXT,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      priority TEXT CHECK(priority IN ('high', 'medium', 'low')),
+      project_id INTEGER,
+      synced_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_notion_items_date ON notion_items(date);
+    CREATE INDEX IF NOT EXISTS idx_notion_items_database ON notion_items(database_id);
+    CREATE INDEX IF NOT EXISTS idx_notion_items_project ON notion_items(project_id);
+    CREATE INDEX IF NOT EXISTS idx_notion_items_is_read ON notion_items(is_read);
+
+    -- Notion Databases table (監視対象データベース)
+    CREATE TABLE IF NOT EXISTS notion_databases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      database_id TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      url TEXT NOT NULL,
+      icon TEXT,
+      properties TEXT,
+      project_id INTEGER,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      last_synced_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_notion_databases_project ON notion_databases(project_id);
+    CREATE INDEX IF NOT EXISTS idx_notion_databases_is_active ON notion_databases(is_active);
+
+    -- Notion Queue table (取得キュー)
+    CREATE TABLE IF NOT EXISTS notion_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_type TEXT NOT NULL CHECK(job_type IN ('fetch_recent_pages', 'fetch_database_items')),
+      database_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      max_retries INTEGER NOT NULL DEFAULT 3,
+      error_message TEXT,
+      locked_at TEXT,
+      run_after TEXT NOT NULL,
+      cursor TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_notion_queue_status ON notion_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_notion_queue_run_after ON notion_queue(run_after);
+  `);
 
   return db;
 }

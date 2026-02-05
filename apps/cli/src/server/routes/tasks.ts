@@ -49,6 +49,7 @@ import { createIssue, getItemState } from "../../github/client";
 import { getTodayDateString } from "../../utils/date";
 import { hasExtractionLog, recordExtractionLog } from "../../utils/extraction-log.js";
 import { findOrCreateProjectByGitHub } from "../../utils/project-lookup.js";
+import { getSSENotifier } from "../../utils/sse-notifier.js";
 import {
   formatChildTasksForCompletion,
   getChildTasks,
@@ -722,6 +723,9 @@ export function createTasksRouter(db: AdasDatabase) {
       .returning()
       .get();
 
+    // SSE でバッジ更新を通知
+    getSSENotifier()?.emitBadgesUpdated(db);
+
     return c.json({ message: "Task completed", task: result });
   });
 
@@ -959,6 +963,50 @@ export function createTasksRouter(db: AdasDatabase) {
 
     const results = [];
     for (const id of body.ids) {
+      // 承認の場合は承認のみタスクをチェック
+      if (body.status === "accepted") {
+        const existing = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+        if (existing && isApprovalOnlyTask(existing.sourceType)) {
+          // 承認のみタスクは自動的に完了にする (副作用も実行)
+          // prompt-improvement の場合、プロンプトファイルを更新
+          if (existing.sourceType === "prompt-improvement" && existing.promptImprovementId) {
+            await applyPromptImprovement(db, existing.promptImprovementId, now);
+          }
+          // profile-suggestion の場合、プロフィールを更新
+          if (existing.sourceType === "profile-suggestion" && existing.profileSuggestionId) {
+            await applyProfileSuggestion(db, existing.profileSuggestionId, now);
+          }
+          // vocabulary の場合、vocabulary テーブルに追加
+          if (existing.sourceType === "vocabulary" && existing.vocabularySuggestionId) {
+            await applyVocabularySuggestion(db, existing.vocabularySuggestionId, now);
+          }
+          // merge の場合、統合処理を実行
+          if (existing.sourceType === "merge" && existing.mergeSourceTaskIds) {
+            await executeMerge(db, existing, now);
+          }
+          // project-suggestion の場合、プロジェクトを作成
+          if (existing.sourceType === "project-suggestion" && existing.projectSuggestionId) {
+            await applyProjectSuggestion(db, existing.projectSuggestionId, now);
+          }
+
+          const result = db
+            .update(schema.tasks)
+            .set({
+              ...updates,
+              status: "completed",
+              acceptedAt: now,
+              completedAt: now,
+            })
+            .where(eq(schema.tasks.id, id))
+            .returning()
+            .get();
+          if (result) {
+            results.push(result);
+          }
+          continue;
+        }
+      }
+
       const result = db
         .update(schema.tasks)
         .set(updates)
@@ -969,6 +1017,9 @@ export function createTasksRouter(db: AdasDatabase) {
         results.push(result);
       }
     }
+
+    // SSE でバッジ更新を通知
+    getSSENotifier()?.emitBadgesUpdated(db);
 
     return c.json({
       updated: results.length,
@@ -1123,6 +1174,9 @@ export function createTasksRouter(db: AdasDatabase) {
       .where(eq(schema.tasks.id, id))
       .returning()
       .get();
+
+    // SSE でバッジ更新を通知
+    getSSENotifier()?.emitBadgesUpdated(db);
 
     return c.json(result);
   });
@@ -1739,6 +1793,9 @@ export function createTasksRouter(db: AdasDatabase) {
       .returning()
       .get();
 
+    // SSE でバッジ更新を通知 (accepted → in_progress)
+    getSSENotifier()?.emitBadgesUpdated(db);
+
     return c.json(result);
   });
 
@@ -1773,6 +1830,9 @@ export function createTasksRouter(db: AdasDatabase) {
       .where(eq(schema.tasks.id, id))
       .returning()
       .get();
+
+    // SSE でバッジ更新を通知
+    getSSENotifier()?.emitBadgesUpdated(db);
 
     return c.json(result);
   });
@@ -1835,6 +1895,9 @@ export function createTasksRouter(db: AdasDatabase) {
         .returning()
         .get();
 
+      // SSE でバッジ更新を通知
+      getSSENotifier()?.emitBadgesUpdated(db);
+
       return c.json(result);
     }
 
@@ -1849,6 +1912,9 @@ export function createTasksRouter(db: AdasDatabase) {
       .where(eq(schema.tasks.id, id))
       .returning()
       .get();
+
+    // SSE でバッジ更新を通知
+    getSSENotifier()?.emitBadgesUpdated(db);
 
     return c.json(result);
   });
@@ -1911,6 +1977,9 @@ export function createTasksRouter(db: AdasDatabase) {
       .where(eq(schema.tasks.id, id))
       .returning()
       .get();
+
+    // SSE でバッジ更新を通知
+    getSSENotifier()?.emitBadgesUpdated(db);
 
     return c.json(result);
   });

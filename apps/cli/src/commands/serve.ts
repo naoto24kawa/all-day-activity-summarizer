@@ -9,6 +9,7 @@ import { startClaudeCodeSystem } from "../claude-code/scheduler.js";
 import type { AdasConfig } from "../config.js";
 import { loadConfig } from "../config.js";
 import { startGitHubSystem } from "../github/scheduler.js";
+import { startNotionSystem } from "../notion/scheduler.js";
 import { startPromptImprovementScheduler } from "../prompt-improvement/scheduler.js";
 import { createApp } from "../server/app.js";
 import { startSlackSystem } from "../slack/scheduler.js";
@@ -175,6 +176,12 @@ export function registerServeCommand(program: Command): void {
       const stopCalendar = await startCalendarSystem(db, config);
       if (stopCalendar) {
         consola.success("Google Calendar integration started");
+      }
+
+      // Start Notion system if enabled
+      const stopNotion = await startNotionSystem(db, config);
+      if (stopNotion) {
+        consola.success("Notion integration started");
       }
 
       // Start Prompt Improvement scheduler

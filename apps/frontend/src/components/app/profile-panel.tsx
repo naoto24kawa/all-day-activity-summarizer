@@ -19,8 +19,13 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProfile, useProfileSuggestions } from "@/hooks/use-profile";
+import { cn } from "@/lib/utils";
 
-export function ProfilePanel() {
+interface ProfilePanelProps {
+  className?: string;
+}
+
+export function ProfilePanel({ className }: ProfilePanelProps) {
   const {
     profile,
     responsibilities,
@@ -156,7 +161,7 @@ export function ProfilePanel() {
   }
 
   return (
-    <Card>
+    <Card className={cn("flex flex-col", className)}>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <User className="h-5 w-5 text-orange-500" />

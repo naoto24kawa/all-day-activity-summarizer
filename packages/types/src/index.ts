@@ -183,3 +183,15 @@ export { isApprovalOnlyTask, MEMO_TAGS, WORK_TYPE_LABELS, WORK_TYPES } from "./a
 export type { ApiError, ApiResponse, Post } from "./api";
 // 環境変数の型定義
 export type { Env } from "./env";
+// Notion型定義
+export type {
+  NotionConfig,
+  NotionDatabase,
+  NotionItem,
+  NotionItemPriority,
+  NotionParentType,
+  NotionQueueJob,
+  NotionQueueJobStatus,
+  NotionQueueJobType,
+  NotionUnreadCounts,
+} from "./notion";

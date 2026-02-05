@@ -18,6 +18,7 @@ import { createGitHubCommentsRouter } from "./routes/github-comments.js";
 import { createGitHubItemsRouter } from "./routes/github-items.js";
 import { createLearningsRouter } from "./routes/learnings.js";
 import { createMemosRouter } from "./routes/memos.js";
+import { createNotionDatabasesRouter, createNotionItemsRouter } from "./routes/notion-items.js";
 import { createProfileRouter } from "./routes/profile.js";
 import { createProjectsRouter } from "./routes/projects.js";
 import { createPromptImprovementsRouter } from "./routes/prompt-improvements.js";
@@ -61,6 +62,8 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/github-items", createGitHubItemsRouter(db));
   app.route("/api/github-comments", createGitHubCommentsRouter(db));
   app.route("/api/calendar", createCalendarRouter(db));
+  app.route("/api/notion-items", createNotionItemsRouter(db));
+  app.route("/api/notion-databases", createNotionDatabasesRouter(db));
   app.route("/api/claude-code-sessions", createClaudeCodeSessionsRouter(db, options?.config));
   app.route("/api/claude-code-paths", createClaudeCodePathsRouter(db));
   app.route("/api/learnings", createLearningsRouter(db, options?.config));

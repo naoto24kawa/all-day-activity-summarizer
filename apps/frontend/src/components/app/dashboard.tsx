@@ -15,6 +15,7 @@ import { IntegrationsPanel } from "./integrations-panel";
 import { LearningsFeed } from "./learnings-feed";
 import { MemoFloatingChat } from "./memo-floating-chat";
 import { MonitoringPanel } from "./monitoring-panel";
+import { NotionFeed } from "./notion-feed";
 import { ProfilePanel } from "./profile-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
@@ -255,6 +256,9 @@ export function Dashboard() {
                 <TabsContent value="github" className="min-h-0 flex-1">
                   <GitHubFeed className="h-full" />
                 </TabsContent>
+                <TabsContent value="notion" className="min-h-0 flex-1">
+                  <NotionFeed className="h-full" />
+                </TabsContent>
                 <TabsContent value="claude" className="min-h-0 flex-1">
                   <ClaudeCodeFeed className="h-full" />
                 </TabsContent>
@@ -270,14 +274,16 @@ export function Dashboard() {
                     <ServerLogsPanel />
                   </div>
                 </TabsContent>
+                <TabsContent value="profile" className="min-h-0 flex-1 overflow-auto">
+                  <ProfilePanel className="h-full" />
+                </TabsContent>
+                <TabsContent value="ai-settings" className="min-h-0 flex-1 overflow-auto">
+                  <AISettingsPanel className="h-full" />
+                </TabsContent>
                 <TabsContent value="settings" className="min-h-0 flex-1 overflow-auto">
                   <div className="grid gap-4 lg:grid-cols-2">
+                    <IntegrationsPanel />
                     <div className="space-y-4">
-                      <IntegrationsPanel />
-                      <ProfilePanel />
-                    </div>
-                    <div className="space-y-4">
-                      <AISettingsPanel />
                       <SystemControlPanel />
                       <MonitoringPanel />
                     </div>

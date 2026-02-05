@@ -9,6 +9,7 @@ import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { enqueueJob } from "../../ai-job/queue.js";
 import { insertMessageIfNotExists } from "../../slack/fetcher.js";
+import { getSSENotifier } from "../../utils/sse-notifier.js";
 
 /**
  * チャンネル一覧を取得してマップを作成
@@ -342,6 +343,9 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
       .returning()
       .get();
 
+    // SSE でバッジ更新を通知
+    getSSENotifier()?.emitBadgesUpdated(db);
+
     return c.json(result);
   });
 
@@ -413,6 +417,9 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
       .where(and(...conditions))
       .returning()
       .all();
+
+    // SSE でバッジ更新を通知
+    getSSENotifier()?.emitBadgesUpdated(db);
 
     return c.json({ updated: result.length });
   });

@@ -6,6 +6,7 @@ import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { Hono } from "hono";
+import { getSSENotifier } from "../../utils/sse-notifier.js";
 
 export function createGitHubItemsRouter(db: AdasDatabase) {
   const router = new Hono();
@@ -137,6 +138,9 @@ export function createGitHubItemsRouter(db: AdasDatabase) {
       .returning()
       .get();
 
+    // SSE でバッジ更新を通知
+    getSSENotifier()?.emitBadgesUpdated(db);
+
     return c.json(result);
   });
 
@@ -173,6 +177,9 @@ export function createGitHubItemsRouter(db: AdasDatabase) {
       .where(and(...conditions))
       .returning()
       .all();
+
+    // SSE でバッジ更新を通知
+    getSSENotifier()?.emitBadgesUpdated(db);
 
     return c.json({ updated: result.length });
   });

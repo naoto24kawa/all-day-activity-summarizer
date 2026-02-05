@@ -7,6 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   BookOpen,
+  Bot,
   CheckSquare,
   FileText,
   FolderOpen,
@@ -14,8 +15,10 @@ import {
   Laptop,
   MessageSquare,
   Mic,
+  NotebookPen,
   Settings,
   Terminal,
+  User,
 } from "lucide-react";
 
 export type TabGroupId = "overview" | "feeds" | "tools" | "system";
@@ -25,17 +28,20 @@ export type TabId =
   | "audio"
   | "slack"
   | "github"
+  | "notion"
   | "claude"
   | "learnings"
   | "whisper"
   | "logs"
+  | "profile"
+  | "ai-settings"
   | "settings";
 
 export interface TabConfig {
   id: TabId;
   label: string;
   icon: LucideIcon;
-  badgeKey?: "tasks" | "learnings" | "slack" | "github";
+  badgeKey?: "tasks" | "learnings" | "slack" | "github" | "notion";
 }
 
 export interface TabGroupConfig {
@@ -63,6 +69,7 @@ export const TAB_GROUPS: TabGroupConfig[] = [
       { id: "audio", label: "Audio", icon: Mic },
       { id: "slack", label: "Slack", icon: MessageSquare },
       { id: "github", label: "GitHub", icon: Github, badgeKey: "github" },
+      { id: "notion", label: "Notion", icon: NotebookPen, badgeKey: "notion" },
       { id: "claude", label: "Claude", icon: Terminal },
     ],
   },
@@ -81,6 +88,8 @@ export const TAB_GROUPS: TabGroupConfig[] = [
     icon: Settings,
     tabs: [
       { id: "logs", label: "Logs", icon: FileText },
+      { id: "profile", label: "Profile", icon: User },
+      { id: "ai-settings", label: "AI Settings", icon: Bot },
       { id: "settings", label: "Settings", icon: Settings },
     ],
   },

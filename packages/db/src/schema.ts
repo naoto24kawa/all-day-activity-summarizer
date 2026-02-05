@@ -982,3 +982,19 @@ export const calendarQueue = sqliteTable("calendar_queue", {
 
 export type CalendarQueueJob = typeof calendarQueue.$inferSelect;
 export type NewCalendarQueueJob = typeof calendarQueue.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Notion (re-export from notion-schema.ts)
+// ---------------------------------------------------------------------------
+
+export {
+  type NewNotionDatabase,
+  type NewNotionItem,
+  type NewNotionQueueJob,
+  type NotionDatabase,
+  type NotionItem,
+  type NotionQueueJob,
+  notionDatabases,
+  notionItems,
+  notionQueue,
+} from "./notion-schema.js";

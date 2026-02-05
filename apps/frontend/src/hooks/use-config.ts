@@ -98,6 +98,11 @@ export interface IntegrationsConfig {
     calendarIds: string[];
     hasCredentials: boolean;
   };
+  notion?: IntegrationStatus & {
+    fetchIntervalMinutes: number;
+    databaseIds: string[];
+    hasToken: boolean;
+  };
   claudeCode: IntegrationStatus & {
     fetchIntervalMinutes: number;
     projects: string[];
@@ -187,6 +192,7 @@ export function useConfig() {
         | "slack"
         | "github"
         | "calendar"
+        | "notion"
         | "claudeCode"
         | "evaluator"
         | "promptImprovement"
