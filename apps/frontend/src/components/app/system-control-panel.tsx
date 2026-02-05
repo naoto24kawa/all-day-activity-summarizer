@@ -1,9 +1,9 @@
 /**
  * System Control Panel
  *
- * Server Launcher と Worker Launcher を GUI から操作
- * - Server Launcher: メインマシンで servers + frontend を管理
- * - Worker Launcher: Worker マシンで ai-worker + local-worker を管理
+ * servers と workers の状態表示・再起動
+ * - servers: cli servers (API + SSE + Launcher on 3999)
+ * - workers: cli workers (ai-worker + local-worker + Launcher on 3998)
  */
 
 import {
@@ -45,13 +45,13 @@ interface GitPullResult {
 export function SystemControlPanel() {
   const { integrations, loading: configLoading } = useConfig();
 
-  // Server Launcher state
+  // Server Launcher state (port 3999)
   const [serverStatus, setServerStatus] = useState<LauncherStatus | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [restartingServer, setRestartingServer] = useState(false);
   const [serverGitPull, setServerGitPull] = useState<GitPullResult | null>(null);
 
-  // Worker Launcher state
+  // Worker Launcher state (port 3998)
   const [workerStatus, setWorkerStatus] = useState<LauncherStatus | null>(null);
   const [workerError, setWorkerError] = useState<string | null>(null);
   const [restartingWorker, setRestartingWorker] = useState(false);
@@ -61,9 +61,12 @@ export function SystemControlPanel() {
   const serverLauncherUrl = integrations?.launcher?.url ?? "http://localhost:3999";
   const serverLauncherToken = integrations?.launcher?.token ?? "";
 
-  const workerLauncherUrl = integrations?.workerLauncher?.url ?? "";
+  const workerLauncherUrl = integrations?.workerLauncher?.url ?? "http://localhost:3998";
   const workerLauncherToken = integrations?.workerLauncher?.token ?? "";
-  const hasWorkerLauncher = !!workerLauncherUrl && workerLauncherUrl !== "http://localhost:3998";
+
+  // Worker Launcher が別マシンかどうか
+  const isWorkerRemote =
+    workerLauncherUrl !== "http://localhost:3998" && !workerLauncherUrl.includes("localhost");
 
   const fetchLauncherStatus = useCallback(
     async (
@@ -80,11 +83,11 @@ export function SystemControlPanel() {
           setStatus(data);
           setError(null);
         } else {
-          setError("Launcher not responding");
+          setError("Not responding");
           setStatus(null);
         }
       } catch {
-        setError("Launcher not running");
+        setError("Not running");
         setStatus(null);
       }
     },
@@ -98,19 +101,15 @@ export function SystemControlPanel() {
     fetchLauncherStatus(serverLauncherUrl, setServerStatus, setServerError);
 
     // Worker Launcher
-    if (hasWorkerLauncher) {
-      fetchLauncherStatus(workerLauncherUrl, setWorkerStatus, setWorkerError);
-    }
+    fetchLauncherStatus(workerLauncherUrl, setWorkerStatus, setWorkerError);
 
     const interval = setInterval(() => {
       fetchLauncherStatus(serverLauncherUrl, setServerStatus, setServerError);
-      if (hasWorkerLauncher) {
-        fetchLauncherStatus(workerLauncherUrl, setWorkerStatus, setWorkerError);
-      }
+      fetchLauncherStatus(workerLauncherUrl, setWorkerStatus, setWorkerError);
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [configLoading, serverLauncherUrl, workerLauncherUrl, hasWorkerLauncher, fetchLauncherStatus]);
+  }, [configLoading, serverLauncherUrl, workerLauncherUrl, fetchLauncherStatus]);
 
   const handleRestartLauncher = async (
     url: string,
@@ -138,14 +137,14 @@ export function SystemControlPanel() {
       });
 
       if (res.status === 401) {
-        setError("Unauthorized - check launcher token");
+        setError("Unauthorized - check token");
         return;
       }
 
       if (res.ok) {
         const data = (await res.json()) as { gitPull: GitPullResult };
         setGitPull(data.gitPull);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 3000));
         await fetchLauncherStatus(url, setStatus, setError);
       } else {
         setError("Failed to restart");
@@ -158,8 +157,6 @@ export function SystemControlPanel() {
   };
 
   const handleRestartProcess = async (processName: string) => {
-    if (!hasWorkerLauncher) return;
-
     setRestartingProcess(processName);
 
     try {
@@ -219,11 +216,11 @@ export function SystemControlPanel() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Server Launcher Section */}
+        {/* Server Section */}
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Monitor className="h-4 w-4" />
-            <span className="font-medium">Server Launcher</span>
+            <span className="font-medium">Servers</span>
             {serverLauncherUrl !== "http://localhost:3999" && (
               <Badge variant="outline" className="text-xs">
                 {new URL(serverLauncherUrl).host}
@@ -235,9 +232,9 @@ export function SystemControlPanel() {
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                <p className="font-medium">Server Launcher not running</p>
+                <p className="font-medium">Servers not running</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Run <code className="rounded bg-muted px-1">bun run dev:server</code> to start.
+                  Run <code className="rounded bg-muted px-1">bun run cli servers</code> to start.
                 </p>
               </AlertDescription>
             </Alert>
@@ -296,7 +293,7 @@ export function SystemControlPanel() {
                 ) : (
                   <>
                     <RefreshCw className="mr-2 h-4 w-4" />
-                    Restart Server
+                    Restart Servers
                   </>
                 )}
               </Button>
@@ -318,123 +315,121 @@ export function SystemControlPanel() {
           )}
         </div>
 
-        {/* Worker Launcher Section */}
-        {hasWorkerLauncher && (
-          <div className="space-y-3 border-t pt-4">
-            <div className="flex items-center gap-2">
-              <Cloud className="h-4 w-4" />
-              <span className="font-medium">Worker Launcher</span>
+        {/* Worker Section */}
+        <div className="space-y-3 border-t pt-4">
+          <div className="flex items-center gap-2">
+            {isWorkerRemote ? <Cloud className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}
+            <span className="font-medium">Workers</span>
+            {isWorkerRemote && (
               <Badge variant="outline" className="text-xs">
                 {new URL(workerLauncherUrl).host}
               </Badge>
-            </div>
-
-            {!isWorkerAvailable ? (
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  <p className="font-medium">Worker Launcher not running</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Run <code className="rounded bg-muted px-1">bun run dev:worker</code> on the
-                    worker machine.
-                  </p>
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <>
-                <div className="grid gap-2">
-                  {workerStatus.processes.map((proc) => (
-                    <div
-                      key={proc.name}
-                      className="flex items-center justify-between rounded-md border px-3 py-2"
-                    >
-                      <span className="text-sm font-medium">{proc.name}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">PID: {proc.pid}</span>
-                        {proc.running ? (
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <Check className="h-4 w-4 text-green-500" />
-                            </TooltipTrigger>
-                            <TooltipContent>Running</TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <Power className="h-4 w-4 text-red-500" />
-                            </TooltipTrigger>
-                            <TooltipContent>Stopped</TooltipContent>
-                          </Tooltip>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleRestartProcess(proc.name)}
-                          disabled={restartingProcess === proc.name}
-                        >
-                          {restartingProcess === proc.name ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <RefreshCw className="h-3 w-3" />
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <Button
-                  onClick={() =>
-                    handleRestartLauncher(
-                      workerLauncherUrl,
-                      workerLauncherToken,
-                      setRestartingWorker,
-                      setWorkerGitPull,
-                      setWorkerStatus,
-                      setWorkerError,
-                    )
-                  }
-                  disabled={restartingWorker || workerStatus.isRestarting}
-                  className="w-full"
-                  variant={allWorkerRunning ? "outline" : "default"}
-                  size="sm"
-                >
-                  {restartingWorker || workerStatus.isRestarting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Restarting...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                      Restart All Workers
-                    </>
-                  )}
-                </Button>
-
-                {workerGitPull && (
-                  <div
-                    className={`rounded-md border p-2 text-xs ${workerGitPull.success ? "border-green-500/30 bg-green-500/10" : "border-red-500/30 bg-red-500/10"}`}
-                  >
-                    <div className="flex items-center gap-1 font-medium">
-                      <GitBranch className="h-3 w-3" />
-                      git pull {workerGitPull.success ? "成功" : "失敗"}
-                    </div>
-                    <p className="mt-1 whitespace-pre-wrap font-mono text-muted-foreground">
-                      {workerGitPull.output || "Already up to date"}
-                    </p>
-                  </div>
-                )}
-              </>
             )}
           </div>
-        )}
+
+          {!isWorkerAvailable ? (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                <p className="font-medium">Workers not running</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Run <code className="rounded bg-muted px-1">bun run cli workers</code>
+                  {isWorkerRemote && " on the worker machine"}.
+                </p>
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <>
+              <div className="grid gap-2">
+                {workerStatus.processes.map((proc) => (
+                  <div
+                    key={proc.name}
+                    className="flex items-center justify-between rounded-md border px-3 py-2"
+                  >
+                    <span className="text-sm font-medium">{proc.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">PID: {proc.pid}</span>
+                      {proc.running ? (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Check className="h-4 w-4 text-green-500" />
+                          </TooltipTrigger>
+                          <TooltipContent>Running</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Power className="h-4 w-4 text-red-500" />
+                          </TooltipTrigger>
+                          <TooltipContent>Stopped</TooltipContent>
+                        </Tooltip>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleRestartProcess(proc.name)}
+                        disabled={restartingProcess === proc.name}
+                      >
+                        {restartingProcess === proc.name ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                onClick={() =>
+                  handleRestartLauncher(
+                    workerLauncherUrl,
+                    workerLauncherToken,
+                    setRestartingWorker,
+                    setWorkerGitPull,
+                    setWorkerStatus,
+                    setWorkerError,
+                  )
+                }
+                disabled={restartingWorker || workerStatus.isRestarting}
+                className="w-full"
+                variant={allWorkerRunning ? "outline" : "default"}
+                size="sm"
+              >
+                {restartingWorker || workerStatus.isRestarting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Restarting...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Restart All Workers
+                  </>
+                )}
+              </Button>
+
+              {workerGitPull && (
+                <div
+                  className={`rounded-md border p-2 text-xs ${workerGitPull.success ? "border-green-500/30 bg-green-500/10" : "border-red-500/30 bg-red-500/10"}`}
+                >
+                  <div className="flex items-center gap-1 font-medium">
+                    <GitBranch className="h-3 w-3" />
+                    git pull {workerGitPull.success ? "成功" : "失敗"}
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap font-mono text-muted-foreground">
+                    {workerGitPull.output || "Already up to date"}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
         {/* Help text */}
         <p className="text-center text-xs text-muted-foreground">
-          {hasWorkerLauncher
-            ? "git pull → 各 Launcher がプロセスを再起動"
-            : "Worker Launcher を設定すると別マシンの Workers も管理可能"}
+          Restart: git pull → プロセス再起動
         </p>
       </CardContent>
     </Card>

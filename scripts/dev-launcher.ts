@@ -55,6 +55,10 @@ const allProcesses: ProcessConfig[] = [
     skipIfRemote: "localWorker",
   },
   {
+    name: "mcp-server",
+    command: ["bun", "run", "apps/mcp-server/src/index.ts"],
+  },
+  {
     name: "frontend",
     command: ["bun", "run", "dev"],
     cwd: "apps/frontend",

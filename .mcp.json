@@ -12,11 +12,8 @@
       ]
     },
     "adas": {
-      "command": "bun",
-      "args": ["run", "./apps/mcp-server/src/index.ts"],
-      "env": {
-        "ADAS_API_URL": "http://localhost:3001/api"
-      }
+      "type": "streamable-http",
+      "url": "http://localhost:3050/mcp"
     }
   }
 }
