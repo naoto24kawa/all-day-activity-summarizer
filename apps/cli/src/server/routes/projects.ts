@@ -4,9 +4,14 @@
  * プロジェクト管理 API
  */
 
-import type { AdasDatabase } from "@repo/db";
+import type { AdasDatabase, ProjectRepository } from "@repo/db";
 import { schema } from "@repo/db";
-import type { CreateProjectRequest, GitRepoScanResult, UpdateProjectRequest } from "@repo/types";
+import type {
+  CreateProjectRequest,
+  GitRepoScanResult,
+  Project,
+  UpdateProjectRequest,
+} from "@repo/types";
 import consola from "consola";
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
@@ -14,6 +19,31 @@ import { loadConfig } from "../../config.js";
 import { getTodayDateString } from "../../utils/date.js";
 import { hasExtractionLog, recordExtractionLog } from "../../utils/extraction-log.js";
 import { scanGitRepositories } from "../../utils/git-scanner.js";
+
+/**
+ * プロジェクトに紐づくリポジトリを取得するヘルパー関数
+ */
+function getProjectRepositories(db: AdasDatabase, projectId: number): ProjectRepository[] {
+  return db
+    .select()
+    .from(schema.projectRepositories)
+    .where(eq(schema.projectRepositories.projectId, projectId))
+    .all();
+}
+
+/**
+ * プロジェクトをリポジトリ付きで返すヘルパー関数
+ */
+function enrichProjectWithRepositories(
+  db: AdasDatabase,
+  project: typeof schema.projects.$inferSelect,
+): Project {
+  const repositories = getProjectRepositories(db, project.id);
+  return {
+    ...project,
+    repositories,
+  };
+}
 
 export function createProjectsRouter(db: AdasDatabase) {
   const router = new Hono();
@@ -46,7 +76,10 @@ export function createProjectsRouter(db: AdasDatabase) {
 
     const projects = query.all();
 
-    return c.json(projects);
+    // 各プロジェクトにリポジトリ情報を付与
+    const enrichedProjects = projects.map((p) => enrichProjectWithRepositories(db, p));
+
+    return c.json(enrichedProjects);
   });
 
   /**
@@ -64,7 +97,7 @@ export function createProjectsRouter(db: AdasDatabase) {
       return c.json({ error: "Project not found" }, 404);
     }
 
-    return c.json(project);
+    return c.json(enrichProjectWithRepositories(db, project));
   });
 
   /**
@@ -81,20 +114,39 @@ export function createProjectsRouter(db: AdasDatabase) {
 
     const now = new Date().toISOString();
 
+    // 後方互換性: githubOwner/githubRepo が指定されている場合は repositories に変換
+    const repositories = body.repositories ?? [];
+    if (body.githubOwner && body.githubRepo && repositories.length === 0) {
+      repositories.push({ githubOwner: body.githubOwner, githubRepo: body.githubRepo });
+    }
+
     const project = db
       .insert(schema.projects)
       .values({
         name: body.name,
         path: body.path ?? null,
-        githubOwner: body.githubOwner ?? null,
-        githubRepo: body.githubRepo ?? null,
+        // 後方互換性のため、最初のリポジトリを保存
+        githubOwner: repositories[0]?.githubOwner ?? null,
+        githubRepo: repositories[0]?.githubRepo ?? null,
         createdAt: now,
         updatedAt: now,
       })
       .returning()
       .get();
 
-    return c.json(project, 201);
+    // リポジトリを追加
+    for (const repo of repositories) {
+      db.insert(schema.projectRepositories)
+        .values({
+          projectId: project.id,
+          githubOwner: repo.githubOwner,
+          githubRepo: repo.githubRepo,
+          createdAt: now,
+        })
+        .run();
+    }
+
+    return c.json(enrichProjectWithRepositories(db, project), 201);
   });
 
   /**
@@ -116,6 +168,7 @@ export function createProjectsRouter(db: AdasDatabase) {
       return c.json({ error: "Project not found" }, 404);
     }
 
+    const now = new Date().toISOString();
     const updates: {
       updatedAt: string;
       name?: string;
@@ -124,7 +177,7 @@ export function createProjectsRouter(db: AdasDatabase) {
       githubRepo?: string | null;
       isActive?: boolean;
     } = {
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     };
 
     if (body.name !== undefined) {
@@ -133,6 +186,7 @@ export function createProjectsRouter(db: AdasDatabase) {
     if (body.path !== undefined) {
       updates.path = body.path;
     }
+    // 後方互換性: githubOwner/githubRepo が指定された場合
     if (body.githubOwner !== undefined) {
       updates.githubOwner = body.githubOwner;
     }
@@ -143,6 +197,30 @@ export function createProjectsRouter(db: AdasDatabase) {
       updates.isActive = body.isActive;
     }
 
+    // repositories が指定された場合、既存のリポジトリを置き換え
+    if (body.repositories !== undefined) {
+      // 既存のリポジトリを削除
+      db.delete(schema.projectRepositories)
+        .where(eq(schema.projectRepositories.projectId, id))
+        .run();
+
+      // 新しいリポジトリを追加
+      for (const repo of body.repositories) {
+        db.insert(schema.projectRepositories)
+          .values({
+            projectId: id,
+            githubOwner: repo.githubOwner,
+            githubRepo: repo.githubRepo,
+            createdAt: now,
+          })
+          .run();
+      }
+
+      // 後方互換性のため、最初のリポジトリを projects テーブルにも保存
+      updates.githubOwner = body.repositories[0]?.githubOwner ?? null;
+      updates.githubRepo = body.repositories[0]?.githubRepo ?? null;
+    }
+
     const result = db
       .update(schema.projects)
       .set(updates)
@@ -150,7 +228,7 @@ export function createProjectsRouter(db: AdasDatabase) {
       .returning()
       .get();
 
-    return c.json(result);
+    return c.json(enrichProjectWithRepositories(db, result));
   });
 
   /**
@@ -167,6 +245,9 @@ export function createProjectsRouter(db: AdasDatabase) {
     if (!existing) {
       return c.json({ error: "Project not found" }, 404);
     }
+
+    // 関連するリポジトリも削除
+    db.delete(schema.projectRepositories).where(eq(schema.projectRepositories.projectId, id)).run();
 
     db.delete(schema.projects).where(eq(schema.projects.id, id)).run();
 
@@ -602,29 +683,55 @@ export function createProjectsRouter(db: AdasDatabase) {
       return c.json({ error: "Project not found" }, 404);
     }
 
-    return c.json(project);
+    return c.json(enrichProjectWithRepositories(db, project));
   });
 
   /**
    * GET /api/projects/by-github/:owner/:repo
    *
    * GitHub owner/repo からプロジェクトを検索
+   * project_repositories テーブルを使用して検索
    */
   router.get("/by-github/:owner/:repo", (c) => {
     const owner = c.req.param("owner");
     const repo = c.req.param("repo");
 
-    const project = db
+    // まず project_repositories から検索
+    const projectRepo = db
+      .select()
+      .from(schema.projectRepositories)
+      .where(
+        and(
+          eq(schema.projectRepositories.githubOwner, owner),
+          eq(schema.projectRepositories.githubRepo, repo),
+        ),
+      )
+      .get();
+
+    if (projectRepo) {
+      const project = db
+        .select()
+        .from(schema.projects)
+        .where(eq(schema.projects.id, projectRepo.projectId))
+        .get();
+
+      if (project) {
+        return c.json(enrichProjectWithRepositories(db, project));
+      }
+    }
+
+    // 後方互換性: projects テーブルの githubOwner/githubRepo からも検索
+    const legacyProject = db
       .select()
       .from(schema.projects)
       .where(and(eq(schema.projects.githubOwner, owner), eq(schema.projects.githubRepo, repo)))
       .get();
 
-    if (!project) {
-      return c.json({ error: "Project not found" }, 404);
+    if (legacyProject) {
+      return c.json(enrichProjectWithRepositories(db, legacyProject));
     }
 
-    return c.json(project);
+    return c.json({ error: "Project not found" }, 404);
   });
 
   /**
@@ -635,8 +742,14 @@ export function createProjectsRouter(db: AdasDatabase) {
   router.get("/stats", (c) => {
     const allProjects = db.select().from(schema.projects).all();
 
+    // リポジトリを持つプロジェクト数をカウント
+    const projectsWithRepos = db
+      .selectDistinct({ projectId: schema.projectRepositories.projectId })
+      .from(schema.projectRepositories)
+      .all();
+
     const withPath = allProjects.filter((p) => p.path !== null).length;
-    const withGitHub = allProjects.filter((p) => p.githubOwner !== null).length;
+    const withGitHub = projectsWithRepos.length;
     const active = allProjects.filter((p) => p.isActive).length;
 
     return c.json({
@@ -645,6 +758,122 @@ export function createProjectsRouter(db: AdasDatabase) {
       withPath,
       withGitHub,
     });
+  });
+
+  /**
+   * GET /api/projects/:id/repositories
+   *
+   * プロジェクトに紐づくリポジトリ一覧
+   */
+  router.get("/:id/repositories", (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const project = db.select().from(schema.projects).where(eq(schema.projects.id, id)).get();
+
+    if (!project) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const repositories = getProjectRepositories(db, id);
+    return c.json(repositories);
+  });
+
+  /**
+   * POST /api/projects/:id/repositories
+   *
+   * プロジェクトにリポジトリを追加
+   */
+  router.post("/:id/repositories", async (c) => {
+    const id = Number(c.req.param("id"));
+    if (Number.isNaN(id)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const body = await c.req.json<{ githubOwner: string; githubRepo: string }>();
+
+    if (!body.githubOwner || !body.githubRepo) {
+      return c.json({ error: "githubOwner and githubRepo are required" }, 400);
+    }
+
+    const project = db.select().from(schema.projects).where(eq(schema.projects.id, id)).get();
+
+    if (!project) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    // 重複チェック
+    const existing = db
+      .select()
+      .from(schema.projectRepositories)
+      .where(
+        and(
+          eq(schema.projectRepositories.projectId, id),
+          eq(schema.projectRepositories.githubOwner, body.githubOwner),
+          eq(schema.projectRepositories.githubRepo, body.githubRepo),
+        ),
+      )
+      .get();
+
+    if (existing) {
+      return c.json({ error: "Repository already linked to this project" }, 409);
+    }
+
+    const now = new Date().toISOString();
+    const repository = db
+      .insert(schema.projectRepositories)
+      .values({
+        projectId: id,
+        githubOwner: body.githubOwner,
+        githubRepo: body.githubRepo,
+        createdAt: now,
+      })
+      .returning()
+      .get();
+
+    // projects テーブルの updatedAt を更新
+    db.update(schema.projects).set({ updatedAt: now }).where(eq(schema.projects.id, id)).run();
+
+    return c.json(repository, 201);
+  });
+
+  /**
+   * DELETE /api/projects/:id/repositories/:repoId
+   *
+   * プロジェクトからリポジトリを削除
+   */
+  router.delete("/:id/repositories/:repoId", (c) => {
+    const id = Number(c.req.param("id"));
+    const repoId = Number(c.req.param("repoId"));
+
+    if (Number.isNaN(id) || Number.isNaN(repoId)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+
+    const repository = db
+      .select()
+      .from(schema.projectRepositories)
+      .where(
+        and(
+          eq(schema.projectRepositories.id, repoId),
+          eq(schema.projectRepositories.projectId, id),
+        ),
+      )
+      .get();
+
+    if (!repository) {
+      return c.json({ error: "Repository not found" }, 404);
+    }
+
+    db.delete(schema.projectRepositories).where(eq(schema.projectRepositories.id, repoId)).run();
+
+    // projects テーブルの updatedAt を更新
+    const now = new Date().toISOString();
+    db.update(schema.projects).set({ updatedAt: now }).where(eq(schema.projects.id, id)).run();
+
+    return c.json({ deleted: true });
   });
 
   /**

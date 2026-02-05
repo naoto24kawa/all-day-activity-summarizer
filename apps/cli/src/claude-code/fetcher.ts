@@ -1,10 +1,11 @@
 /**
  * Claude Code Session Fetcher
  *
- * Handles fetching and storing sessions from Claude Code MCP server
+ * Handles fetching and storing sessions from Claude Code local history
  */
 
 import { basename } from "node:path";
+import { getSessionDetail, listProjects, listSessions } from "@repo/claude-history";
 import type {
   AdasDatabase,
   ClaudeCodeQueueJob,
@@ -17,7 +18,6 @@ import { eq } from "drizzle-orm";
 import type { AdasConfig } from "../config.js";
 import { getTodayDateString } from "../utils/date.js";
 import { findProjectByPathFuzzy } from "../utils/project-lookup.js";
-import type { ClaudeCodeClient } from "./client.js";
 import { extractAndSaveLearnings } from "./extractor.js";
 
 /**
@@ -134,7 +134,6 @@ function upsertSession(db: AdasDatabase, session: NewClaudeCodeSession): boolean
  */
 export async function fetchProjectSessions(
   db: AdasDatabase,
-  client: ClaudeCodeClient,
   projectPath: string,
   config?: AdasConfig,
 ): Promise<{ fetched: number; stored: number; learnings: number }> {
@@ -143,14 +142,17 @@ export async function fetchProjectSessions(
   let totalLearnings = 0;
 
   const projectName = basename(projectPath);
-  const sessions = await client.listSessions(projectPath);
+  const sessions = await listSessions(projectPath);
 
   // Find ADAS project ID for auto-linking
   const projectId = findProjectByPathFuzzy(db, projectPath);
 
   for (const sessionInfo of sessions) {
     try {
-      const detail = await client.getSessionDetail(projectPath, sessionInfo.id);
+      const detail = await getSessionDetail(projectPath, sessionInfo.id);
+      if (!detail) {
+        continue;
+      }
       fetched++;
 
       const date = extractDateString(detail.summary.startTime);
@@ -210,7 +212,6 @@ export async function fetchProjectSessions(
  */
 export async function fetchAllSessions(
   db: AdasDatabase,
-  client: ClaudeCodeClient,
   filterProjects?: string[],
   config?: AdasConfig,
 ): Promise<{ fetched: number; stored: number; learnings: number }> {
@@ -218,7 +219,7 @@ export async function fetchAllSessions(
   let totalStored = 0;
   let totalLearnings = 0;
 
-  const projects = await client.listProjects();
+  const projects = await listProjects();
 
   for (const project of projects) {
     // Apply filter if specified
@@ -229,7 +230,7 @@ export async function fetchAllSessions(
     }
 
     try {
-      const result = await fetchProjectSessions(db, client, project.path, config);
+      const result = await fetchProjectSessions(db, project.path, config);
       totalFetched += result.fetched;
       totalStored += result.stored;
       totalLearnings += result.learnings;
@@ -249,7 +250,6 @@ export async function fetchAllSessions(
  */
 export async function processClaudeCodeJob(
   db: AdasDatabase,
-  client: ClaudeCodeClient,
   job: ClaudeCodeQueueJob,
   filterProjects?: string[],
   config?: AdasConfig,
@@ -258,10 +258,10 @@ export async function processClaudeCodeJob(
     case "fetch_sessions": {
       if (job.projectPath) {
         // Fetch specific project
-        await fetchProjectSessions(db, client, job.projectPath, config);
+        await fetchProjectSessions(db, job.projectPath, config);
       } else {
         // Fetch all projects
-        await fetchAllSessions(db, client, filterProjects, config);
+        await fetchAllSessions(db, filterProjects, config);
       }
       break;
     }

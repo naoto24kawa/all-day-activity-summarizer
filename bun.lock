@@ -62,8 +62,8 @@
       },
       "dependencies": {
         "@hono/node-server": "^1.19.6",
-        "@modelcontextprotocol/sdk": "^1.0.0",
         "@notionhq/client": "^5.9.0",
+        "@repo/claude-history": "workspace:*",
         "@repo/core": "workspace:*",
         "@repo/db": "workspace:*",
         "@repo/slack-api": "workspace:*",
@@ -167,6 +167,10 @@
         "consola": "^3.4.2",
         "hono": "^4.10.6",
       },
+    },
+    "packages/claude-history": {
+      "name": "@repo/claude-history",
+      "version": "0.0.0",
     },
     "packages/core": {
       "name": "@repo/core",
@@ -613,6 +617,8 @@
     "@repo/ai-worker": ["@repo/ai-worker@workspace:apps/ai-worker"],
 
     "@repo/backend": ["@repo/backend@workspace:apps/backend"],
+
+    "@repo/claude-history": ["@repo/claude-history@workspace:packages/claude-history"],
 
     "@repo/cli": ["@repo/cli@workspace:apps/cli"],
 

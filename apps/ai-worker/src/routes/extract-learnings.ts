@@ -7,7 +7,6 @@ import { withProcessingLog } from "../utils/log-processing.js";
 const EXTRACT_MODEL = "sonnet";
 
 interface UserProfileContext {
-  experienceYears?: number;
   specialties?: string[];
   knownTechnologies?: string[];
   learningGoals?: string[];
@@ -97,9 +96,6 @@ function buildPrompt(
   let profileSection = "";
   if (userProfile) {
     const parts: string[] = [];
-    if (userProfile.experienceYears !== undefined) {
-      parts.push(`経験年数: ${userProfile.experienceYears}年`);
-    }
     if (userProfile.specialties && userProfile.specialties.length > 0) {
       parts.push(`専門分野: ${userProfile.specialties.join(", ")}`);
     }

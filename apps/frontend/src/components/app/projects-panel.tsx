@@ -11,13 +11,14 @@ import {
   ChevronRight,
   FolderGit2,
   FolderKanban,
-  Info,
+  Github,
   Pencil,
   Plus,
   Search,
   Settings,
   Trash2,
   Undo2,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -34,13 +35,24 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProjects, useProjectsConfig } from "@/hooks/use-projects";
+import { cn } from "@/lib/utils";
 
-export function ProjectsPanel() {
+interface ProjectsPanelProps {
+  className?: string;
+  selectedProjectId?: number | null;
+  onSelectProject?: (project: Project | null) => void;
+}
+
+export function ProjectsPanel({
+  className,
+  selectedProjectId,
+  onSelectProject,
+}: ProjectsPanelProps) {
   const {
     projects,
     loading,
@@ -58,7 +70,6 @@ export function ProjectsPanel() {
     fetchExcludedProjects,
   } = useProjects(false); // 全プロジェクトを取得
 
-  const [isOpen, setIsOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -141,175 +152,154 @@ export function ProjectsPanel() {
 
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Projects</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
-            <Skeleton key={id} className="h-16 w-full" />
-          ))}
-        </CardContent>
-      </Card>
+      <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
+        <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <CardHeader>
+            <CardTitle>Projects</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
+              <Skeleton key={id} className="h-16 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   return (
-    <>
-      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <Card className="flex min-h-0 flex-col overflow-hidden">
-          <CollapsibleTrigger asChild>
-            <CardHeader className="shrink-0 cursor-pointer select-none hover:bg-muted/50 transition-colors">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  {isOpen ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  )}
-                  <FolderKanban className="h-5 w-5 text-indigo-500" />
-                  Projects
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-4 w-4 cursor-help text-muted-foreground" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>プロジェクトを管理します。</p>
-                      <p>タスクや学びをプロジェクトに紐付けできます。</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  {projects.length > 0 && (
-                    <Badge variant="secondary" className="ml-1">
-                      {projects.length}
-                    </Badge>
-                  )}
-                </CardTitle>
-                <div
-                  className="flex gap-1"
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => e.stopPropagation()}
-                >
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    onClick={() => setSettingsDialogOpen(true)}
-                    title="スキャン設定"
-                    className="h-8 w-8"
-                  >
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    onClick={handleScanGitRepos}
-                    disabled={scanning}
-                    title="Git リポジトリをスキャン"
-                    className="h-8 w-8"
-                  >
-                    <FolderGit2 className={`h-4 w-4 ${scanning ? "animate-spin" : ""}`} />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    onClick={handleAutoDetect}
-                    disabled={autoDetecting}
-                    title="既存データから自動検出"
-                    className="h-8 w-8"
-                  >
-                    <Search className={`h-4 w-4 ${autoDetecting ? "animate-pulse" : ""}`} />
-                  </Button>
-                  <Button
-                    size="icon"
-                    onClick={() => setCreateDialogOpen(true)}
-                    title="新規作成"
-                    className="h-8 w-8"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
+    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}>
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <CardHeader className="shrink-0">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <FolderKanban className="h-5 w-5 text-indigo-500" />
+              Projects
+              {projects.length > 0 && (
+                <Badge variant="secondary" className="ml-1">
+                  {projects.length}
+                </Badge>
+              )}
+            </CardTitle>
+            <div className="flex gap-1">
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={() => setSettingsDialogOpen(true)}
+                title="スキャン設定"
+                className="h-8 w-8"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={handleScanGitRepos}
+                disabled={scanning}
+                title="Git リポジトリをスキャン"
+                className="h-8 w-8"
+              >
+                <FolderGit2 className={`h-4 w-4 ${scanning ? "animate-spin" : ""}`} />
+              </Button>
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={handleAutoDetect}
+                disabled={autoDetecting}
+                title="既存データから自動検出"
+                className="h-8 w-8"
+              >
+                <Search className={`h-4 w-4 ${autoDetecting ? "animate-pulse" : ""}`} />
+              </Button>
+              <Button
+                size="icon"
+                onClick={() => setCreateDialogOpen(true)}
+                title="新規作成"
+                className="h-8 w-8"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {error && <p className="mb-4 shrink-0 text-sm text-destructive">{error}</p>}
+
+          {autoDetectResult && (
+            <p className="mb-4 shrink-0 text-sm text-muted-foreground">
+              {autoDetectResult.detected} 件検出
+              {autoDetectResult.created > 0
+                ? `、${autoDetectResult.created} 件の候補が見つかりました。Tasks タブで確認してください。`
+                : ""}
+            </p>
+          )}
+
+          {scanResult && (
+            <p className="mb-4 shrink-0 text-sm text-muted-foreground">
+              {scanResult.scanned} 件スキャン
+              {scanResult.created > 0
+                ? `、${scanResult.created} 件の候補が見つかりました。Tasks タブで確認してください。`
+                : `、${scanResult.skipped} 件スキップ`}
+            </p>
+          )}
+
+          {projects.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              プロジェクトがありません。「新規作成」または「自動検出」でプロジェクトを追加してください。
+            </p>
+          ) : (
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="space-y-3 pr-4">
+                {projects.map((project) => (
+                  <ProjectItem
+                    key={project.id}
+                    project={project}
+                    stats={projectStats[project.id]}
+                    isSelected={selectedProjectId === project.id}
+                    onSelect={onSelectProject ? () => onSelectProject(project) : undefined}
+                    onEdit={() => setEditingProject(project)}
+                    onExclude={() => handleExclude(project)}
+                    onDelete={() => handleDelete(project)}
+                  />
+                ))}
               </div>
-              {!isOpen && <p className="mt-1 text-xs text-muted-foreground">クリックして展開</p>}
-            </CardHeader>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <CardContent className="flex min-h-0 flex-1 flex-col">
-              {error && <p className="mb-4 shrink-0 text-sm text-destructive">{error}</p>}
 
-              {autoDetectResult && (
-                <p className="mb-4 shrink-0 text-sm text-muted-foreground">
-                  {autoDetectResult.detected} 件検出
-                  {autoDetectResult.created > 0
-                    ? `、${autoDetectResult.created} 件の候補が見つかりました。Tasks タブで確認してください。`
-                    : ""}
-                </p>
-              )}
-
-              {scanResult && (
-                <p className="mb-4 shrink-0 text-sm text-muted-foreground">
-                  {scanResult.scanned} 件スキャン
-                  {scanResult.created > 0
-                    ? `、${scanResult.created} 件の候補が見つかりました。Tasks タブで確認してください。`
-                    : `、${scanResult.skipped} 件スキップ`}
-                </p>
-              )}
-
-              {projects.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  プロジェクトがありません。「新規作成」または「自動検出」でプロジェクトを追加してください。
-                </p>
-              ) : (
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  <div className="space-y-3">
-                    {projects.map((project) => (
-                      <ProjectItem
-                        key={project.id}
-                        project={project}
-                        stats={projectStats[project.id]}
-                        onEdit={() => setEditingProject(project)}
-                        onExclude={() => handleExclude(project)}
-                        onDelete={() => handleDelete(project)}
-                      />
-                    ))}
-                  </div>
-
-                  {/* 除外済みセクション */}
-                  <Collapsible open={excludedOpen} onOpenChange={setExcludedOpen} className="mt-4">
-                    <CollapsibleTrigger asChild>
-                      <Button variant="ghost" size="sm" className="w-full justify-start gap-2">
-                        {excludedOpen ? (
-                          <ChevronDown className="h-4 w-4" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4" />
-                        )}
-                        <Archive className="h-4 w-4" />
-                        除外済み ({excludedProjects.length})
-                      </Button>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      {excludedProjects.length === 0 ? (
-                        <p className="py-2 text-sm text-muted-foreground">
-                          除外済みプロジェクトはありません
-                        </p>
-                      ) : (
-                        <div className="mt-2 space-y-2">
-                          {excludedProjects.map((project) => (
-                            <ExcludedProjectItem
-                              key={project.id}
-                              project={project}
-                              onRestore={() => handleRestore(project)}
-                              onDelete={() => handleDelete(project)}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </CollapsibleContent>
-                  </Collapsible>
-                </div>
-              )}
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
-      </Collapsible>
+              {/* 除外済みセクション */}
+              <Collapsible open={excludedOpen} onOpenChange={setExcludedOpen} className="mt-4">
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm" className="w-full justify-start gap-2">
+                    {excludedOpen ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                    <Archive className="h-4 w-4" />
+                    除外済み ({excludedProjects.length})
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  {excludedProjects.length === 0 ? (
+                    <p className="py-2 text-sm text-muted-foreground">
+                      除外済みプロジェクトはありません
+                    </p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {excludedProjects.map((project) => (
+                        <ExcludedProjectItem
+                          key={project.id}
+                          project={project}
+                          onRestore={() => handleRestore(project)}
+                          onDelete={() => handleDelete(project)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </CollapsibleContent>
+              </Collapsible>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
 
       {/* 新規作成ダイアログ */}
       <ProjectDialog
@@ -342,21 +332,47 @@ export function ProjectsPanel() {
 
       {/* スキャン設定ダイアログ */}
       <ScanSettingsDialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen} />
-    </>
+    </div>
   );
 }
 
 interface ProjectItemProps {
   project: Project;
   stats?: ProjectStats;
+  isSelected?: boolean;
+  onSelect?: () => void;
   onEdit: () => void;
   onExclude: () => void;
   onDelete: () => void;
 }
 
-function ProjectItem({ project, stats, onEdit, onExclude, onDelete }: ProjectItemProps) {
+function ProjectItem({
+  project,
+  stats,
+  isSelected,
+  onSelect,
+  onEdit,
+  onExclude,
+  onDelete,
+}: ProjectItemProps) {
   return (
-    <div className="rounded-md border p-3">
+    // biome-ignore lint/a11y/noStaticElementInteractions: role is conditionally set based on onSelect
+    <div
+      className={cn(
+        "rounded-md border p-3 transition-colors",
+        onSelect && "cursor-pointer hover:bg-muted/50",
+        isSelected && "border-primary bg-primary/5",
+      )}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect?.();
+        }
+      }}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-2">
@@ -372,11 +388,27 @@ function ProjectItem({ project, stats, onEdit, onExclude, onDelete }: ProjectIte
               {project.path}
             </p>
           )}
-          {project.githubOwner && project.githubRepo && (
-            <p className="text-xs text-muted-foreground">
-              GitHub: {project.githubOwner}/{project.githubRepo}
-            </p>
+          {/* 複数リポジトリ表示 */}
+          {project.repositories && project.repositories.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              <Github className="h-3 w-3" />
+              {project.repositories.map((repo, idx) => (
+                <span key={repo.id}>
+                  {repo.githubOwner}/{repo.githubRepo}
+                  {idx < (project.repositories?.length ?? 0) - 1 && ", "}
+                </span>
+              ))}
+            </div>
           )}
+          {/* 後方互換性: repositories がない場合は githubOwner/githubRepo を表示 */}
+          {(!project.repositories || project.repositories.length === 0) &&
+            project.githubOwner &&
+            project.githubRepo && (
+              <p className="text-xs text-muted-foreground">
+                <Github className="mr-1 inline h-3 w-3" />
+                {project.githubOwner}/{project.githubRepo}
+              </p>
+            )}
           {stats && (
             <p className="text-xs text-muted-foreground">
               タスク: {stats.tasksCount} / 学び: {stats.learningsCount}
@@ -461,17 +493,20 @@ interface ProjectDialogProps {
   onSubmit: (data: {
     name: string;
     path?: string;
-    githubOwner?: string;
-    githubRepo?: string;
+    repositories?: Array<{ githubOwner: string; githubRepo: string }>;
     isActive?: boolean;
   }) => Promise<void>;
+}
+
+interface RepoInput {
+  githubOwner: string;
+  githubRepo: string;
 }
 
 function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogProps) {
   const [name, setName] = useState(project?.name ?? "");
   const [path, setPath] = useState(project?.path ?? "");
-  const [githubOwner, setGithubOwner] = useState(project?.githubOwner ?? "");
-  const [githubRepo, setGithubRepo] = useState(project?.githubRepo ?? "");
+  const [repositories, setRepositories] = useState<RepoInput[]>([]);
   const [isActive, setIsActive] = useState(project?.isActive ?? true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -480,28 +515,58 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
     if (open) {
       setName(project?.name ?? "");
       setPath(project?.path ?? "");
-      setGithubOwner(project?.githubOwner ?? "");
-      setGithubRepo(project?.githubRepo ?? "");
+      // 既存のリポジトリを読み込み
+      if (project?.repositories && project.repositories.length > 0) {
+        setRepositories(
+          project.repositories.map((r) => ({
+            githubOwner: r.githubOwner,
+            githubRepo: r.githubRepo,
+          })),
+        );
+      } else if (project?.githubOwner && project?.githubRepo) {
+        // 後方互換性: 旧フィールドから
+        setRepositories([{ githubOwner: project.githubOwner, githubRepo: project.githubRepo }]);
+      } else {
+        setRepositories([]);
+      }
       setIsActive(project?.isActive ?? true);
     }
   }, [open, project]);
+
+  const addRepository = () => {
+    setRepositories([...repositories, { githubOwner: "", githubRepo: "" }]);
+  };
+
+  const removeRepository = (index: number) => {
+    setRepositories(repositories.filter((_, i) => i !== index));
+  };
+
+  const updateRepository = (index: number, field: "githubOwner" | "githubRepo", value: string) => {
+    const updated = [...repositories];
+    const current = updated[index];
+    if (current) {
+      updated[index] = { ...current, [field]: value };
+      setRepositories(updated);
+    }
+  };
 
   const handleSubmit = useCallback(async () => {
     if (!name.trim()) return;
 
     setSubmitting(true);
     try {
+      // 空のリポジトリを除外
+      const validRepos = repositories.filter((r) => r.githubOwner.trim() && r.githubRepo.trim());
       await onSubmit({
         name: name.trim(),
         path: path.trim() || undefined,
-        githubOwner: githubOwner.trim() || undefined,
-        githubRepo: githubRepo.trim() || undefined,
+        repositories: validRepos.length > 0 ? validRepos : undefined,
         isActive,
       });
     } finally {
       setSubmitting(false);
     }
-  }, [name, path, githubOwner, githubRepo, isActive, onSubmit]);
+  }, [name, path, repositories, isActive, onSubmit]);
 
   // キーボードショートカット (Cmd/Ctrl+Enter で送信)
   useEffect(() => {
@@ -524,7 +589,7 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? "プロジェクト編集" : "プロジェクト作成"}</DialogTitle>
           <DialogDescription>
@@ -552,28 +617,62 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
               disabled={submitting}
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="githubOwner">GitHub Owner</Label>
-              <Input
-                id="githubOwner"
-                value={githubOwner}
-                onChange={(e) => setGithubOwner(e.target.value)}
-                placeholder="例: myorg"
+
+          {/* GitHub リポジトリ (複数対応) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>GitHub リポジトリ</Label>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={addRepository}
                 disabled={submitting}
-              />
+                className="h-7"
+              >
+                <Plus className="mr-1 h-3 w-3" />
+                追加
+              </Button>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="githubRepo">GitHub Repo</Label>
-              <Input
-                id="githubRepo"
-                value={githubRepo}
-                onChange={(e) => setGithubRepo(e.target.value)}
-                placeholder="例: my-repo"
-                disabled={submitting}
-              />
-            </div>
+            {repositories.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                リポジトリを追加すると、GitHub Issues/PRs と連携できます
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {repositories.map((repo, index) => (
+                  <div key={`repo-${index}`} className="flex items-center gap-2">
+                    <Input
+                      value={repo.githubOwner}
+                      onChange={(e) => updateRepository(index, "githubOwner", e.target.value)}
+                      placeholder="owner"
+                      disabled={submitting}
+                      className="flex-1"
+                    />
+                    <span className="text-muted-foreground">/</span>
+                    <Input
+                      value={repo.githubRepo}
+                      onChange={(e) => updateRepository(index, "githubRepo", e.target.value)}
+                      placeholder="repo"
+                      disabled={submitting}
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => removeRepository(index)}
+                      disabled={submitting}
+                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+
           {isEditing && (
             <div className="flex items-center space-x-2">
               <Switch

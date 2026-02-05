@@ -189,21 +189,42 @@ export function createGitHubItemsRouter(db: AdasDatabase) {
    *
    * Sync projectId for all github items based on repoOwner/repoName match
    * This updates existing items that don't have projectId yet
+   * Uses project_repositories table for multiple repositories per project
    */
   router.post("/sync-projects", (c) => {
-    // Get all projects with GitHub info
-    const projects = db
+    // Get all project-repository mappings
+    const projectRepos = db.select().from(schema.projectRepositories).all();
+
+    let updated = 0;
+
+    for (const repo of projectRepos) {
+      // Update github items where repoOwner/repoName matches
+      const result = db
+        .update(schema.githubItems)
+        .set({ projectId: repo.projectId })
+        .where(
+          and(
+            eq(schema.githubItems.repoOwner, repo.githubOwner),
+            eq(schema.githubItems.repoName, repo.githubRepo),
+            isNull(schema.githubItems.projectId),
+          ),
+        )
+        .returning()
+        .all();
+
+      updated += result.length;
+    }
+
+    // 後方互換性: projects テーブルの githubOwner/githubRepo からも同期
+    const legacyProjects = db
       .select()
       .from(schema.projects)
       .where(and(isNotNull(schema.projects.githubOwner), isNotNull(schema.projects.githubRepo)))
       .all();
 
-    let updated = 0;
-
-    for (const project of projects) {
+    for (const project of legacyProjects) {
       if (!project.githubOwner || !project.githubRepo) continue;
 
-      // Update github items where repoOwner/repoName matches
       const result = db
         .update(schema.githubItems)
         .set({ projectId: project.id })

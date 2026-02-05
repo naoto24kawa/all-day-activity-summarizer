@@ -10,6 +10,7 @@ import {
   Bot,
   CheckSquare,
   FileText,
+  FolderKanban,
   FolderOpen,
   Github,
   Laptop,
@@ -31,6 +32,7 @@ export type TabId =
   | "notion"
   | "claude"
   | "learnings"
+  | "projects"
   | "whisper"
   | "logs"
   | "profile"
@@ -79,6 +81,7 @@ export const TAB_GROUPS: TabGroupConfig[] = [
     icon: Laptop,
     tabs: [
       { id: "learnings", label: "Learnings", icon: BookOpen, badgeKey: "learnings" },
+      { id: "projects", label: "Projects", icon: FolderKanban },
       { id: "whisper", label: "Whisper", icon: Mic },
     ],
   },

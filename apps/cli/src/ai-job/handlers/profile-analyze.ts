@@ -17,7 +17,6 @@ const FIELD_LABELS: Record<string, string> = {
   slackUserId: "Slack ID",
   githubUsername: "GitHub ユーザー名",
   responsibilities: "役割・担当",
-  experienceYears: "経験年数",
   specialties: "専門分野",
   knownTechnologies: "既知の技術",
   learningGoals: "学習目標",
@@ -57,7 +56,6 @@ export async function handleProfileAnalyze(
         slackUserId: null,
         githubUsername: null,
         responsibilities: null,
-        experienceYears: null,
         specialties: null,
         knownTechnologies: null,
         learningGoals: null,
@@ -226,7 +224,6 @@ async function analyzeProfileWithWorker(
       slackUserId: profile.slackUserId,
       githubUsername: profile.githubUsername,
       responsibilities: profile.responsibilities ? JSON.parse(profile.responsibilities) : [],
-      experienceYears: profile.experienceYears,
       specialties: profile.specialties ? JSON.parse(profile.specialties) : [],
       knownTechnologies: profile.knownTechnologies ? JSON.parse(profile.knownTechnologies) : [],
       learningGoals: profile.learningGoals ? JSON.parse(profile.learningGoals) : [],
@@ -260,11 +257,6 @@ function isValueInProfile(
   field: string,
   value: string,
 ): boolean {
-  // 数値フィールド
-  if (field === "experienceYears") {
-    return profile.experienceYears === Number.parseInt(value, 10);
-  }
-
   // 単一値フィールド
   const singleValueFields: Record<string, keyof typeof profile> = {
     displayName: "displayName",

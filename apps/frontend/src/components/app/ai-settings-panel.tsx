@@ -95,11 +95,13 @@ function SummarizerSchedulePanel({ className }: SummarizerSchedulePanelProps) {
   const { integrations, loading, error, updating, updateSummarizerConfig } = useConfig();
   const [dailyScheduleHour, setDailyScheduleHour] = useState("23");
   const [timesIntervalMinutes, setTimesIntervalMinutes] = useState("0");
+  const [dailySyncWithTimes, setDailySyncWithTimes] = useState(false);
 
   useEffect(() => {
     if (integrations?.summarizer) {
       setDailyScheduleHour(String(integrations.summarizer.dailyScheduleHour ?? 23));
       setTimesIntervalMinutes(String(integrations.summarizer.timesIntervalMinutes ?? 0));
+      setDailySyncWithTimes(integrations.summarizer.dailySyncWithTimes ?? false);
     }
   }, [integrations?.summarizer]);
 
@@ -120,6 +122,18 @@ function SummarizerSchedulePanel({ className }: SummarizerSchedulePanelProps) {
       setTimesIntervalMinutes(value);
       try {
         await updateSummarizerConfig({ timesIntervalMinutes: Number.parseInt(value, 10) });
+      } catch {
+        // エラーはhook内で処理済み
+      }
+    },
+    [updateSummarizerConfig],
+  );
+
+  const handleDailySyncWithTimesChange = useCallback(
+    async (checked: boolean) => {
+      setDailySyncWithTimes(checked);
+      try {
+        await updateSummarizerConfig({ dailySyncWithTimes: checked });
       } catch {
         // エラーはhook内で処理済み
       }
@@ -211,6 +225,24 @@ function SummarizerSchedulePanel({ className }: SummarizerSchedulePanelProps) {
               </SelectContent>
             </Select>
           </div>
+        </div>
+
+        {/* Daily 連動モード */}
+        <div className="flex items-center justify-between pt-2 border-t">
+          <div className="space-y-0.5">
+            <Label htmlFor="daily-sync-toggle" className="text-sm">
+              Times 連動で Daily 更新
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Times サマリ生成時に Daily サマリも再生成
+            </p>
+          </div>
+          <Switch
+            id="daily-sync-toggle"
+            checked={dailySyncWithTimes}
+            onCheckedChange={handleDailySyncWithTimesChange}
+            disabled={updating}
+          />
         </div>
       </CardContent>
     </Card>

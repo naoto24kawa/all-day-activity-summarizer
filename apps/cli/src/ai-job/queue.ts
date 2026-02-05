@@ -39,6 +39,70 @@ export function enqueueJob(
 }
 
 /**
+ * Daily サマリジョブをデバウンス付きでキューに追加
+ *
+ * 同じ日の pending ジョブが既にあれば runAfter を更新し、なければ新規追加。
+ * これにより、複数の Times サマリを連続生成しても Daily は最後に1回だけ実行される。
+ *
+ * @param db - データベース接続
+ * @param date - 対象日 (YYYY-MM-DD)
+ * @param delayMs - 遅延時間 (ミリ秒)。デフォルト 5000ms
+ * @returns ジョブID
+ */
+export function enqueueDailySummaryDebounced(
+  db: AdasDatabase,
+  date: string,
+  delayMs = 5000,
+): number {
+  const now = new Date().toISOString();
+  const runAfter = new Date(Date.now() + delayMs).toISOString();
+  // overwrite: true で既存の Daily を上書き
+  const paramsJson = JSON.stringify({ date, overwrite: true });
+
+  // 同じ日の pending ジョブを検索 (params に date が含まれているかで判定)
+  const existingJob = db
+    .select()
+    .from(schema.aiJobQueue)
+    .where(
+      and(
+        eq(schema.aiJobQueue.jobType, "summarize-daily"),
+        sql`${schema.aiJobQueue.params} LIKE ${"%" + date + "%"}`,
+        eq(schema.aiJobQueue.status, "pending"),
+      ),
+    )
+    .get();
+
+  if (existingJob) {
+    // 既存ジョブの runAfter と params を更新 (デバウンス)
+    db.update(schema.aiJobQueue)
+      .set({
+        params: paramsJson,
+        runAfter,
+        updatedAt: now,
+      })
+      .where(eq(schema.aiJobQueue.id, existingJob.id))
+      .run();
+    return existingJob.id;
+  }
+
+  // 新規ジョブを追加
+  const result = db
+    .insert(schema.aiJobQueue)
+    .values({
+      jobType: "summarize-daily",
+      params: paramsJson,
+      status: "pending",
+      runAfter,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning({ id: schema.aiJobQueue.id })
+    .get();
+
+  return result.id;
+}
+
+/**
  * 実行可能なジョブを1件取得してロック
  */
 export function dequeueJob(db: AdasDatabase) {

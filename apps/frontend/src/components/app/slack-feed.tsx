@@ -11,27 +11,20 @@ import {
   ArrowRight,
   AtSign,
   Check,
-  CheckCheck,
   ChevronDown,
   ExternalLink,
-  Filter,
   FolderGit2,
   Hash,
   Loader2,
   MessageSquare,
-  RefreshCw,
   Search,
   Settings,
-  Users,
 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { SegmentedTabContent, SegmentedTabs } from "@/components/ui/segmented-tabs";
 import {
   Select,
@@ -42,89 +35,36 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfig } from "@/hooks/use-config";
-import { useProjects } from "@/hooks/use-projects";
-import { useSlackChannels } from "@/hooks/use-slack-channels";
-import {
-  useSlackMessages,
-  useSlackPriorityCounts,
-  useSlackUnreadCounts,
-} from "@/hooks/use-slack-messages";
-import { useSlackUsers } from "@/hooks/use-slack-users";
-import { formatSlackTsJST, getTodayDateString } from "@/lib/date";
+import { formatSlackTsJST } from "@/lib/date";
+import { useSlackFeedContext } from "./slack-feed-context";
 
 interface SlackFeedProps {
   className?: string;
 }
 
 export function SlackFeed({ className }: SlackFeedProps) {
-  const date = getTodayDateString();
   const { integrations, loading: configLoading } = useConfig();
   const {
     messages,
     loading,
     error,
-    markingAllAsRead,
-    refetch,
+    counts,
+    projects,
+    filteredMessages,
     markAsRead,
-    markAllAsRead,
     updateMessage,
     updatePriority,
-  } = useSlackMessages();
-  const { counts, refetch: refetchUnreadCounts } = useSlackUnreadCounts(date);
-  const { counts: priorityCounts, refetch: refetchPriorityCounts } = useSlackPriorityCounts();
-  const { projects } = useProjects();
-  const { updateChannelProject, getChannelProjectId } = useSlackChannels();
-  const { users, loading: usersLoading, updateDisplayName, resetDisplayName } = useSlackUsers();
+    updateChannelProject,
+    getChannelProjectId,
+  } = useSlackFeedContext();
 
   // タブ状態
   const [activeTab, setActiveTab] = useState("mention");
-  // 優先度フィルター
-  const [priorityFilter, setPriorityFilter] = useState<SlackMessagePriority | "all">("all");
-  // Slack Users Popover state
-  const [usersPopoverOpen, setUsersPopoverOpen] = useState(false);
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [userNameInput, setUserNameInput] = useState("");
-  const [pendingUserAction, setPendingUserAction] = useState<string | null>(null);
-  const handleStartUserEdit = (userId: string, currentName: string | null) => {
-    setEditingUserId(userId);
-    setUserNameInput(currentName ?? "");
-  };
-
-  const handleCancelUserEdit = () => {
-    setEditingUserId(null);
-    setUserNameInput("");
-  };
-
-  const handleSaveUserName = async (userId: string) => {
-    const newName = userNameInput.trim() || null;
-    setPendingUserAction(userId);
-    try {
-      await updateDisplayName(userId, newName);
-      handleCancelUserEdit();
-    } finally {
-      setPendingUserAction(null);
-    }
-  };
-
-  const handleResetUserName = async (userId: string) => {
-    setPendingUserAction(userId);
-    try {
-      await resetDisplayName(userId);
-    } finally {
-      setPendingUserAction(null);
-    }
-  };
 
   // 連携が無効な場合
   if (!configLoading && integrations && !integrations.slack.enabled) {
     return (
       <Card className={className}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5 text-[#4A154B]" />
-            Slack
-          </CardTitle>
-        </CardHeader>
         <CardContent className="flex flex-col items-center justify-center py-8">
           <Settings className="mb-2 h-8 w-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">Slack 連携は無効化されています</p>
@@ -139,13 +79,7 @@ export function SlackFeed({ className }: SlackFeedProps) {
   if (loading) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5 text-[#4A154B]" />
-            Slack
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 pt-6">
           {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
             <Skeleton key={id} className="h-16 w-full" />
           ))}
@@ -157,22 +91,12 @@ export function SlackFeed({ className }: SlackFeedProps) {
   if (error) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5 text-[#4A154B]" />
-            Slack
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <p className="text-sm text-muted-foreground">{error}</p>
         </CardContent>
       </Card>
     );
   }
-
-  // 優先度でフィルタリング
-  const filteredMessages =
-    priorityFilter === "all" ? messages : messages.filter((m) => m.priority === priorityFilter);
 
   const mentionMessages = filteredMessages.filter((m) => m.messageType === "mention");
   const channelMessages = filteredMessages.filter((m) => m.messageType === "channel");
@@ -181,190 +105,7 @@ export function SlackFeed({ className }: SlackFeedProps) {
 
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between">
-        <CardTitle className="flex items-center gap-2">
-          <MessageSquare className="h-5 w-5 text-[#4A154B]" />
-          Slack
-          {counts.total > 0 && (
-            <Badge variant="destructive" className="ml-1">
-              {counts.total} unread
-            </Badge>
-          )}
-        </CardTitle>
-        <div className="flex items-center gap-2">
-          {/* 優先度フィルター */}
-          <Select
-            value={priorityFilter}
-            onValueChange={(value) => setPriorityFilter(value as SlackMessagePriority | "all")}
-          >
-            <SelectTrigger className="h-8 w-[140px] text-xs">
-              <Filter className="mr-1 h-3 w-3" />
-              <SelectValue placeholder="優先度" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">すべて ({priorityCounts.total})</SelectItem>
-              <SelectItem value="high">
-                <span className="flex items-center gap-1">
-                  <AlertTriangle className="h-3 w-3 text-red-500" />高 ({priorityCounts.high})
-                </span>
-              </SelectItem>
-              <SelectItem value="medium">
-                <span className="flex items-center gap-1">
-                  <ArrowRight className="h-3 w-3 text-yellow-500" />中 ({priorityCounts.medium})
-                </span>
-              </SelectItem>
-              <SelectItem value="low">
-                <span className="flex items-center gap-1">
-                  <ArrowDown className="h-3 w-3 text-green-500" />低 ({priorityCounts.low})
-                </span>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          {counts.total > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                await markAllAsRead({ date });
-                refetchUnreadCounts();
-                refetchPriorityCounts();
-              }}
-              disabled={markingAllAsRead}
-            >
-              {markingAllAsRead ? (
-                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-              ) : (
-                <CheckCheck className="mr-1 h-3 w-3" />
-              )}
-              Mark all read
-            </Button>
-          )}
-          {/* Slack Users Popover */}
-          <Popover open={usersPopoverOpen} onOpenChange={setUsersPopoverOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" title="Slack Users">
-                <Users className="mr-1 h-3 w-3" />
-                Users
-                {users.length > 0 && (
-                  <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
-                    {users.length}
-                  </Badge>
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-96 p-0" align="end">
-              <div className="border-b px-3 py-2">
-                <h4 className="font-medium text-sm">Slack Users</h4>
-                <p className="text-xs text-muted-foreground">
-                  表示名を編集してサマリの可読性を向上
-                </p>
-              </div>
-              {usersLoading ? (
-                <div className="p-4 text-center text-sm text-muted-foreground">読み込み中...</div>
-              ) : users.length === 0 ? (
-                <div className="p-4 text-center text-sm text-muted-foreground">
-                  ユーザーがいません
-                </div>
-              ) : (
-                <ScrollArea className="h-[300px]">
-                  <div className="space-y-2 p-2">
-                    {users.map((user) => (
-                      <div
-                        key={user.userId}
-                        className={`rounded-md border p-2 text-sm ${user.displayName ? "border-green-500/30 bg-green-50/50 dark:bg-green-950/10" : ""}`}
-                      >
-                        <div className="flex items-center gap-2">
-                          {editingUserId === user.userId ? (
-                            <Input
-                              value={userNameInput}
-                              onChange={(e) => setUserNameInput(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") handleSaveUserName(user.userId);
-                                if (e.key === "Escape") handleCancelUserEdit();
-                              }}
-                              placeholder={user.slackName ?? "表示名"}
-                              className="h-7 text-xs"
-                              disabled={pendingUserAction === user.userId}
-                              autoFocus
-                            />
-                          ) : (
-                            <>
-                              <span className="font-medium truncate">
-                                {user.displayName ?? user.slackName ?? user.userId}
-                              </span>
-                              {user.displayName && user.slackName && (
-                                <span className="text-xs text-muted-foreground">
-                                  ({user.slackName})
-                                </span>
-                              )}
-                            </>
-                          )}
-                          <Badge variant="outline" className="ml-auto shrink-0 text-xs">
-                            {user.messageCount}
-                          </Badge>
-                        </div>
-                        <div className="mt-1 flex items-center gap-1">
-                          {editingUserId === user.userId ? (
-                            <>
-                              <Button
-                                size="sm"
-                                className="h-6 px-2 text-xs"
-                                onClick={() => handleSaveUserName(user.userId)}
-                                disabled={pendingUserAction === user.userId}
-                              >
-                                Save
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 px-2 text-xs"
-                                onClick={handleCancelUserEdit}
-                                disabled={pendingUserAction === user.userId}
-                              >
-                                Cancel
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-6 px-2 text-xs"
-                                onClick={() => handleStartUserEdit(user.userId, user.displayName)}
-                                disabled={pendingUserAction === user.userId}
-                              >
-                                Edit
-                              </Button>
-                              {user.displayName && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-6 px-2 text-xs"
-                                  onClick={() => handleResetUserName(user.userId)}
-                                  disabled={pendingUserAction === user.userId}
-                                >
-                                  Reset
-                                </Button>
-                              )}
-                            </>
-                          )}
-                          <span className="ml-auto text-xs font-mono text-muted-foreground truncate max-w-24">
-                            {user.userId}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              )}
-            </PopoverContent>
-          </Popover>
-          <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col">
+      <CardContent className="flex min-h-0 flex-1 flex-col pt-4">
         {messages.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Slack messages for this date.</p>
         ) : (

@@ -7,7 +7,6 @@
 import type { AdasDatabase } from "@repo/db";
 import consola from "consola";
 import type { AdasConfig } from "../config.js";
-import type { ClaudeCodeClient } from "./client.js";
 import { processClaudeCodeJob } from "./fetcher.js";
 import {
   cleanupOldClaudeCodeJobs,
@@ -20,11 +19,7 @@ import {
 /**
  * Start the Claude Code worker
  */
-export function startClaudeCodeWorker(
-  db: AdasDatabase,
-  config: AdasConfig,
-  client: ClaudeCodeClient,
-): () => void {
+export function startClaudeCodeWorker(db: AdasDatabase, config: AdasConfig): () => void {
   let isProcessing = false;
   const parallelWorkers = config.claudeCode.parallelWorkers;
   const filterProjects = config.claudeCode.projects;
@@ -51,7 +46,7 @@ export function startClaudeCodeWorker(
         await Promise.all(
           jobs.map(async (job) => {
             try {
-              await processClaudeCodeJob(db, client, job, filterProjects);
+              await processClaudeCodeJob(db, job, filterProjects, config);
               markClaudeCodeJobCompleted(db, job.id);
               consola.debug(`[ClaudeCode] Job ${job.id} (${job.jobType}) completed`);
             } catch (err) {

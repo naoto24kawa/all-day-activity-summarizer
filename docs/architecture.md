@@ -93,7 +93,7 @@ CLI と Worker の間に直接依存はなく、HTTP (RPC) で通信。Worker �
 | `learnings` | id, source_type, source_id, project_id, date, content, category, tags, confidence, repetition_count, ease_factor, interval, next_review_at, created_at |
 | `extraction_logs` | id, extraction_type, source_type, source_id, extracted_count, extracted_at |
 | `projects` | id, name, path, github_owner, github_repo, is_active, created_at |
-| `user_profile` | id, experience_years, specialties, known_technologies, learning_goals, updated_at |
+| `user_profile` | id, specialties, known_technologies, learning_goals, updated_at |
 
 ## データフロー
 

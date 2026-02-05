@@ -117,6 +117,15 @@ async function processJob(db: AdasDatabase, job: SummaryQueueJob): Promise<void>
       const result = await generateTimesSummary(db, date, startHour, endHour, { overwrite: false });
       if (result) {
         consola.success(`Times summary generated for ${date} ${startHour}:00 - ${endHour}:59`);
+
+        // dailySyncWithTimes が有効なら Daily もデバウンス付きでキューに追加
+        const { loadConfig } = await import("../config.js");
+        const config = loadConfig();
+        if (config.summarizer.dailySyncWithTimes) {
+          const { enqueueDailySummaryDebounced } = await import("../ai-job/queue.js");
+          const jobId = enqueueDailySummaryDebounced(db, date);
+          consola.info(`Daily sync enabled: enqueued daily summary job #${jobId} (debounced)`);
+        }
       } else {
         consola.debug(
           `Skipped times summary ${date} ${startHour}:00 - ${endHour}:59 (no data or already exists)`,

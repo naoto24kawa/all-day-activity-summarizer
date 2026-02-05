@@ -5,10 +5,10 @@
  * Starts with 2-minute delay to avoid conflicts with Slack scheduler
  */
 
+import { listProjects } from "@repo/claude-history";
 import type { AdasDatabase } from "@repo/db";
 import consola from "consola";
 import type { AdasConfig } from "../config.js";
-import { createClaudeCodeClient } from "./client.js";
 import { enqueueClaudeCodeJob, getClaudeCodeQueueStats } from "./queue.js";
 import { startClaudeCodeWorker } from "./worker.js";
 
@@ -69,15 +69,12 @@ export async function startClaudeCodeSystem(
     return null;
   }
 
-  const client = createClaudeCodeClient();
-
-  // Test connection
+  // Test access to Claude history
   try {
-    await client.connect();
-    const projects = await client.listProjects();
-    consola.success(`[ClaudeCode] Connected, found ${projects.length} projects`);
+    const projects = await listProjects();
+    consola.success(`[ClaudeCode] Found ${projects.length} projects`);
   } catch (error) {
-    consola.error("[ClaudeCode] Failed to connect:", error);
+    consola.error("[ClaudeCode] Failed to read Claude history:", error);
     return null;
   }
 
@@ -87,14 +84,13 @@ export async function startClaudeCodeSystem(
 
   // Start scheduler and worker
   const stopScheduler = startClaudeCodeEnqueueScheduler(db, config);
-  const stopWorker = startClaudeCodeWorker(db, config, client);
+  const stopWorker = startClaudeCodeWorker(db, config);
 
   consola.success("[ClaudeCode] System started");
 
-  return async () => {
+  return () => {
     stopScheduler();
     stopWorker();
-    await client.disconnect();
     consola.info("[ClaudeCode] System stopped");
   };
 }

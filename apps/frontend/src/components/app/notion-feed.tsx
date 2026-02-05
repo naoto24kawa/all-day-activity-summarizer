@@ -13,14 +13,13 @@ import {
   Database,
   ExternalLink,
   FileText,
-  NotebookPen,
   RefreshCw,
   Settings,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Select,
@@ -41,7 +40,7 @@ interface NotionFeedProps {
 
 export function NotionFeed({ className }: NotionFeedProps) {
   const date = getTodayDateString();
-  const { integrations, loading: configLoading } = useConfig();
+  const { integrations } = useConfig();
   const { items, loading, error, refetch, markAsRead, markAllAsRead } = useNotionItems();
   const { counts } = useNotionUnreadCounts(date);
   const { databases } = useNotionDatabases();
@@ -64,37 +63,10 @@ export function NotionFeed({ className }: NotionFeedProps) {
     return map;
   }, [databases]);
 
-  // 連携が無効な場合
-  if (!configLoading && integrations && !integrations.notion?.enabled) {
-    return (
-      <Card className={className}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <NotebookPen className="h-5 w-5" />
-            Notion
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col items-center justify-center py-8">
-          <Settings className="mb-2 h-8 w-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Notion 連携は無効化されています</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Settings タブの Integrations で有効にできます
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   if (loading) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <NotebookPen className="h-5 w-5" />
-            Notion
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 pt-6">
           {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
             <Skeleton key={id} className="h-16 w-full" />
           ))}
@@ -106,13 +78,7 @@ export function NotionFeed({ className }: NotionFeedProps) {
   if (error) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <NotebookPen className="h-5 w-5" />
-            Notion
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <p className="text-sm text-muted-foreground">{error}</p>
         </CardContent>
       </Card>
@@ -122,15 +88,9 @@ export function NotionFeed({ className }: NotionFeedProps) {
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardHeader className="flex shrink-0 flex-row items-center justify-between">
-        <CardTitle className="flex items-center gap-2">
-          <NotebookPen className="h-5 w-5" />
-          Notion
-          {counts.total > 0 && (
-            <Badge variant="destructive" className="ml-1">
-              {counts.total} unread
-            </Badge>
-          )}
-        </CardTitle>
+        <div className="flex items-center gap-2">
+          {counts.total > 0 && <Badge variant="destructive">{counts.total} unread</Badge>}
+        </div>
         <div className="flex items-center gap-2">
           {counts.total > 0 && (
             <Button variant="outline" size="sm" onClick={() => markAllAsRead({ date })}>
@@ -145,7 +105,17 @@ export function NotionFeed({ className }: NotionFeedProps) {
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col">
         {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No Notion activity.</p>
+          !integrations?.notion?.enabled ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <Settings className="mb-2 h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Notion 連携は無効化されています</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Settings タブの Integrations で有効にできます
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No Notion activity.</p>
+          )
         ) : (
           <DatabaseGroupedItemList
             items={items}

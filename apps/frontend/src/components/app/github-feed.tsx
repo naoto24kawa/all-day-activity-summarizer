@@ -15,7 +15,6 @@ import {
   ExternalLink,
   Eye,
   FolderGit2,
-  Github,
   GitMerge,
   GitPullRequest,
   MessageSquare,
@@ -26,7 +25,7 @@ import {
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SegmentedTabContent, SegmentedTabs } from "@/components/ui/segmented-tabs";
 import {
@@ -148,12 +147,6 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
   if (!configLoading && integrations && !integrations.github.enabled) {
     return (
       <Card className={className}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Github className="h-5 w-5" />
-            GitHub
-          </CardTitle>
-        </CardHeader>
         <CardContent className="flex flex-col items-center justify-center py-8">
           <Settings className="mb-2 h-8 w-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">GitHub 連携は無効化されています</p>
@@ -168,13 +161,7 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
   if (loading || commentsLoading) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Github className="h-5 w-5" />
-            GitHub
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 pt-6">
           {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
             <Skeleton key={id} className="h-16 w-full" />
           ))}
@@ -186,13 +173,7 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
   if (error) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Github className="h-5 w-5" />
-            GitHub
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <p className="text-sm text-muted-foreground">{error}</p>
         </CardContent>
       </Card>
@@ -218,15 +199,9 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardHeader className="flex shrink-0 flex-row items-center justify-between">
-        <CardTitle className="flex items-center gap-2">
-          <Github className="h-5 w-5" />
-          GitHub
-          {totalUnread > 0 && (
-            <Badge variant="destructive" className="ml-1">
-              {totalUnread} unread
-            </Badge>
-          )}
-        </CardTitle>
+        <div className="flex items-center gap-2">
+          {totalUnread > 0 && <Badge variant="destructive">{totalUnread} unread</Badge>}
+        </div>
         <div className="flex items-center gap-2">
           {counts.total > 0 && (
             <Button variant="outline" size="sm" onClick={() => markAllAsRead({ date })}>

@@ -2,7 +2,15 @@
  * Learnings Hook
  */
 
-import type { Learning, LearningSourceType } from "@repo/types";
+import type {
+  ApplyLearningExplanationResponse,
+  ExplanationStatus,
+  Learning,
+  LearningExplanationResult,
+  LearningExplanationStatusResponse,
+  LearningSourceType,
+  StartLearningExplanationResponse,
+} from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
 import { deleteAdasApi, fetchAdasApi, postAdasApi, putAdasApi } from "@/lib/adas-api";
 
@@ -177,6 +185,7 @@ interface AsyncExtractResult {
   message: string;
 }
 
+/** 旧形式: 後方互換用 */
 export interface LearningExplanation {
   explanation: string;
   keyPoints: string[];
@@ -184,26 +193,117 @@ export interface LearningExplanation {
   practicalExamples?: string[];
 }
 
+/**
+ * 学び詳細説明フック (非同期版)
+ *
+ * 使用方法:
+ * 1. startExplain(id) でジョブ開始 → jobId を返す
+ * 2. getExplanationStatus(id) でステータスを確認 (ポーリング or SSE で監視)
+ * 3. status === "completed" になったら result が取得可能
+ * 4. applyExplanation(id) で適用、または discardExplanation(id) で破棄
+ */
 export function useLearningExplain() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const explainLearning = useCallback(async (id: number): Promise<LearningExplanation | null> => {
+  /**
+   * 詳細説明ジョブを開始
+   */
+  const startExplain = useCallback(
+    async (id: number): Promise<StartLearningExplanationResponse | null> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await postAdasApi<StartLearningExplanationResponse>(
+          `/api/learnings/${id}/explain`,
+          {},
+        );
+        return result;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to start explanation");
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  /**
+   * 詳細説明ステータスを取得
+   */
+  const getExplanationStatus = useCallback(
+    async (id: number): Promise<LearningExplanationStatusResponse | null> => {
+      try {
+        const result = await fetchAdasApi<LearningExplanationStatusResponse>(
+          `/api/learnings/${id}/explanation`,
+        );
+        return result;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to get explanation status");
+        return null;
+      }
+    },
+    [],
+  );
+
+  /**
+   * 詳細説明を適用
+   */
+  const applyExplanation = useCallback(
+    async (id: number): Promise<ApplyLearningExplanationResponse | null> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await postAdasApi<ApplyLearningExplanationResponse>(
+          `/api/learnings/${id}/explanation/apply`,
+          {},
+        );
+        return result;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to apply explanation");
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  /**
+   * 詳細説明を破棄
+   */
+  const discardExplanation = useCallback(async (id: number): Promise<boolean> => {
     setLoading(true);
     setError(null);
     try {
-      const result = await postAdasApi<LearningExplanation>(`/api/learnings/${id}/explain`, {});
-      return result;
+      await postAdasApi(`/api/learnings/${id}/explanation/discard`, {});
+      return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to explain learning");
-      return null;
+      setError(err instanceof Error ? err.message : "Failed to discard explanation");
+      return false;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  return { loading, error, explainLearning };
+  return {
+    loading,
+    error,
+    startExplain,
+    getExplanationStatus,
+    applyExplanation,
+    discardExplanation,
+  };
 }
+
+// Re-export types for convenience
+export type {
+  ExplanationStatus,
+  LearningExplanationResult,
+  LearningExplanationStatusResponse,
+  ApplyLearningExplanationResponse,
+};
 
 export interface LearningExportItem {
   id: number;

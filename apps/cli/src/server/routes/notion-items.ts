@@ -410,21 +410,26 @@ export function createNotionDatabasesRouter(db: AdasDatabase) {
 
   /**
    * POST /api/notion-databases
-   * データベースを追加
+   * データベースを登録/更新 (upsert)
    */
   app.post("/", async (c) => {
     const body = await c.req.json<{
       databaseId: string;
       title?: string;
       url?: string;
+      icon?: string;
+      properties?: string;
       projectId?: number;
+      isActive?: boolean;
     }>();
 
     if (!body.databaseId) {
       return c.json({ error: "databaseId is required" }, 400);
     }
 
-    // 既存チェック
+    const now = new Date().toISOString();
+
+    // 既存チェック (upsert)
     const existing = db
       .select()
       .from(notionDatabases)
@@ -432,18 +437,40 @@ export function createNotionDatabasesRouter(db: AdasDatabase) {
       .get();
 
     if (existing) {
-      return c.json({ error: "Database already exists", database: existing }, 409);
+      // Update existing
+      db.update(notionDatabases)
+        .set({
+          title: body.title ?? existing.title,
+          url: body.url ?? existing.url,
+          icon: body.icon ?? existing.icon,
+          properties: body.properties ?? existing.properties,
+          projectId: body.projectId ?? existing.projectId,
+          isActive: body.isActive ?? existing.isActive,
+          updatedAt: now,
+        })
+        .where(eq(notionDatabases.id, existing.id))
+        .run();
+
+      const updated = db
+        .select()
+        .from(notionDatabases)
+        .where(eq(notionDatabases.id, existing.id))
+        .get();
+
+      return c.json({ ...updated, updated: true }, 200);
     }
 
-    const now = new Date().toISOString();
+    // Insert new
     const result = db
       .insert(notionDatabases)
       .values({
         databaseId: body.databaseId,
         title: body.title ?? "Untitled",
         url: body.url ?? `https://notion.so/${body.databaseId.replace(/-/g, "")}`,
+        icon: body.icon ?? null,
+        properties: body.properties ?? null,
         projectId: body.projectId ?? null,
-        isActive: true,
+        isActive: body.isActive ?? true,
         createdAt: now,
         updatedAt: now,
       })

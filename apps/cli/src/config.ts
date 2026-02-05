@@ -138,6 +138,7 @@ export interface AdasConfig {
     provider: "claude" | "lmstudio";
     dailyScheduleHour: number; // Daily サマリ自動生成時間 (0-23)
     timesIntervalMinutes: number; // Times サマリ自動生成間隔 (分)。0 = 無効
+    dailySyncWithTimes: boolean; // Times 生成時に Daily も再生成する
     lmstudio: {
       url: string;
       model: string;
@@ -317,6 +318,7 @@ const defaultConfig: AdasConfig = {
     provider: "claude",
     dailyScheduleHour: 23,
     timesIntervalMinutes: 0, // 0 = 無効 (手動生成のみ)
+    dailySyncWithTimes: false, // Times 生成時に Daily も再生成する
     lmstudio: {
       url: "http://192.168.1.17:1234",
       model: "",

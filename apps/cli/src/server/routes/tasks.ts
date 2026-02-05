@@ -3689,16 +3689,8 @@ async function applyProfileSuggestion(
     return;
   }
 
-  if (suggestion.field === "experienceYears") {
-    db.update(schema.userProfile)
-      .set({
-        experienceYears: Number.parseInt(suggestion.value, 10),
-        updatedAt: now,
-      })
-      .where(eq(schema.userProfile.id, 1))
-      .run();
-  } else {
-    // JSON配列フィールド (specialties, knownTechnologies, learningGoals)
+  // JSON配列フィールド (specialties, knownTechnologies, learningGoals)
+  {
     const fieldMap: Record<string, keyof typeof profile> = {
       specialties: "specialties",
       knownTechnologies: "knownTechnologies",

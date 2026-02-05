@@ -4,10 +4,18 @@
  * Displays learnings extracted from various sources
  */
 
-import type { AIJobCompletedEvent, Learning, LearningSourceType, Project } from "@repo/types";
+import type {
+  AIJobCompletedEvent,
+  Learning,
+  LearningExplanationResult,
+  LearningSourceType,
+  Project,
+} from "@repo/types";
 import {
+  AlertTriangle,
   BookOpen,
   Calendar,
+  Check,
   ChevronDown,
   Code,
   Download,
@@ -25,6 +33,7 @@ import {
   Trash2,
   Upload,
   User,
+  X,
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import Markdown from "react-markdown";
@@ -43,7 +52,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAIJobs } from "@/hooks/use-ai-jobs";
 import {
-  type LearningExplanation,
+  type ExplanationStatus,
   type LearningImportItem,
   type LearningsStats,
   useLearningExplain,
@@ -247,12 +256,12 @@ export function LearningsFeed({ className }: LearningsFeedProps) {
     importLearnings,
   } = useLearningsExportImport();
 
-  // SSE でジョブ完了を監視し、learning-extract 完了時に refetch
+  // SSE でジョブ完了を監視し、learning-extract/learning-explain 完了時に refetch
   useAIJobs({
     enableSSE: true,
     onJobCompleted: useCallback(
       (event: AIJobCompletedEvent) => {
-        if (event.jobType === "learning-extract") {
+        if (event.jobType === "learning-extract" || event.jobType === "learning-explain") {
           refetch();
           refetchStats();
         }
@@ -497,9 +506,27 @@ interface LearningItemProps {
 
 function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [explanation, setExplanation] = useState<LearningExplanation | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
-  const { loading: explainLoading, explainLearning } = useLearningExplain();
+  const [localStatus, setLocalStatus] = useState<ExplanationStatus | null>(
+    learning.explanationStatus as ExplanationStatus | null,
+  );
+  const [localResult, setLocalResult] = useState<LearningExplanationResult | null>(() => {
+    if (learning.pendingExplanation) {
+      try {
+        return JSON.parse(learning.pendingExplanation) as LearningExplanationResult;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+
+  const {
+    loading: explainLoading,
+    startExplain,
+    applyExplanation,
+    discardExplanation,
+  } = useLearningExplain();
 
   const tags = learning.tags ? (JSON.parse(learning.tags) as string[]) : [];
   const isDue = !learning.nextReviewAt || new Date(learning.nextReviewAt) <= new Date();
@@ -511,20 +538,81 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
   const title = lines[0]?.replace(/^#+\s*/, "") || "No title";
   const hasMoreContent = lines.length > 1 || learning.content.length > 100;
 
+  // Learning の props が変わったらローカル状態を更新
+  const learningStatus = learning.explanationStatus as ExplanationStatus | null;
+  if (learningStatus !== localStatus) {
+    setLocalStatus(learningStatus);
+    if (learning.pendingExplanation) {
+      try {
+        setLocalResult(JSON.parse(learning.pendingExplanation) as LearningExplanationResult);
+      } catch {
+        setLocalResult(null);
+      }
+    }
+  }
+
   const handleExplain = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (explanation) {
-      // Already have explanation, just toggle display
+
+    // applied 状態: expandedContent を表示トグル
+    if (localStatus === "applied") {
       setShowExplanation(!showExplanation);
       if (!isOpen) setIsOpen(true);
       return;
     }
-    // Fetch explanation
-    const result = await explainLearning(learning.id);
+
+    // completed 状態: プレビューを表示トグル
+    if (localStatus === "completed" && localResult) {
+      setShowExplanation(!showExplanation);
+      if (!isOpen) setIsOpen(true);
+      return;
+    }
+
+    // pending 状態: 何もしない (ローディング中)
+    if (localStatus === "pending") {
+      return;
+    }
+
+    // null/failed 状態: ジョブを開始
+    const result = await startExplain(learning.id);
     if (result) {
-      setExplanation(result);
-      setShowExplanation(true);
+      setLocalStatus("pending");
       setIsOpen(true);
+    }
+  };
+
+  const handleApply = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const result = await applyExplanation(learning.id);
+    if (result) {
+      setLocalStatus("applied");
+      setShowExplanation(true);
+    }
+  };
+
+  const handleDiscard = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const success = await discardExplanation(learning.id);
+    if (success) {
+      setLocalStatus(null);
+      setLocalResult(null);
+      setShowExplanation(false);
+    }
+  };
+
+  // Lightbulb ボタンのスタイルを状態に応じて変更
+  const getLightbulbStyle = () => {
+    switch (localStatus) {
+      case "pending":
+        return "text-yellow-500 animate-pulse";
+      case "completed":
+        return "text-yellow-500";
+      case "applied":
+        return "text-green-500";
+      case "failed":
+        return "text-red-500";
+      default:
+        return "text-muted-foreground hover:text-yellow-500";
     }
   };
 
@@ -588,13 +676,25 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
             <Button
               variant="ghost"
               size="icon"
-              className={`h-6 w-6 ${showExplanation ? "text-yellow-500" : "text-muted-foreground hover:text-yellow-500"}`}
+              className={`h-6 w-6 ${getLightbulbStyle()}`}
               onClick={handleExplain}
-              disabled={explainLoading}
-              title="AIで詳しく説明"
+              disabled={explainLoading || localStatus === "pending"}
+              title={
+                localStatus === "pending"
+                  ? "生成中..."
+                  : localStatus === "completed"
+                    ? "詳細説明をプレビュー"
+                    : localStatus === "applied"
+                      ? "詳細説明を表示"
+                      : localStatus === "failed"
+                        ? "再試行"
+                        : "AIで詳しく説明"
+              }
             >
-              {explainLoading ? (
+              {explainLoading || localStatus === "pending" ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
+              ) : localStatus === "failed" ? (
+                <AlertTriangle className="h-3 w-3" />
               ) : (
                 <Lightbulb className="h-3 w-3" />
               )}
@@ -648,29 +748,65 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
             </div>
           )}
 
-          {/* AI 説明セクション */}
-          {showExplanation && explanation && (
+          {/* AI 説明セクション - pending 状態 */}
+          {localStatus === "pending" && (
             <div className="mt-4 p-4 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
-              <div className="flex items-center gap-2 mb-3">
-                <Lightbulb className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 text-yellow-600 dark:text-yellow-400 animate-spin" />
                 <span className="font-medium text-yellow-800 dark:text-yellow-300">
-                  AI による詳細説明
+                  AI による詳細説明を生成中...
                 </span>
               </div>
+            </div>
+          )}
 
-              {/* 詳細説明 */}
-              <div className="prose prose-sm max-w-none text-yellow-900 dark:text-yellow-100 dark:prose-invert mb-4">
-                <Markdown remarkPlugins={[remarkGfm]}>{explanation.explanation}</Markdown>
+          {/* AI 説明セクション - completed 状態 (プレビュー + 適用/破棄) */}
+          {showExplanation && localStatus === "completed" && localResult && (
+            <div className="mt-4 p-4 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                  <span className="font-medium text-yellow-800 dark:text-yellow-300">
+                    AI による詳細説明 (プレビュー)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-green-600 border-green-300 hover:bg-green-50"
+                    onClick={handleApply}
+                    disabled={explainLoading}
+                  >
+                    <Check className="mr-1 h-3 w-3" />
+                    適用
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-red-600 border-red-300 hover:bg-red-50"
+                    onClick={handleDiscard}
+                    disabled={explainLoading}
+                  >
+                    <X className="mr-1 h-3 w-3" />
+                    破棄
+                  </Button>
+                </div>
+              </div>
+
+              {/* 詳細説明 - Markdown 形式で表示 */}
+              <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:text-yellow-800 dark:prose-headings:text-yellow-300 prose-p:text-yellow-900 dark:prose-p:text-yellow-100 prose-li:text-yellow-900 dark:prose-li:text-yellow-100 prose-code:text-yellow-900 dark:prose-code:text-yellow-100 prose-strong:text-yellow-800 dark:prose-strong:text-yellow-200 mb-4">
+                <Markdown remarkPlugins={[remarkGfm]}>{localResult.explanation}</Markdown>
               </div>
 
               {/* 重要ポイント */}
-              {explanation.keyPoints.length > 0 && (
+              {localResult.keyPoints.length > 0 && (
                 <div className="mb-4">
                   <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2">
                     重要ポイント
                   </h4>
                   <ul className="list-disc list-inside space-y-1 text-sm text-yellow-900 dark:text-yellow-100">
-                    {explanation.keyPoints.map((point, idx) => (
+                    {localResult.keyPoints.map((point, idx) => (
                       <li key={`keypoint-${idx}`}>{point}</li>
                     ))}
                   </ul>
@@ -678,13 +814,13 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
               )}
 
               {/* 関連トピック */}
-              {explanation.relatedTopics.length > 0 && (
+              {localResult.relatedTopics.length > 0 && (
                 <div className="mb-4">
                   <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2">
                     関連トピック
                   </h4>
                   <div className="flex flex-wrap gap-1">
-                    {explanation.relatedTopics.map((topic) => (
+                    {localResult.relatedTopics.map((topic) => (
                       <Badge
                         key={topic}
                         variant="outline"
@@ -697,17 +833,17 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
                 </div>
               )}
 
-              {/* 実践例 */}
-              {explanation.practicalExamples && explanation.practicalExamples.length > 0 && (
+              {/* 実践例 - Markdown 形式で表示 */}
+              {localResult.practicalExamples && localResult.practicalExamples.length > 0 && (
                 <div>
                   <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2">
                     実践例
                   </h4>
                   <div className="space-y-2">
-                    {explanation.practicalExamples.map((example, idx) => (
+                    {localResult.practicalExamples.map((example, idx) => (
                       <div
                         key={`example-${idx}`}
-                        className="prose prose-sm max-w-none text-yellow-900 dark:text-yellow-100 dark:prose-invert bg-yellow-100/50 dark:bg-yellow-800/30 p-2 rounded"
+                        className="prose prose-sm max-w-none dark:prose-invert prose-p:text-yellow-900 dark:prose-p:text-yellow-100 prose-li:text-yellow-900 dark:prose-li:text-yellow-100 prose-code:bg-yellow-200/50 dark:prose-code:bg-yellow-700/50 bg-yellow-100/50 dark:bg-yellow-800/30 p-2 rounded"
                       >
                         <Markdown remarkPlugins={[remarkGfm]}>{example}</Markdown>
                       </div>
@@ -715,6 +851,45 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* AI 説明セクション - applied 状態 (expandedContent を Markdown で表示) */}
+          {showExplanation && localStatus === "applied" && learning.expandedContent && (
+            <div className="mt-4 p-4 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+              <div className="flex items-center gap-2 mb-3">
+                <Lightbulb className="h-4 w-4 text-green-600 dark:text-green-400" />
+                <span className="font-medium text-green-800 dark:text-green-300">
+                  AI による詳細説明
+                </span>
+              </div>
+              <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:text-green-800 dark:prose-headings:text-green-300 prose-p:text-green-900 dark:prose-p:text-green-100 prose-li:text-green-900 dark:prose-li:text-green-100 prose-code:text-green-900 dark:prose-code:text-green-100 prose-code:bg-green-200/50 dark:prose-code:bg-green-700/50 prose-strong:text-green-800 dark:prose-strong:text-green-200 prose-a:text-green-700 dark:prose-a:text-green-300">
+                <Markdown remarkPlugins={[remarkGfm]}>{learning.expandedContent}</Markdown>
+              </div>
+            </div>
+          )}
+
+          {/* AI 説明セクション - failed 状態 */}
+          {localStatus === "failed" && (
+            <div className="mt-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                  <span className="font-medium text-red-800 dark:text-red-300">
+                    詳細説明の生成に失敗しました
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-red-600 border-red-300 hover:bg-red-50"
+                  onClick={handleExplain}
+                  disabled={explainLoading}
+                >
+                  <RefreshCw className="mr-1 h-3 w-3" />
+                  再試行
+                </Button>
+              </div>
             </div>
           )}
         </CollapsibleContent>

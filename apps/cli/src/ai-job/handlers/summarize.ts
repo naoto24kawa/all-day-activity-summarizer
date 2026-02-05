@@ -48,6 +48,7 @@ export async function handleSummarizeDaily(
   params: Record<string, unknown>,
 ): Promise<JobResult> {
   const date = params.date as string;
+  const overwrite = params.overwrite as boolean | undefined;
 
   if (!date) {
     return {
@@ -56,7 +57,7 @@ export async function handleSummarizeDaily(
     };
   }
 
-  const result = await generateDailySummary(db, date);
+  const result = await generateDailySummary(db, date, { overwrite: overwrite ?? false });
 
   return {
     success: true,

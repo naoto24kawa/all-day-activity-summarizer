@@ -62,11 +62,23 @@ export function useProfile() {
     }
   };
 
+  // JSON配列 (数値) を安全にパースするヘルパー
+  const safeParseJsonNumberArray = (value: string | null | undefined): number[] => {
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter((v): v is number => typeof v === "number") : [];
+    } catch {
+      return [];
+    }
+  };
+
   // パース済みのプロフィール配列
   const responsibilities: string[] = safeParseJsonArray(profile?.responsibilities);
   const specialties: string[] = safeParseJsonArray(profile?.specialties);
   const knownTechnologies: string[] = safeParseJsonArray(profile?.knownTechnologies);
   const learningGoals: string[] = safeParseJsonArray(profile?.learningGoals);
+  const activeProjectIds: number[] = safeParseJsonNumberArray(profile?.activeProjectIds);
 
   return {
     profile,
@@ -74,6 +86,7 @@ export function useProfile() {
     specialties,
     knownTechnologies,
     learningGoals,
+    activeProjectIds,
     loading,
     error,
     fetchProfile,

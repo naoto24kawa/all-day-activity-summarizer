@@ -1,15 +1,17 @@
 /**
  * Notion Tools for MCP Server
  *
- * Notion 関連の 4 ツール:
+ * Notion 関連の 6 ツール:
  * - list_notion_items: アイテム一覧取得
  * - upsert_notion_item: アイテム登録/更新
  * - upsert_notion_items_bulk: アイテム一括登録/更新
  * - get_notion_unread_count: 未読カウント取得
+ * - list_notion_databases: データベース一覧取得
+ * - upsert_notion_database: データベース登録/更新
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { NotionItem, NotionUnreadCounts } from "@repo/types";
+import type { NotionDatabase, NotionItem, NotionUnreadCounts } from "@repo/types";
 import { z } from "zod";
 import { apiGet, apiPost } from "../api-client.js";
 
@@ -288,6 +290,117 @@ export function registerNotionTools(server: McpServer): void {
           {
             type: "text" as const,
             text: `Notion 未読アイテム数:\n- 合計: ${counts.total}\n- データベース: ${counts.database}\n- ページ: ${counts.page}`,
+          },
+        ],
+      };
+    },
+  );
+
+  /**
+   * list_notion_databases - Notion データベース一覧取得
+   */
+  server.tool(
+    "list_notion_databases",
+    "監視対象の Notion データベース一覧を取得する",
+    {
+      activeOnly: z.boolean().optional().describe("アクティブなもののみ取得 (デフォルト: true)"),
+    },
+    async ({ activeOnly }) => {
+      const params: Record<string, string | undefined> = {};
+      if (activeOnly !== undefined) {
+        params.activeOnly = activeOnly ? "true" : "false";
+      }
+
+      const response = await apiGet<NotionDatabase[]>("/notion-databases", params);
+
+      if (!response.ok || !response.data) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Notion データベース取得エラー: ${response.error}`,
+            },
+          ],
+        };
+      }
+
+      const databases = response.data;
+
+      if (databases.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "登録済みの Notion データベースはありません。",
+            },
+          ],
+        };
+      }
+
+      const dbList = databases
+        .map((db) => {
+          const icon = db.icon || "📊";
+          const status = db.isActive ? "" : "[無効]";
+          const project = db.projectId ? `(Project: ${db.projectId})` : "";
+          return `- #${db.id} ${status} ${icon} ${db.title} ${project}\n  ID: ${db.databaseId}\n  URL: ${db.url}`;
+        })
+        .join("\n");
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Notion データベース一覧 (${databases.length}件):\n\n${dbList}`,
+          },
+        ],
+      };
+    },
+  );
+
+  /**
+   * upsert_notion_database - Notion データベース登録/更新
+   */
+  server.tool(
+    "upsert_notion_database",
+    "Notion データベースを登録/更新する。同じ databaseId が存在する場合は更新",
+    {
+      databaseId: z.string().describe("Notion Database ID"),
+      title: z.string().optional().describe("データベースタイトル"),
+      url: z.string().optional().describe("データベース URL"),
+      icon: z.string().optional().describe("アイコン (emoji または URL)"),
+      properties: z.string().optional().describe("プロパティスキーマ (JSON 文字列)"),
+      projectId: z.number().optional().describe("紐づけるプロジェクト ID"),
+      isActive: z.boolean().optional().describe("アクティブ状態"),
+    },
+    async ({ databaseId, title, url, icon, properties, projectId, isActive }) => {
+      const response = await apiPost<NotionDatabase & { updated?: boolean }>("/notion-databases", {
+        databaseId,
+        title,
+        url,
+        icon,
+        properties,
+        projectId,
+        isActive,
+      });
+
+      if (!response.ok || !response.data) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Notion データベース登録エラー: ${response.error}`,
+            },
+          ],
+        };
+      }
+
+      const db = response.data;
+      const action = db.updated ? "更新" : "登録";
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Notion データベースを${action}しました:\n- ID: #${db.id}\n- タイトル: ${db.title}\n- Database ID: ${db.databaseId}\n- URL: ${db.url}`,
           },
         ],
       };

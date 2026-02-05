@@ -15,10 +15,10 @@
 
 | 項目 | 説明 | 例 |
 |------|------|-----|
-| experienceYears | 経験年数 | 5 |
 | specialties | 専門分野 | ["frontend", "typescript"] |
 | knownTechnologies | 既知技術 | ["React", "Hono", "Bun"] |
 | learningGoals | 学習目標 | ["Rust", "DDD"] |
+| activeProjectIds | 参加中のプロジェクト | [1, 2, 3] |
 
 ## タスク統合
 
@@ -32,6 +32,11 @@
 `apps/cli/src/claude-code/extractor.ts` でプロフィール情報を参照:
 - 既知の技術の基礎的な内容を除外
 - 学習目標に関連する内容を優先
+
+## 参加プロジェクト
+
+Profile 画面で参加中のプロジェクトを選択可能。
+タスク完了検知やサマリ生成で、参加中のプロジェクトを優先的に処理。
 
 ## 提案タイプ
 

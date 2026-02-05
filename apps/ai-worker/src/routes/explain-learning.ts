@@ -13,7 +13,6 @@ import { withProcessingLog } from "../utils/log-processing.js";
 const EXPLAIN_MODEL = "sonnet";
 
 interface UserProfileContext {
-  experienceYears?: number;
   specialties?: string[];
   knownTechnologies?: string[];
   learningGoals?: string[];
@@ -98,9 +97,6 @@ function buildPrompt(body: ExplainLearningRequestBody): string {
   let profileSection = "";
   if (body.userProfile) {
     const parts: string[] = [];
-    if (body.userProfile.experienceYears !== undefined) {
-      parts.push(`経験年数: ${body.userProfile.experienceYears}年`);
-    }
     if (body.userProfile.specialties && body.userProfile.specialties.length > 0) {
       parts.push(`専門分野: ${body.userProfile.specialties.join(", ")}`);
     }

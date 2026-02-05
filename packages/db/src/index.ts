@@ -17,6 +17,7 @@ export type {
   GitHubComment,
   GitHubItem,
   GitHubQueueJob,
+  GmailMessage,
   Learning,
   Memo,
   NewCalendarEvent,
@@ -31,6 +32,7 @@ export type {
   NewGitHubComment,
   NewGitHubItem,
   NewGitHubQueueJob,
+  NewGmailMessage,
   NewLearning,
   NewMemo,
   NewNotionDatabase,
@@ -38,6 +40,7 @@ export type {
   NewNotionQueueJob,
   NewProfileSuggestion,
   NewProject,
+  NewProjectRepository,
   NewProjectSuggestion,
   NewPromptImprovement,
   NewRateLimitUsage,
@@ -57,6 +60,7 @@ export type {
   NotionQueueJob,
   ProfileSuggestion,
   Project,
+  ProjectRepository,
   ProjectSuggestion,
   PromptImprovement,
   RateLimitUsage,
@@ -711,7 +715,6 @@ export function createDatabase(dbPath: string) {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS user_profile (
       id INTEGER PRIMARY KEY DEFAULT 1,
-      experience_years INTEGER,
       specialties TEXT,
       known_technologies TEXT,
       learning_goals TEXT,
@@ -756,6 +759,50 @@ export function createDatabase(dbPath: string) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_path ON projects(path) WHERE path IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_github ON projects(github_owner, github_repo) WHERE github_owner IS NOT NULL AND github_repo IS NOT NULL;
   `);
+
+  // Migration: create project_repositories table (many-to-many relationship)
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS project_repositories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL,
+      github_owner TEXT NOT NULL,
+      github_repo TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_project_repositories_unique
+      ON project_repositories(project_id, github_owner, github_repo);
+    CREATE INDEX IF NOT EXISTS idx_project_repositories_project
+      ON project_repositories(project_id);
+    CREATE INDEX IF NOT EXISTS idx_project_repositories_repo
+      ON project_repositories(github_owner, github_repo);
+  `);
+
+  // Migration: migrate existing projects.github_owner/github_repo to project_repositories
+  try {
+    const existingRepos = sqlite
+      .query<{ id: number; github_owner: string; github_repo: string }, []>(
+        `SELECT id, github_owner, github_repo FROM projects
+         WHERE github_owner IS NOT NULL AND github_repo IS NOT NULL`,
+      )
+      .all();
+    for (const repo of existingRepos) {
+      // Check if already migrated
+      const existing = sqlite
+        .query<{ id: number }, [number, string, string]>(
+          `SELECT id FROM project_repositories WHERE project_id = ? AND github_owner = ? AND github_repo = ?`,
+        )
+        .get(repo.id, repo.github_owner, repo.github_repo);
+      if (!existing) {
+        sqlite.exec(
+          `INSERT INTO project_repositories (project_id, github_owner, github_repo, created_at)
+           VALUES (${repo.id}, '${repo.github_owner}', '${repo.github_repo}', datetime('now'))`,
+        );
+      }
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
 
   // Migration: add project_id to tasks and learnings
   addColumnIfNotExists(sqlite, "tasks", "project_id", "INTEGER");
@@ -1572,6 +1619,40 @@ export function createDatabase(dbPath: string) {
 
     CREATE INDEX IF NOT EXISTS idx_notion_queue_status ON notion_queue(status);
     CREATE INDEX IF NOT EXISTS idx_notion_queue_run_after ON notion_queue(run_after);
+  `);
+
+  // Migration: create Gmail messages table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS gmail_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      from_email TEXT NOT NULL,
+      from_name TEXT,
+      to_emails TEXT NOT NULL,
+      cc_emails TEXT,
+      subject TEXT NOT NULL,
+      snippet TEXT,
+      body TEXT,
+      body_plain TEXT,
+      labels TEXT,
+      has_attachments INTEGER NOT NULL DEFAULT 0,
+      message_type TEXT NOT NULL CHECK(message_type IN ('direct', 'cc', 'mailing_list', 'notification', 'newsletter')),
+      is_read INTEGER NOT NULL DEFAULT 0,
+      is_starred INTEGER NOT NULL DEFAULT 0,
+      priority TEXT CHECK(priority IN ('high', 'medium', 'low')),
+      project_id INTEGER,
+      received_at TEXT NOT NULL,
+      synced_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gmail_messages_date ON gmail_messages(date);
+    CREATE INDEX IF NOT EXISTS idx_gmail_messages_type ON gmail_messages(message_type);
+    CREATE INDEX IF NOT EXISTS idx_gmail_messages_is_read ON gmail_messages(is_read);
+    CREATE INDEX IF NOT EXISTS idx_gmail_messages_project ON gmail_messages(project_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_gmail_messages_unique ON gmail_messages(message_id, thread_id);
   `);
 
   return db;

@@ -61,7 +61,7 @@ export function SubTabNav({
 }: SubTabNavProps) {
   return (
     <div
-      className={cn("bg-muted relative inline-flex h-10 items-center rounded-lg p-1", className)}
+      className={cn("bg-muted relative flex h-10 w-full items-center rounded-lg p-1", className)}
     >
       {/* スライド背景 */}
       <div

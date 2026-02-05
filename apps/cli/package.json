@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.6",
-    "@modelcontextprotocol/sdk": "^1.0.0",
     "@notionhq/client": "^5.9.0",
+    "@repo/claude-history": "workspace:*",
     "@repo/core": "workspace:*",
     "@repo/db": "workspace:*",
     "@repo/slack-api": "workspace:*",

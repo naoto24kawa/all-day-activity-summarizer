@@ -1,3 +1,4 @@
+import type { Project } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,6 +10,7 @@ import { AiProcessingLogPanel } from "./ai-processing-log-panel";
 import { AISettingsPanel } from "./ai-settings-panel";
 import { ClaudeChatPanel } from "./claude-chat-panel";
 import { ClaudeCodeFeed } from "./claude-code-feed";
+import { ClaudeCodeRecentPanel } from "./claude-code-recent-panel";
 import { GitHubFeed } from "./github-feed";
 import { GitHubPriorityPanel } from "./github-priority-panel";
 import { HeaderControls } from "./header-controls";
@@ -17,7 +19,10 @@ import { LearningsFeed } from "./learnings-feed";
 import { MemoFloatingChat } from "./memo-floating-chat";
 import { MonitoringPanel } from "./monitoring-panel";
 import { NotionFeed } from "./notion-feed";
+import { NotionRecentPanel } from "./notion-recent-panel";
 import { ProfilePanel } from "./profile-panel";
+import { ProjectActivityPanel } from "./project-activity-panel";
+import { ProjectsPanel } from "./projects-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
 import { SlackPriorityPanel } from "./slack-priority-panel";
@@ -135,6 +140,7 @@ export function Dashboard() {
   const [memoHeight, setMemoHeight] = useState(() => loadNumber(STORAGE_KEY_MEMO_HEIGHT, 500));
   const [activeGroup, setActiveGroup] = useState<TabGroupId>(loadActiveGroup);
   const [activeTabs, setActiveTabs] = useState<Record<TabGroupId, TabId>>(loadActiveTabs);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const { badges, groupBadges, refetch: refetchBadges } = useTabBadges();
 
   // AI Job通知フック (トースト通知 + リアルタイム統計)
@@ -265,13 +271,32 @@ export function Dashboard() {
                   </div>
                 </TabsContent>
                 <TabsContent value="notion" className="min-h-0 flex-1">
-                  <NotionFeed className="h-full" />
+                  <div className="grid h-full gap-4 lg:grid-cols-2">
+                    <NotionFeed className="h-full" />
+                    <NotionRecentPanel className="h-full" />
+                  </div>
                 </TabsContent>
                 <TabsContent value="claude" className="min-h-0 flex-1">
-                  <ClaudeCodeFeed className="h-full" />
+                  <div className="grid h-full gap-4 lg:grid-cols-2">
+                    <ClaudeCodeFeed className="h-full" />
+                    <ClaudeCodeRecentPanel className="h-full" />
+                  </div>
                 </TabsContent>
                 <TabsContent value="learnings" className="min-h-0 flex-1">
                   <LearningsFeed className="h-full" />
+                </TabsContent>
+                <TabsContent value="projects" className="min-h-0 flex-1 overflow-hidden">
+                  <div className="flex h-full min-h-0 gap-4 overflow-hidden">
+                    <ProjectsPanel
+                      className="min-h-0 w-1/2 overflow-hidden"
+                      selectedProjectId={selectedProject?.id}
+                      onSelectProject={setSelectedProject}
+                    />
+                    <ProjectActivityPanel
+                      project={selectedProject}
+                      className="min-h-0 w-1/2 overflow-hidden"
+                    />
+                  </div>
                 </TabsContent>
                 <TabsContent value="whisper" className="min-h-0 flex-1">
                   <VocabularyPanel className="h-full" />

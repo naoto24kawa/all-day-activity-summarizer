@@ -20,7 +20,6 @@ interface UserProfileInput {
   // 役割・責任
   responsibilities: string[];
   // 技術スキル
-  experienceYears?: number;
   specialties: string[];
   knownTechnologies: string[];
   learningGoals: string[];
@@ -105,7 +104,6 @@ function buildPrompt(profile: UserProfileInput, activityData: ActivityData): str
 【役割・責任】
 - 担当領域: ${profile.responsibilities.length > 0 ? profile.responsibilities.join(", ") : "未設定"}
 【技術スキル】
-- 経験年数: ${profile.experienceYears ?? "未設定"}年
 - 専門分野: ${profile.specialties.length > 0 ? profile.specialties.join(", ") : "未設定"}
 - 既知技術: ${profile.knownTechnologies.length > 0 ? profile.knownTechnologies.join(", ") : "未設定"}
 - 学習目標: ${profile.learningGoals.length > 0 ? profile.learningGoals.join(", ") : "未設定"}
@@ -159,8 +157,8 @@ ${githubInfo}
   const jsonFormat = `{
   "suggestions": [
     {
-      "suggestionType": "add_technology" | "add_specialty" | "add_goal" | "add_responsibility" | "update_experience" | "set_display_name" | "set_slack_user_id" | "set_github_username",
-      "field": "knownTechnologies" | "specialties" | "learningGoals" | "responsibilities" | "experienceYears" | "displayName" | "slackUserId" | "githubUsername",
+      "suggestionType": "add_technology" | "add_specialty" | "add_goal" | "add_responsibility" | "set_display_name" | "set_slack_user_id" | "set_github_username",
+      "field": "knownTechnologies" | "specialties" | "learningGoals" | "responsibilities" | "displayName" | "slackUserId" | "githubUsername",
       "value": "提案する値",
       "reason": "この提案の理由",
       "confidence": 0.0-1.0
@@ -211,10 +209,6 @@ ${activitySection}
    - 活動から「学習中」と思われる新しい技術を特定する
    - 既知技術にはなく、活発に学習している兆候がある技術
    - 現在の学習目標と重複しないもの
-
-8. **経験年数 (experienceYears)**:
-   - 通常は提案しない (ユーザーが手動で設定すべき)
-   - 活動内容から明らかに設定値と矛盾する場合のみ提案
 
 出力ルール:
 - 最大8つまで提案する

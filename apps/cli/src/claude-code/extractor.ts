@@ -28,7 +28,6 @@ function toExtractionSourceType(
 
 /** ユーザープロフィール情報 (学び抽出時に参照) */
 export interface UserProfileContext {
-  experienceYears?: number;
   specialties?: string[];
   knownTechnologies?: string[];
   learningGoals?: string[];
@@ -89,7 +88,6 @@ export async function extractAndSaveLearnings(
 
     if (profile) {
       profileContext = {
-        experienceYears: profile.experienceYears ?? undefined,
         specialties: profile.specialties ? JSON.parse(profile.specialties) : undefined,
         knownTechnologies: profile.knownTechnologies
           ? JSON.parse(profile.knownTechnologies)

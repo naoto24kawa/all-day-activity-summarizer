@@ -139,3 +139,32 @@ export async function apiPatch<T>(
     };
   }
 }
+
+/**
+ * DELETE リクエスト
+ */
+export async function apiDelete<T>(path: string): Promise<ApiResponse<T>> {
+  const baseUrl = getApiUrl();
+  const url = new URL(normalizePath(path), baseUrl);
+
+  try {
+    const response = await fetch(url.toString(), {
+      method: "DELETE",
+    });
+    const status = response.status;
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      return { ok: false, error: errorBody || `HTTP ${status}`, status };
+    }
+
+    const data = (await response.json()) as T;
+    return { ok: true, data, status };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+      status: 0,
+    };
+  }
+}

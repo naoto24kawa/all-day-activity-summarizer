@@ -6,6 +6,7 @@
 
 import { registerJobHandler } from "../worker.js";
 import { handleClaudeChat } from "./claude-chat.js";
+import { handleLearningExplain } from "./learning-explain.js";
 import { handleLearningExtract } from "./learning-extract.js";
 import { handleProfileAnalyze } from "./profile-analyze.js";
 import { handleSlackPriority } from "./slack-priority.js";
@@ -39,6 +40,8 @@ export function registerAllHandlers(): void {
   registerJobHandler("task-check-completion-individual", handleTaskCheckCompletionIndividual);
   // 学び抽出 (claude-code/transcription/github-comment/slack-message)
   registerJobHandler("learning-extract", handleLearningExtract);
+  // 学び詳細説明
+  registerJobHandler("learning-explain", handleLearningExplain);
   // 用語抽出 (slack/github/claude-code/memo)
   registerJobHandler("vocabulary-extract", handleVocabularyExtract);
   // 用語読み生成

@@ -6,7 +6,6 @@ import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { createClaudeCodeClient } from "../../claude-code/client.js";
 import { fetchAllSessions } from "../../claude-code/fetcher.js";
 import type { AdasConfig } from "../../config.js";
 import { featureDisabledResponse } from "../errors.js";
@@ -184,12 +183,8 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
       return featureDisabledResponse(c, "claudeCode");
     }
 
-    const client = createClaudeCodeClient();
-
     try {
-      await client.connect();
-      const result = await fetchAllSessions(db, client, config.claudeCode.projects, config);
-      await client.disconnect();
+      const result = await fetchAllSessions(db, config.claudeCode.projects, config);
 
       return c.json({
         success: true,
@@ -198,7 +193,6 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
         learnings: result.learnings,
       });
     } catch (error) {
-      await client.disconnect();
       return c.json(
         {
           error: "Failed to sync sessions",

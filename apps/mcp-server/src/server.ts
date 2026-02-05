@@ -1,10 +1,12 @@
 /**
  * ADAS MCP Server
  *
- * タスク管理・メモ・Slack・Notion 機能を Claude Code から利用可能にする MCP サーバー
+ * タスク管理・メモ・Slack・Notion・Calendar 機能を Claude Code から利用可能にする MCP サーバー
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerCalendarTools } from "./tools/calendar.js";
+import { registerGmailTools } from "./tools/gmail.js";
 import { registerMemoTools } from "./tools/memos.js";
 import { registerNotionTools } from "./tools/notion.js";
 import { registerSlackTools } from "./tools/slack.js";
@@ -20,7 +22,9 @@ export function createServer(): McpServer {
   registerTaskTools(server);
   registerMemoTools(server);
   registerSlackTools(server);
+  registerGmailTools(server);
   registerNotionTools(server);
+  registerCalendarTools(server);
 
   return server;
 }

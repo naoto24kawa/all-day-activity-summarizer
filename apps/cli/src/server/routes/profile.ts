@@ -32,7 +32,6 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
           slackUserId: null,
           githubUsername: null,
           responsibilities: null,
-          experienceYears: null,
           specialties: null,
           knownTechnologies: null,
           learningGoals: null,
@@ -59,10 +58,10 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
       slackUserId: string | null;
       githubUsername: string | null;
       responsibilities: string | null;
-      experienceYears: number | null;
       specialties: string | null;
       knownTechnologies: string | null;
       learningGoals: string | null;
+      activeProjectIds: string | null;
       updatedAt: string;
     }> = {
       updatedAt: new Date().toISOString(),
@@ -87,10 +86,6 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
     }
 
     // 技術スキル
-    if (body.experienceYears !== undefined) {
-      updateData.experienceYears = body.experienceYears;
-    }
-
     if (body.specialties !== undefined) {
       updateData.specialties = JSON.stringify(body.specialties);
     }
@@ -101,6 +96,11 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
 
     if (body.learningGoals !== undefined) {
       updateData.learningGoals = JSON.stringify(body.learningGoals);
+    }
+
+    // 参加プロジェクト
+    if (body.activeProjectIds !== undefined) {
+      updateData.activeProjectIds = JSON.stringify(body.activeProjectIds);
     }
 
     // プロフィールが存在しない場合は作成
@@ -114,10 +114,10 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
           slackUserId: updateData.slackUserId ?? null,
           githubUsername: updateData.githubUsername ?? null,
           responsibilities: updateData.responsibilities ?? null,
-          experienceYears: updateData.experienceYears ?? null,
           specialties: updateData.specialties ?? null,
           knownTechnologies: updateData.knownTechnologies ?? null,
           learningGoals: updateData.learningGoals ?? null,
+          activeProjectIds: updateData.activeProjectIds ?? null,
           updatedAt: updateData.updatedAt ?? new Date().toISOString(),
         })
         .run();
@@ -195,18 +195,8 @@ export function createProfileRouter(db: AdasDatabase, _config?: AdasConfig) {
 
     const now = new Date().toISOString();
 
-    // 数値フィールド
-    if (suggestion.field === "experienceYears") {
-      db.update(schema.userProfile)
-        .set({
-          experienceYears: Number.parseInt(suggestion.value, 10),
-          updatedAt: now,
-        })
-        .where(eq(schema.userProfile.id, 1))
-        .run();
-    }
     // 単一値フィールド (displayName, slackUserId, githubUsername)
-    else if (["displayName", "slackUserId", "githubUsername"].includes(suggestion.field)) {
+    if (["displayName", "slackUserId", "githubUsername"].includes(suggestion.field)) {
       const updateObj: Record<string, string> = {
         [suggestion.field]: suggestion.value,
         updatedAt: now,
@@ -351,10 +341,10 @@ export function getUserProfile(db: AdasDatabase): {
   slackUserId?: string;
   githubUsername?: string;
   responsibilities?: string[];
-  experienceYears?: number;
   specialties?: string[];
   knownTechnologies?: string[];
   learningGoals?: string[];
+  activeProjectIds?: number[];
 } | null {
   const profile = db.select().from(schema.userProfile).where(eq(schema.userProfile.id, 1)).get();
 
@@ -367,11 +357,11 @@ export function getUserProfile(db: AdasDatabase): {
     slackUserId: profile.slackUserId ?? undefined,
     githubUsername: profile.githubUsername ?? undefined,
     responsibilities: profile.responsibilities ? JSON.parse(profile.responsibilities) : undefined,
-    experienceYears: profile.experienceYears ?? undefined,
     specialties: profile.specialties ? JSON.parse(profile.specialties) : undefined,
     knownTechnologies: profile.knownTechnologies
       ? JSON.parse(profile.knownTechnologies)
       : undefined,
     learningGoals: profile.learningGoals ? JSON.parse(profile.learningGoals) : undefined,
+    activeProjectIds: profile.activeProjectIds ? JSON.parse(profile.activeProjectIds) : undefined,
   };
 }

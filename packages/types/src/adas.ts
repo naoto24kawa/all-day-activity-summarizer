@@ -426,6 +426,11 @@ export interface Learning {
   nextReviewAt: string | null;
   lastReviewedAt: string | null;
 
+  // AI説明機能 (非同期ジョブベース)
+  explanationStatus: ExplanationStatus | null;
+  pendingExplanation: string | null; // JSON: LearningExplanationResult
+  expandedContent: string | null;
+
   createdAt: string;
 }
 
@@ -1043,10 +1048,11 @@ export interface UserProfile {
   // 役割・責任
   responsibilities: string | null; // JSON string: ["インフラ担当", "レビュアー"]
   // 技術スキル
-  experienceYears: number | null;
   specialties: string | null; // JSON string
   knownTechnologies: string | null; // JSON string
   learningGoals: string | null; // JSON string
+  // 参加プロジェクト
+  activeProjectIds: string | null; // JSON string: [1, 2, 3]
   updatedAt: string;
 }
 
@@ -1056,7 +1062,6 @@ export type ProfileSuggestionType =
   | "add_specialty"
   | "add_goal"
   | "add_responsibility"
-  | "update_experience"
   | "set_display_name"
   | "set_slack_user_id"
   | "set_github_username";
@@ -1094,10 +1099,11 @@ export interface UpdateProfileRequest {
   // 役割・責任
   responsibilities?: string[];
   // 技術スキル
-  experienceYears?: number | null;
   specialties?: string[];
   knownTechnologies?: string[];
   learningGoals?: string[];
+  // 参加プロジェクト
+  activeProjectIds?: number[];
 }
 
 /** プロフィール提案生成リクエスト */
@@ -1113,34 +1119,55 @@ export interface GenerateProfileSuggestionsResponse {
 
 // ========== Project 型定義 ==========
 
+/** プロジェクトに紐づくGitHubリポジトリ */
+export interface ProjectRepository {
+  id: number;
+  projectId: number;
+  githubOwner: string;
+  githubRepo: string;
+  createdAt: string;
+}
+
 /** プロジェクト */
 export interface Project {
   id: number;
   name: string;
   path: string | null;
+  /** @deprecated Use repositories instead */
   githubOwner: string | null;
+  /** @deprecated Use repositories instead */
   githubRepo: string | null;
   isActive: boolean;
   excludedAt: string | null; // ソフトデリート用 (スキャン除外)
   createdAt: string;
   updatedAt: string;
+  /** 紐づくGitHubリポジトリ (APIレスポンスで付与) */
+  repositories?: ProjectRepository[];
 }
 
 /** プロジェクト作成リクエスト */
 export interface CreateProjectRequest {
   name: string;
   path?: string;
+  /** @deprecated Use repositories instead */
   githubOwner?: string;
+  /** @deprecated Use repositories instead */
   githubRepo?: string;
+  /** 紐づけるGitHubリポジトリ */
+  repositories?: Array<{ githubOwner: string; githubRepo: string }>;
 }
 
 /** プロジェクト更新リクエスト */
 export interface UpdateProjectRequest {
   name?: string;
   path?: string | null;
+  /** @deprecated Use repositories instead */
   githubOwner?: string | null;
+  /** @deprecated Use repositories instead */
   githubRepo?: string | null;
   isActive?: boolean;
+  /** 紐づけるGitHubリポジトリ (指定した場合、既存のリポジトリは置き換えられる) */
+  repositories?: Array<{ githubOwner: string; githubRepo: string }>;
 }
 
 /** プロジェクト自動検出レスポンス */
@@ -1450,6 +1477,7 @@ export type AIJobType =
   | "task-check-completion"
   | "task-check-completion-individual"
   | "learning-extract"
+  | "learning-explain"
   | "vocabulary-extract"
   | "vocabulary-generate-readings"
   | "profile-analyze"
@@ -1849,4 +1877,163 @@ export interface SummarySourceMetadata {
 export interface SummarySourcesResponse {
   summaryId: number;
   sources: SummarySourceMetadata;
+}
+
+// ========== Gmail 型定義 ==========
+
+/** Gmail メッセージ種別 */
+export type GmailMessageType =
+  | "direct" // 自分宛ての直接メール
+  | "cc" // CC に含まれていたメール
+  | "mailing_list" // メーリングリスト
+  | "notification" // 通知メール (noreply 等)
+  | "newsletter"; // ニュースレター
+
+/** Gmail メッセージ優先度 */
+export type GmailMessagePriority = "high" | "medium" | "low";
+
+/** Gmail メッセージ */
+export interface GmailMessage {
+  id: number;
+  date: string;
+  messageId: string;
+  threadId: string;
+
+  // From/To 情報
+  fromEmail: string;
+  fromName: string | null;
+  toEmails: string; // JSON array
+  ccEmails: string | null; // JSON array
+
+  // メール内容
+  subject: string;
+  snippet: string | null;
+  body: string | null;
+  bodyPlain: string | null;
+  labels: string | null; // JSON array
+  hasAttachments: boolean;
+
+  // メール分類
+  messageType: GmailMessageType;
+
+  // 状態管理
+  isRead: boolean;
+  isStarred: boolean;
+  priority: GmailMessagePriority | null;
+
+  // プロジェクト紐付け
+  projectId: number | null;
+
+  // タイムスタンプ
+  receivedAt: string;
+  syncedAt: string;
+  createdAt: string;
+}
+
+/** Gmail メッセージ作成リクエスト */
+export interface CreateGmailMessageRequest {
+  date: string;
+  messageId: string;
+  threadId: string;
+  fromEmail: string;
+  fromName?: string;
+  toEmails: string[];
+  ccEmails?: string[];
+  subject: string;
+  snippet?: string;
+  body?: string;
+  bodyPlain?: string;
+  labels?: string[];
+  hasAttachments?: boolean;
+  messageType: GmailMessageType;
+  isRead?: boolean;
+  isStarred?: boolean;
+  priority?: GmailMessagePriority;
+  projectId?: number;
+  receivedAt: string;
+}
+
+/** Gmail 未読カウント */
+export interface GmailUnreadCounts {
+  total: number;
+  direct: number;
+  cc: number;
+  mailingList: number;
+  notification: number;
+  newsletter: number;
+  byPriority: {
+    high: number;
+    medium: number;
+    low: number;
+    unassigned: number;
+  };
+}
+
+/** Gmail 一覧取得クエリ */
+export interface GmailMessagesQuery {
+  /** 日付フィルタ */
+  date?: string;
+  /** メッセージ種別フィルタ */
+  type?: GmailMessageType;
+  /** 未読のみ */
+  unread?: boolean;
+  /** スター付きのみ */
+  starred?: boolean;
+  /** 優先度フィルタ */
+  priority?: GmailMessagePriority;
+  /** ラベルフィルタ */
+  label?: string;
+  /** プロジェクト ID フィルタ */
+  projectId?: number;
+  /** 取得件数上限 */
+  limit?: number;
+}
+
+// ========== Learning Explanation 型定義 ==========
+
+/** 学び詳細説明ステータス */
+export type ExplanationStatus = "pending" | "completed" | "failed" | "applied";
+
+/** 学び詳細説明の結果 (pendingExplanation に保存される JSON) */
+export interface LearningExplanationResult {
+  /** 詳細な説明 */
+  explanation: string;
+  /** キーポイント */
+  keyPoints: string[];
+  /** 関連トピック */
+  relatedTopics: string[];
+  /** 実践例 (オプション) */
+  practicalExamples?: string[];
+}
+
+/** 学び詳細説明開始レスポンス (非同期) */
+export interface StartLearningExplanationResponse {
+  jobId: number;
+  status: "pending";
+}
+
+/** 学び詳細説明状態取得レスポンス */
+export interface LearningExplanationStatusResponse {
+  /** 学び ID */
+  learningId: number;
+  /** 説明ステータス */
+  status: ExplanationStatus | null;
+  /** ジョブ ID (pending 状態の場合) */
+  jobId: number | null;
+  /** ジョブステータス (pending 状態の場合) */
+  jobStatus: AIJobStatus | null;
+  /** 説明結果 (completed 状態の場合) */
+  result: LearningExplanationResult | null;
+  /** エラーメッセージ (failed 状態の場合) */
+  errorMessage: string | null;
+}
+
+/** 学び詳細説明適用レスポンス */
+export interface ApplyLearningExplanationResponse {
+  /** 適用されたか */
+  applied: boolean;
+  /** 適用後の詳細説明 */
+  expandedContent: string;
+  /** 更新された学び */
+  learning: Learning;
 }

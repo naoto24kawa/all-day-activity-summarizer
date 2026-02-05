@@ -4,23 +4,21 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import type { LearningSourceType } from "@repo/types";
+import type {
+  AIJobStatus,
+  ExplanationStatus,
+  Learning,
+  LearningExplanationResult,
+  LearningSourceType,
+} from "@repo/types";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { enqueueJob } from "../../ai-job/queue.js";
 import type { AdasConfig } from "../../config.js";
 import { getTodayDateString } from "../../utils/date.js";
 import { getSSENotifier } from "../../utils/sse-notifier.js";
-import { getVocabularyTerms } from "../../utils/vocabulary.js";
 
-interface ExplainLearningResponse {
-  explanation: string;
-  keyPoints: string[];
-  relatedTopics: string[];
-  practicalExamples?: string[];
-}
-
-export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
+export function createLearningsRouter(db: AdasDatabase, _config?: AdasConfig) {
   const router = new Hono();
 
   /**
@@ -460,13 +458,10 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
   /**
    * POST /api/learnings/:id/explain
    *
-   * Generate a detailed explanation for a learning using AI
+   * Start async explanation job for a learning
+   * Returns: { jobId: number, status: "pending" }
    */
   router.post("/:id/explain", async (c) => {
-    if (!config) {
-      return c.json({ error: "Config not available" }, 500);
-    }
-
     const id = Number.parseInt(c.req.param("id"), 10);
 
     const learning = db.select().from(schema.learnings).where(eq(schema.learnings.id, id)).get();
@@ -475,77 +470,189 @@ export function createLearningsRouter(db: AdasDatabase, config?: AdasConfig) {
       return c.json({ error: "Learning not found" }, 404);
     }
 
-    const { url, timeout } = config.worker;
-
-    // Get vocabulary terms
-    const vocabulary = getVocabularyTerms(db);
-
-    // Get user profile for context
-    const profile = db.select().from(schema.userProfile).where(eq(schema.userProfile.id, 1)).get();
-    let userProfile:
-      | {
-          experienceYears?: number;
-          specialties?: string[];
-          knownTechnologies?: string[];
-          learningGoals?: string[];
-        }
-      | undefined;
-
-    if (profile) {
-      userProfile = {
-        experienceYears: profile.experienceYears ?? undefined,
-        specialties: profile.specialties ? JSON.parse(profile.specialties) : undefined,
-        knownTechnologies: profile.knownTechnologies
-          ? JSON.parse(profile.knownTechnologies)
-          : undefined,
-        learningGoals: profile.learningGoals ? JSON.parse(profile.learningGoals) : undefined,
-      };
-    }
-
-    // Get project name if learning has projectId
-    let projectName: string | undefined;
-    if (learning.projectId) {
-      const project = db
+    // 既に pending の場合はエラー
+    if (learning.explanationStatus === "pending") {
+      // 既存のジョブ ID を探す
+      const existingJob = db
         .select()
-        .from(schema.projects)
-        .where(eq(schema.projects.id, learning.projectId))
-        .get();
-      projectName = project?.name;
+        .from(schema.aiJobQueue)
+        .where(
+          and(
+            eq(schema.aiJobQueue.jobType, "learning-explain"),
+            eq(schema.aiJobQueue.status, "pending"),
+          ),
+        )
+        .all()
+        .find((job) => {
+          const params = job.params ? JSON.parse(job.params) : {};
+          return params.learningId === id;
+        });
+
+      if (existingJob) {
+        return c.json({ jobId: existingJob.id, status: "pending" });
+      }
     }
 
+    // ステータスを pending に設定してジョブを登録
+    db.update(schema.learnings)
+      .set({ explanationStatus: "pending", pendingExplanation: null })
+      .where(eq(schema.learnings.id, id))
+      .run();
+
+    const jobId = enqueueJob(db, "learning-explain", { learningId: id });
+
+    return c.json({ jobId, status: "pending" });
+  });
+
+  /**
+   * GET /api/learnings/:id/explanation
+   *
+   * Get explanation status and result for a learning
+   */
+  router.get("/:id/explanation", (c) => {
+    const id = Number.parseInt(c.req.param("id"), 10);
+
+    const learning = db.select().from(schema.learnings).where(eq(schema.learnings.id, id)).get();
+
+    if (!learning) {
+      return c.json({ error: "Learning not found" }, 404);
+    }
+
+    // pending の場合はジョブ情報を取得
+    let jobId: number | null = null;
+    let jobStatus: AIJobStatus | null = null;
+    let errorMessage: string | null = null;
+
+    if (learning.explanationStatus === "pending") {
+      const job = db
+        .select()
+        .from(schema.aiJobQueue)
+        .where(eq(schema.aiJobQueue.jobType, "learning-explain"))
+        .all()
+        .find((j) => {
+          const params = j.params ? JSON.parse(j.params) : {};
+          return params.learningId === id;
+        });
+
+      if (job) {
+        jobId = job.id;
+        jobStatus = job.status as AIJobStatus;
+        errorMessage = job.errorMessage;
+      }
+    }
+
+    // completed の場合は結果を解析
+    let result: LearningExplanationResult | null = null;
+    if (learning.explanationStatus === "completed" && learning.pendingExplanation) {
+      try {
+        result = JSON.parse(learning.pendingExplanation) as LearningExplanationResult;
+      } catch {
+        // JSON パース失敗
+      }
+    }
+
+    return c.json({
+      learningId: id,
+      status: learning.explanationStatus as ExplanationStatus | null,
+      jobId,
+      jobStatus,
+      result,
+      errorMessage,
+    });
+  });
+
+  /**
+   * POST /api/learnings/:id/explanation/apply
+   *
+   * Apply pending explanation to expandedContent
+   */
+  router.post("/:id/explanation/apply", (c) => {
+    const id = Number.parseInt(c.req.param("id"), 10);
+
+    const learning = db.select().from(schema.learnings).where(eq(schema.learnings.id, id)).get();
+
+    if (!learning) {
+      return c.json({ error: "Learning not found" }, 404);
+    }
+
+    if (learning.explanationStatus !== "completed" || !learning.pendingExplanation) {
+      return c.json({ error: "No pending explanation to apply" }, 400);
+    }
+
+    // 結果を解析
+    let result: LearningExplanationResult;
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-      const response = await fetch(`${url}/rpc/explain-learning`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: learning.content,
-          category: learning.category,
-          tags: learning.tags,
-          projectName,
-          userProfile,
-          vocabulary,
-        }),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        return c.json({ error: `Worker error: ${errorText}` }, 500);
-      }
-
-      const result = (await response.json()) as ExplainLearningResponse;
-      return c.json(result);
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        return c.json({ error: "Request timeout" }, 504);
-      }
-      return c.json({ error: err instanceof Error ? err.message : "Unknown error" }, 500);
+      result = JSON.parse(learning.pendingExplanation) as LearningExplanationResult;
+    } catch {
+      return c.json({ error: "Failed to parse pending explanation" }, 500);
     }
+
+    // Markdown 形式で expandedContent を構築
+    const expandedParts: string[] = [];
+    expandedParts.push(`## 詳細説明\n\n${result.explanation}`);
+
+    if (result.keyPoints.length > 0) {
+      expandedParts.push(
+        `\n\n## キーポイント\n\n${result.keyPoints.map((p: string) => `- ${p}`).join("\n")}`,
+      );
+    }
+
+    if (result.relatedTopics.length > 0) {
+      expandedParts.push(
+        `\n\n## 関連トピック\n\n${result.relatedTopics.map((t: string) => `- ${t}`).join("\n")}`,
+      );
+    }
+
+    if (result.practicalExamples && result.practicalExamples.length > 0) {
+      expandedParts.push(
+        `\n\n## 実践例\n\n${result.practicalExamples.map((e: string) => `- ${e}`).join("\n")}`,
+      );
+    }
+
+    const expandedContent = expandedParts.join("");
+
+    // 更新
+    db.update(schema.learnings)
+      .set({
+        explanationStatus: "applied",
+        expandedContent,
+      })
+      .where(eq(schema.learnings.id, id))
+      .run();
+
+    const updated = db.select().from(schema.learnings).where(eq(schema.learnings.id, id)).get();
+
+    return c.json({
+      applied: true,
+      expandedContent,
+      learning: updated as Learning,
+    });
+  });
+
+  /**
+   * POST /api/learnings/:id/explanation/discard
+   *
+   * Discard pending explanation
+   */
+  router.post("/:id/explanation/discard", (c) => {
+    const id = Number.parseInt(c.req.param("id"), 10);
+
+    const learning = db.select().from(schema.learnings).where(eq(schema.learnings.id, id)).get();
+
+    if (!learning) {
+      return c.json({ error: "Learning not found" }, 404);
+    }
+
+    // pending/completed/failed いずれの状態でも破棄可能
+    db.update(schema.learnings)
+      .set({
+        explanationStatus: null,
+        pendingExplanation: null,
+      })
+      .where(eq(schema.learnings.id, id))
+      .run();
+
+    return c.json({ discarded: true });
   });
 
   /**

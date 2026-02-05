@@ -15,6 +15,7 @@ export interface SummarizerConfig {
   provider: "claude" | "lmstudio";
   dailyScheduleHour: number;
   timesIntervalMinutes: number;
+  dailySyncWithTimes: boolean;
   lmstudio: {
     url: string;
     model: string;
@@ -241,6 +242,7 @@ export function useConfig() {
       provider?: "claude" | "lmstudio";
       dailyScheduleHour?: number;
       timesIntervalMinutes?: number;
+      dailySyncWithTimes?: boolean;
       lmstudio?: { url?: string; model?: string };
     }) => {
       try {

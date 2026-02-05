@@ -590,6 +590,13 @@ export const learnings = sqliteTable("learnings", {
   nextReviewAt: text("next_review_at"), // 次回復習日
   lastReviewedAt: text("last_reviewed_at"), // 最終復習日
 
+  // AI説明機能 (非同期ジョブベース)
+  explanationStatus: text("explanation_status", {
+    enum: ["pending", "completed", "failed", "applied"],
+  }), // 詳細説明ステータス
+  pendingExplanation: text("pending_explanation"), // JSON: LearningExplanationResult (適用前)
+  expandedContent: text("expanded_content"), // 適用後の詳細説明
+
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -644,10 +651,11 @@ export const userProfile = sqliteTable("user_profile", {
   // 役割・責任
   responsibilities: text("responsibilities"), // JSON: ["インフラ担当", "レビュアー", "ジョブアンテナ"]
   // 技術スキル
-  experienceYears: integer("experience_years"),
   specialties: text("specialties"), // JSON: ["frontend", "typescript"]
   knownTechnologies: text("known_technologies"), // JSON: ["React", "Hono", ...]
   learningGoals: text("learning_goals"), // JSON: ["Rust", "DDD"]
+  // 参加プロジェクト
+  activeProjectIds: text("active_project_ids"), // JSON: [1, 2, 3] (projects テーブルの ID 配列)
   updatedAt: text("updated_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -705,8 +713,10 @@ export const projects = sqliteTable("projects", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   path: text("path"), // Claude Code の projectPath
-  githubOwner: text("github_owner"), // GitHub owner
-  githubRepo: text("github_repo"), // GitHub repo name
+  // @deprecated - Use project_repositories table instead
+  githubOwner: text("github_owner"),
+  // @deprecated - Use project_repositories table instead
+  githubRepo: text("github_repo"),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   excludedAt: text("excluded_at"), // ソフトデリート用 (スキャン除外)
   createdAt: text("created_at")
@@ -719,6 +729,23 @@ export const projects = sqliteTable("projects", {
 
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Project Repositories (プロジェクトとGitHubリポジトリの多対多)
+// ---------------------------------------------------------------------------
+
+export const projectRepositories = sqliteTable("project_repositories", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: integer("project_id").notNull(),
+  githubOwner: text("github_owner").notNull(),
+  githubRepo: text("github_repo").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type ProjectRepository = typeof projectRepositories.$inferSelect;
+export type NewProjectRepository = typeof projectRepositories.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // Project Suggestions (プロジェクト提案 - 承認待ち)
@@ -822,6 +849,7 @@ export const aiJobQueue = sqliteTable("ai_job_queue", {
       "task-check-completion",
       "task-check-completion-individual",
       "learning-extract",
+      "learning-explain",
       "vocabulary-extract",
       "profile-analyze",
       "summarize-times",
@@ -982,6 +1010,56 @@ export const calendarQueue = sqliteTable("calendar_queue", {
 
 export type CalendarQueueJob = typeof calendarQueue.$inferSelect;
 export type NewCalendarQueueJob = typeof calendarQueue.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Gmail Messages
+// ---------------------------------------------------------------------------
+
+export const gmailMessages = sqliteTable("gmail_messages", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  date: text("date").notNull(), // YYYY-MM-DD (JST)
+  messageId: text("message_id").notNull(), // Gmail message ID
+  threadId: text("thread_id").notNull(), // Gmail thread ID
+
+  // From/To 情報
+  fromEmail: text("from_email").notNull(),
+  fromName: text("from_name"),
+  toEmails: text("to_emails").notNull(), // JSON array
+  ccEmails: text("cc_emails"), // JSON array
+
+  // メール内容
+  subject: text("subject").notNull(),
+  snippet: text("snippet"), // プレビュー用短縮テキスト
+  body: text("body"), // 本文 (HTML)
+  bodyPlain: text("body_plain"), // プレーンテキスト版
+  labels: text("labels"), // JSON array: ["INBOX", "IMPORTANT", ...]
+  hasAttachments: integer("has_attachments", { mode: "boolean" }).notNull().default(false),
+
+  // メール分類
+  messageType: text("message_type", {
+    enum: ["direct", "cc", "mailing_list", "notification", "newsletter"],
+  }).notNull(),
+
+  // 状態管理
+  isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),
+  isStarred: integer("is_starred", { mode: "boolean" }).notNull().default(false),
+  priority: text("priority", { enum: ["high", "medium", "low"] }), // AI判定
+
+  // プロジェクト紐付け
+  projectId: integer("project_id"), // FK to projects
+
+  // タイムスタンプ
+  receivedAt: text("received_at").notNull(), // メール受信時刻 (ISO8601)
+  syncedAt: text("synced_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type GmailMessage = typeof gmailMessages.$inferSelect;
+export type NewGmailMessage = typeof gmailMessages.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // Notion (re-export from notion-schema.ts)

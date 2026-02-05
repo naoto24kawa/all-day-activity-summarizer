@@ -16,6 +16,7 @@ import { createFeedbacksRouter, createSegmentFeedbackRouter } from "./routes/fee
 import { createFeedbacksV2Router } from "./routes/feedbacks-v2.js";
 import { createGitHubCommentsRouter } from "./routes/github-comments.js";
 import { createGitHubItemsRouter } from "./routes/github-items.js";
+import { createGmailMessagesRouter } from "./routes/gmail-messages.js";
 import { createLearningsRouter } from "./routes/learnings.js";
 import { createMemosRouter } from "./routes/memos.js";
 import { createNotionDatabasesRouter, createNotionItemsRouter } from "./routes/notion-items.js";
@@ -61,6 +62,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/slack-users", createSlackUsersRouter(db));
   app.route("/api/github-items", createGitHubItemsRouter(db));
   app.route("/api/github-comments", createGitHubCommentsRouter(db));
+  app.route("/api/gmail-messages", createGmailMessagesRouter(db));
   app.route("/api/calendar", createCalendarRouter(db));
   app.route("/api/notion-items", createNotionItemsRouter(db));
   app.route("/api/notion-databases", createNotionDatabasesRouter(db));

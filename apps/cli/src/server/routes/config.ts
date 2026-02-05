@@ -17,6 +17,7 @@ interface IntegrationsUpdateBody {
     provider?: "claude" | "lmstudio";
     dailyScheduleHour?: number;
     timesIntervalMinutes?: number;
+    dailySyncWithTimes?: boolean;
     lmstudio?: {
       url?: string;
       model?: string;
@@ -104,6 +105,10 @@ function updateSummarizerConfig(
     // 0 以上でバリデーション (0 = 無効)
     const interval = Math.max(0, summarizer.timesIntervalMinutes);
     config.summarizer.timesIntervalMinutes = interval;
+    updated = true;
+  }
+  if (summarizer.dailySyncWithTimes !== undefined) {
+    config.summarizer.dailySyncWithTimes = summarizer.dailySyncWithTimes;
     updated = true;
   }
   if (summarizer.lmstudio?.url !== undefined) {
@@ -343,6 +348,7 @@ export function createConfigRouter() {
         provider: config.summarizer.provider,
         dailyScheduleHour: config.summarizer.dailyScheduleHour ?? 23,
         timesIntervalMinutes: config.summarizer.timesIntervalMinutes ?? 0,
+        dailySyncWithTimes: config.summarizer.dailySyncWithTimes ?? false,
         lmstudio: {
           url: config.summarizer.lmstudio.url,
           model: config.summarizer.lmstudio.model,
@@ -438,6 +444,7 @@ export function createConfigRouter() {
           provider: config.summarizer.provider,
           dailyScheduleHour: config.summarizer.dailyScheduleHour ?? 23,
           timesIntervalMinutes: config.summarizer.timesIntervalMinutes ?? 0,
+          dailySyncWithTimes: config.summarizer.dailySyncWithTimes ?? false,
           lmstudio: {
             url: config.summarizer.lmstudio.url,
             model: config.summarizer.lmstudio.model,

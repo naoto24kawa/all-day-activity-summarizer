@@ -3,7 +3,7 @@ import { schema } from "@repo/db";
 import type { SummarySourceMetadata, SummarySourcesResponse } from "@repo/types";
 import { and, between, eq, gte, inArray, lte } from "drizzle-orm";
 import { Hono } from "hono";
-import { enqueueJob } from "../../ai-job/queue.js";
+import { enqueueDailySummaryDebounced, enqueueJob } from "../../ai-job/queue.js";
 import { loadConfig } from "../../config.js";
 import { getTodayDateString } from "../../utils/date.js";
 
@@ -74,13 +74,20 @@ export function createSummariesRouter(db: AdasDatabase) {
       // Times サマリ生成をキューに追加
       const timesJobId = enqueueJob(db, "summarize-times", { date, startHour, endHour });
 
-      // Daily サマリも自動的に再生成
-      const dailyJobId = enqueueJob(db, "summarize-daily", { date });
+      // dailySyncWithTimes が有効なら Daily もデバウンス付きで追加
+      const jobIds: number[] = [timesJobId];
+      let message = `${startHour}時〜${endHour}時のサマリ生成をキューに追加しました`;
+
+      if (config.summarizer.dailySyncWithTimes) {
+        const dailyJobId = enqueueDailySummaryDebounced(db, date);
+        jobIds.push(dailyJobId);
+        message = `${startHour}時〜${endHour}時のサマリ生成をキューに追加しました (Daily は5秒後に再生成)`;
+      }
 
       return c.json({
         success: true,
-        jobIds: [timesJobId, dailyJobId],
-        message: `${startHour}時〜${endHour}時のサマリ生成と日次サマリの再生成をキューに追加しました`,
+        jobIds,
+        message,
       });
     }
 

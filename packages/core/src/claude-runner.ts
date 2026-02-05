@@ -25,12 +25,15 @@ export function getPromptFilePath(name: string): string {
  * Claude Code CLI を `claude -p` で呼び出してテキスト結果を返す。
  * デフォルトで settingSources: ["project", "local"] を使用し、
  * ユーザーレベルの CLAUDE.md を無視する(口調の影響を避けるため)。
+ *
+ * プロンプトは stdin 経由で渡すため、長いプロンプトでも E2BIG エラーが発生しない。
  */
 export async function runClaude(prompt: string, options?: RunClaudeOptions): Promise<string> {
   // デフォルトで user 設定を除外(ユーザーレベルの CLAUDE.md の口調を無視)
   const settingSources = options?.settingSources ?? ["project", "local"];
 
-  const args = ["-p", prompt, "--no-session-persistence"];
+  // プロンプトは stdin 経由で渡す (引数の長さ制限を回避)
+  const args = ["-p", "--no-session-persistence"];
 
   // settingSources を最初に追加(デフォルト値を使用)
   if (settingSources.length > 0) {
@@ -69,9 +72,13 @@ export async function runClaude(prompt: string, options?: RunClaudeOptions): Pro
   return new Promise<string>((resolve, reject) => {
     const proc = spawn("claude", args, {
       cwd: options?.cwd,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"], // stdin を pipe に変更
       env: { ...process.env },
     });
+
+    // プロンプトを stdin に書き込み
+    proc.stdin.write(prompt);
+    proc.stdin.end();
 
     let stdout = "";
     let stderr = "";

@@ -1,5 +1,6 @@
 import {
   Briefcase,
+  FolderKanban,
   Github,
   Info,
   Lightbulb,
@@ -14,11 +15,13 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProfile, useProfileSuggestions } from "@/hooks/use-profile";
+import { useProjects } from "@/hooks/use-projects";
 import { cn } from "@/lib/utils";
 
 interface ProfilePanelProps {
@@ -32,11 +35,13 @@ export function ProfilePanel({ className }: ProfilePanelProps) {
     specialties,
     knownTechnologies,
     learningGoals,
+    activeProjectIds,
     loading,
     error,
     updateProfile,
   } = useProfile();
   const { generating, generateSuggestions } = useProfileSuggestions();
+  const { projects, loading: projectsLoading } = useProjects();
 
   // 基本情報
   const [displayName, setDisplayName] = useState<string>("");
@@ -45,7 +50,6 @@ export function ProfilePanel({ className }: ProfilePanelProps) {
   // 役割・責任
   const [newResponsibility, setNewResponsibility] = useState("");
   // 技術スキル
-  const [experienceYears, setExperienceYears] = useState<string>("");
   const [newSpecialty, setNewSpecialty] = useState("");
   const [newTechnology, setNewTechnology] = useState("");
   const [newGoal, setNewGoal] = useState("");
@@ -58,9 +62,6 @@ export function ProfilePanel({ className }: ProfilePanelProps) {
       setDisplayName(profile.displayName ?? "");
       setSlackUserId(profile.slackUserId ?? "");
       setGithubUsername(profile.githubUsername ?? "");
-      if (profile.experienceYears !== null && profile.experienceYears !== undefined) {
-        setExperienceYears(profile.experienceYears.toString());
-      }
     }
   }, [profile]);
 
@@ -72,18 +73,6 @@ export function ProfilePanel({ className }: ProfilePanelProps) {
         slackUserId: slackUserId.trim() || null,
         githubUsername: githubUsername.trim() || null,
       });
-    } finally {
-      setUpdating(false);
-    }
-  };
-
-  const handleUpdateExperience = async () => {
-    const years = experienceYears.trim() ? Number.parseInt(experienceYears, 10) : null;
-    if (years !== null && Number.isNaN(years)) return;
-
-    setUpdating(true);
-    try {
-      await updateProfile({ experienceYears: years });
     } finally {
       setUpdating(false);
     }
@@ -306,33 +295,6 @@ export function ProfilePanel({ className }: ProfilePanelProps) {
           </p>
         </div>
 
-        {/* 経験年数 */}
-        <div className="space-y-2">
-          <Label htmlFor="experience">経験年数</Label>
-          <div className="flex gap-2">
-            <Input
-              id="experience"
-              type="number"
-              min="0"
-              max="50"
-              placeholder="例: 5"
-              value={experienceYears}
-              onChange={(e) => setExperienceYears(e.target.value)}
-              className="w-24"
-              disabled={updating}
-            />
-            <span className="self-center text-sm text-muted-foreground">年</span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleUpdateExperience}
-              disabled={updating}
-            >
-              更新
-            </Button>
-          </div>
-        </div>
-
         {/* 専門分野 */}
         <div className="space-y-2">
           <Label className="flex items-center gap-2">
@@ -472,6 +434,56 @@ export function ProfilePanel({ className }: ProfilePanelProps) {
               </Button>
             </div>
           </div>
+        </div>
+
+        {/* 参加プロジェクト */}
+        <div className="space-y-2">
+          <Label className="flex items-center gap-2">
+            <FolderKanban className="h-4 w-4 text-cyan-500" />
+            参加中のプロジェクト
+          </Label>
+          {projectsLoading ? (
+            <Skeleton className="h-8 w-full" />
+          ) : projects.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              プロジェクトがありません。Projects タブで登録してください。
+            </p>
+          ) : (
+            <div className="grid gap-2">
+              {projects.map((project) => {
+                const isChecked = activeProjectIds.includes(project.id);
+                return (
+                  <div key={project.id} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`project-${project.id}`}
+                      checked={isChecked}
+                      disabled={updating}
+                      onCheckedChange={async (checked) => {
+                        const newIds = checked
+                          ? [...activeProjectIds, project.id]
+                          : activeProjectIds.filter((id) => id !== project.id);
+                        setUpdating(true);
+                        try {
+                          await updateProfile({ activeProjectIds: newIds });
+                        } finally {
+                          setUpdating(false);
+                        }
+                      }}
+                    />
+                    <Label
+                      htmlFor={`project-${project.id}`}
+                      className="cursor-pointer text-sm font-normal"
+                    >
+                      {project.name}
+                    </Label>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            タスク完了検知やサマリ生成で、参加中のプロジェクトを優先的に処理します。
+          </p>
         </div>
       </CardContent>
     </Card>
