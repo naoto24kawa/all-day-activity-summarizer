@@ -153,7 +153,6 @@ const VALID_TASK_STATUSES = [
   "in_progress",
   "paused",
   "completed",
-  "someday",
 ] as const;
 
 /** クエリパラメータが有効な TaskStatus かどうかを判定 */
@@ -457,11 +456,11 @@ export function createTasksRouter(db: AdasDatabase) {
       in_progress: 0,
       paused: 0,
       completed: 0,
-      someday: 0,
       acceptedByPriority: {
         high: 0,
         medium: 0,
         low: 0,
+        someday: 0,
       },
     };
 
@@ -472,7 +471,7 @@ export function createTasksRouter(db: AdasDatabase) {
       }
       // 承認済みの優先度別カウント
       if (task.status === "accepted" && task.priority) {
-        const priority = task.priority as "high" | "medium" | "low";
+        const priority = task.priority as "high" | "medium" | "low" | "someday";
         if (priority in stats.acceptedByPriority) {
           stats.acceptedByPriority[priority]++;
         }
@@ -2860,7 +2859,7 @@ export function createTasksRouter(db: AdasDatabase) {
       sourceTaskIds: number[];
       title: string;
       description?: string;
-      priority?: "high" | "medium" | "low";
+      priority?: "high" | "medium" | "low" | "someday";
       projectId?: number;
     }>();
 
@@ -2896,14 +2895,14 @@ export function createTasksRouter(db: AdasDatabase) {
     // 優先度を決定 (指定がなければ統合元の最高優先度)
     let priority = body.priority;
     if (!priority) {
-      const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+      const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2, someday: 3 };
       const highestPriority = sourceTasks.reduce(
         (acc, task) => {
           if (!task.priority) return acc;
           if (!acc) return task.priority;
           return priorityOrder[task.priority]! < priorityOrder[acc]! ? task.priority : acc;
         },
-        null as "high" | "medium" | "low" | null,
+        null as "high" | "medium" | "low" | "someday" | null,
       );
       priority = highestPriority ?? undefined;
     }

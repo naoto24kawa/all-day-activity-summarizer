@@ -624,11 +624,10 @@ export type TaskStatus =
   | "rejected"
   | "in_progress"
   | "paused"
-  | "completed"
-  | "someday";
+  | "completed";
 
 /** タスク優先度 */
-export type TaskPriority = "high" | "medium" | "low";
+export type TaskPriority = "high" | "medium" | "low" | "someday";
 
 /** タスク業務パターン */
 export type WorkType =
@@ -774,12 +773,12 @@ export interface TaskStats {
   in_progress: number;
   paused: number;
   completed: number;
-  someday: number;
   /** 承認済みの優先度別カウント */
   acceptedByPriority: {
     high: number;
     medium: number;
     low: number;
+    someday: number;
   };
 }
 
@@ -960,7 +959,7 @@ export interface CreateMergeTaskRequest {
   /** 統合後の説明 */
   description?: string;
   /** 優先度 */
-  priority?: "high" | "medium" | "low";
+  priority?: "high" | "medium" | "low" | "someday";
   /** プロジェクト ID */
   projectId?: number;
 }

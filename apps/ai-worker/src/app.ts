@@ -14,6 +14,7 @@ import { createHealthRouter } from "./routes/health.js";
 import { createInterpretRouter } from "./routes/interpret.js";
 import { createLogsRouter } from "./routes/logs.js";
 import { createMatchSlackChannelsRouter } from "./routes/match-slack-channels.js";
+import { createRestartRouter } from "./routes/restart.js";
 import { createSlackPriorityRouter } from "./routes/slack-priority.js";
 import { createSuggestMemoTagsRouter } from "./routes/suggest-memo-tags.js";
 import { createSummarizeRouter } from "./routes/summarize.js";
@@ -43,6 +44,7 @@ export function createWorkerApp() {
   app.route("/rpc/slack-priority", createSlackPriorityRouter());
   app.route("/rpc/logs", createLogsRouter());
   app.route("/rpc/health", createHealthRouter());
+  app.route("/rpc/restart", createRestartRouter());
 
   return app;
 }

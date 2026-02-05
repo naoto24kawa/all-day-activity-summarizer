@@ -101,7 +101,7 @@ Slack/GitHub/メモから AI でタスクを自動抽出し、フィードバッ
 {
   "title": "タスク名",           // 必須
   "description": "詳細説明",     // 任意
-  "priority": "high",           // high | medium | low
+  "priority": "high",           // high | medium | low | someday
   "workType": "create",         // create | investigate | review | communicate | operate | learn | plan | maintain
   "dueDate": "2026-02-10",      // YYYY-MM-DD
   "projectId": 1,               // プロジェクトID
@@ -120,7 +120,6 @@ Slack/GitHub/メモから AI でタスクを自動抽出し、フィードバッ
 pending → accepted → in_progress → completed
         ↘        ↘ paused ↗
         → rejected
-        → someday → accepted (必要になったら)
 ```
 
 | ステータス | 説明 |
@@ -131,7 +130,15 @@ pending → accepted → in_progress → completed
 | `paused` | 中断 |
 | `completed` | 完了 |
 | `rejected` | 却下済み |
-| `someday` | いつかやる (必要になったら着手) |
+
+## タスク優先度
+
+| 優先度 | 説明 |
+|--------|------|
+| `high` | 高優先度 (赤) |
+| `medium` | 中優先度 (黄) |
+| `low` | 低優先度 (緑) |
+| `someday` | いつか (紫) - 後で検討 |
 
 ---
 
@@ -144,6 +151,8 @@ pending → accepted → in_progress → completed
 | `prompt-improvement` | プロンプト改善提案 |
 | `profile-suggestion` | プロフィール提案 |
 | `vocabulary` | 用語提案 |
+| `merge` | タスクマージ提案 |
+| `project-suggestion` | プロジェクト提案 |
 
 **判定ロジック**: `packages/types/src/adas.ts` の `isApprovalOnlyTask()` 関数
 

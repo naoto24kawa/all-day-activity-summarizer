@@ -291,6 +291,7 @@ const PROVIDER_SETTINGS = [
   { key: "analyzeProfile", label: "プロフィール" },
   { key: "extractLearnings", label: "学び抽出" },
   { key: "taskExtract", label: "タスク抽出" },
+  { key: "slackPriority", label: "Slack優先度" },
 ] as const;
 
 function AIProviderSection({ integrations, updating, onUpdate }: AIProviderSectionProps) {

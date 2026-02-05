@@ -25,6 +25,7 @@ export type ProcessType =
   | "analyzeProfile"
   | "extractLearnings"
   | "taskExtract"
+  | "slackPriority"
   | "generateReadings";
 
 /** AI プロバイダー設定の型 */
@@ -59,6 +60,7 @@ const defaultAIProviderConfig: AIProviderConfig = {
     analyzeProfile: "claude",
     extractLearnings: "claude",
     taskExtract: "claude",
+    slackPriority: "claude",
     generateReadings: "lmstudio",
   },
   enableFallback: true,

@@ -64,7 +64,7 @@ export function useTasks(status?: TaskStatus) {
 
   type TaskUpdates = {
     status?: TaskStatus;
-    priority?: "high" | "medium" | "low" | null;
+    priority?: "high" | "medium" | "low" | "someday" | null;
     workType?: WorkType | null;
     dueDate?: string | null;
     rejectReason?: string;
@@ -225,7 +225,7 @@ export function useTasks(status?: TaskStatus) {
       updates: {
         status?: TaskStatus;
         projectId?: number | null;
-        priority?: "high" | "medium" | "low" | null;
+        priority?: "high" | "medium" | "low" | "someday" | null;
         reason?: string;
       },
     ) => {
@@ -525,11 +525,11 @@ export function useTaskStats(date?: string) {
     paused: 0,
     rejected: 0,
     completed: 0,
-    someday: 0,
     acceptedByPriority: {
       high: 0,
       medium: 0,
       low: 0,
+      someday: 0,
     },
   });
   const [error, setError] = useState<string | null>(null);

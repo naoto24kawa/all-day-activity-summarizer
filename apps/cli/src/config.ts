@@ -31,6 +31,8 @@ export interface AIProviderConfig {
     extractLearnings: LLMProviderType;
     /** タスク抽出 */
     taskExtract: LLMProviderType;
+    /** Slack 優先度判定 */
+    slackPriority: LLMProviderType;
     /** 読み生成 (Kuromoji フォールバック用) */
     generateReadings: LLMProviderType;
   };
@@ -67,10 +69,14 @@ export interface AdasConfig {
   worker: {
     url: string;
     timeout: number;
+    remote: boolean; // true = 別マシンで起動 (Dev Launcher でローカル起動しない)
+    token: string; // 再起動用トークン
   };
   localWorker: {
     url: string;
     timeout: number;
+    remote: boolean; // true = 別マシンで起動 (Dev Launcher でローカル起動しない)
+    token: string; // 再起動用トークン
   };
   promptImprovement: {
     enabled: boolean;
@@ -160,6 +166,15 @@ export interface AdasConfig {
     port: number;
     token: string;
   };
+  workerLauncher: {
+    url: string;
+    port: number;
+    token: string;
+    aiWorkerEnabled: boolean;
+    localWorkerEnabled: boolean;
+    aiWorkerPort: number;
+    localWorkerPort: number;
+  };
 }
 
 const ADAS_HOME = join(homedir(), ".adas");
@@ -194,10 +209,14 @@ const defaultConfig: AdasConfig = {
   worker: {
     url: "http://localhost:3100",
     timeout: 300000,
+    remote: false,
+    token: "",
   },
   localWorker: {
     url: "http://localhost:3200",
     timeout: 300000,
+    remote: false,
+    token: "",
   },
   promptImprovement: {
     enabled: false,
@@ -319,6 +338,15 @@ const defaultConfig: AdasConfig = {
     port: 3999,
     token: "",
   },
+  workerLauncher: {
+    url: "http://localhost:3998",
+    port: 3998,
+    token: "",
+    aiWorkerEnabled: true,
+    localWorkerEnabled: true,
+    aiWorkerPort: 3100,
+    localWorkerPort: 3200,
+  },
 };
 
 export function getAdasHome(): string {
@@ -392,6 +420,7 @@ export function loadConfig(): AdasConfig {
     },
     sseServer: { ...defaultConfig.sseServer, ...userConfig.sseServer },
     launcher: { ...defaultConfig.launcher, ...userConfig.launcher },
+    workerLauncher: { ...defaultConfig.workerLauncher, ...userConfig.workerLauncher },
   };
 
   return applyEnvOverrides(merged);

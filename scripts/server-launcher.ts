@@ -1,13 +1,9 @@
 #!/usr/bin/env bun
 /**
- * Dev Launcher
+ * Server Launcher
  *
- * 全プロセス (Servers, AI Worker, Local Worker, Frontend) を起動・管理
- * /restart エンドポイントで一括再起動が可能
- * リモートからのアクセスに対応 (トークン認証)
- *
- * Workers を別マシンで起動する場合:
- * ~/.adas/config.json で worker.remote: true, localWorker.remote: true を設定
+ * メインマシン用: servers (CLI API + SSE) と frontend を管理
+ * Worker は別マシンで動作する想定
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -20,39 +16,16 @@ interface LauncherConfig {
   token: string;
 }
 
-interface WorkerConfig {
-  url: string;
-  remote: boolean;
-  token: string;
-}
-
-interface AdasConfig {
-  worker?: WorkerConfig;
-  localWorker?: WorkerConfig;
-  launcher?: LauncherConfig;
-}
-
 interface ProcessConfig {
   name: string;
   command: string[];
   cwd?: string;
-  skipIfRemote?: "worker" | "localWorker"; // remote: true の場合スキップ
 }
 
-const allProcesses: ProcessConfig[] = [
+const processes: ProcessConfig[] = [
   {
     name: "servers",
     command: ["bun", "run", "apps/cli/src/index.ts", "servers"],
-  },
-  {
-    name: "ai-worker",
-    command: ["bun", "run", "apps/ai-worker/src/index.ts"],
-    skipIfRemote: "worker",
-  },
-  {
-    name: "local-worker",
-    command: ["bun", "run", "apps/local-worker/src/index.ts"],
-    skipIfRemote: "localWorker",
   },
   {
     name: "frontend",
@@ -64,59 +37,32 @@ const allProcesses: ProcessConfig[] = [
 let runningProcesses: Map<string, Subprocess> = new Map();
 let isRestarting = false;
 
-/**
- * ~/.adas/config.json を読み込む
- */
-function loadAdasConfig(): AdasConfig {
+function loadLauncherConfig(): LauncherConfig {
   const configPath = join(homedir(), ".adas", "config.json");
+  const defaults: LauncherConfig = {
+    port: 3999,
+    token: "",
+  };
 
   if (!existsSync(configPath)) {
-    return {};
+    return defaults;
   }
 
   try {
     const raw = readFileSync(configPath, "utf-8");
-    return JSON.parse(raw) as AdasConfig;
+    const config = JSON.parse(raw);
+    return {
+      port: config.launcher?.port ?? defaults.port,
+      token: config.launcher?.token ?? defaults.token,
+    };
   } catch {
-    return {};
+    return defaults;
   }
-}
-
-/**
- * ~/.adas/config.json から launcher 設定を読み込む
- */
-function loadLauncherConfig(): LauncherConfig {
-  const config = loadAdasConfig();
-  return {
-    port: config.launcher?.port ?? 3999,
-    token: config.launcher?.token ?? "",
-  };
-}
-
-/**
- * remote 設定に基づいて起動するプロセスをフィルタリング
- */
-function getProcessesToLaunch(): ProcessConfig[] {
-  const config = loadAdasConfig();
-  const workerRemote = config.worker?.remote ?? false;
-  const localWorkerRemote = config.localWorker?.remote ?? false;
-
-  return allProcesses.filter((proc) => {
-    if (proc.skipIfRemote === "worker" && workerRemote) {
-      log(`Skipping ${proc.name} (remote mode)`);
-      return false;
-    }
-    if (proc.skipIfRemote === "localWorker" && localWorkerRemote) {
-      log(`Skipping ${proc.name} (remote mode)`);
-      return false;
-    }
-    return true;
-  });
 }
 
 function log(message: string): void {
   const timestamp = new Date().toISOString().substring(11, 19);
-  console.log(`[${timestamp}] [launcher] ${message}`);
+  console.log(`[${timestamp}] [server-launcher] ${message}`);
 }
 
 function startProcess(config: ProcessConfig): Subprocess {
@@ -139,7 +85,6 @@ function startProcess(config: ProcessConfig): Subprocess {
 
 function startAllProcesses(): void {
   log("Starting all processes...");
-  const processes = getProcessesToLaunch();
   for (const config of processes) {
     const proc = startProcess(config);
     runningProcesses.set(config.name, proc);
@@ -153,7 +98,6 @@ async function stopAllProcesses(): Promise<void> {
   const killPromises = Array.from(runningProcesses.entries()).map(async ([name, proc]) => {
     try {
       proc.kill("SIGTERM");
-      // 最大5秒待機
       const timeout = setTimeout(() => {
         log(`Force killing ${name}...`);
         proc.kill("SIGKILL");
@@ -219,11 +163,7 @@ async function restart(): Promise<{ gitPull: { success: boolean; output: string 
   return { gitPull: gitResult };
 }
 
-/**
- * トークン認証をチェック
- */
 function validateToken(req: Request, expectedToken: string): boolean {
-  // トークンが設定されていない場合は認証スキップ
   if (!expectedToken) {
     return true;
   }
@@ -233,7 +173,6 @@ function validateToken(req: Request, expectedToken: string): boolean {
     return false;
   }
 
-  // Bearer <token> 形式
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) {
     return false;
@@ -242,16 +181,15 @@ function validateToken(req: Request, expectedToken: string): boolean {
   return match[1] === expectedToken;
 }
 
-function startRestartServer(config: LauncherConfig): void {
+function startServer(config: LauncherConfig): void {
   const { port, token } = config;
 
   Bun.serve({
-    hostname: "0.0.0.0", // 外部からのアクセスを許可
+    hostname: "0.0.0.0",
     port,
     fetch: async (req) => {
       const url = new URL(req.url);
 
-      // CORS
       const headers = {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -274,7 +212,6 @@ function startRestartServer(config: LauncherConfig): void {
       }
 
       if (url.pathname === "/restart" && req.method === "POST") {
-        // 同期的に再起動を実行 (git pull の結果を返すため)
         const result = await restart();
         return new Response(
           JSON.stringify({
@@ -289,6 +226,7 @@ function startRestartServer(config: LauncherConfig): void {
 
       if (url.pathname === "/status") {
         const status = {
+          type: "server",
           processes: Array.from(runningProcesses.entries()).map(([name, proc]) => ({
             name,
             pid: proc.pid,
@@ -305,12 +243,9 @@ function startRestartServer(config: LauncherConfig): void {
     },
   });
 
-  log(`Restart server listening on http://0.0.0.0:${port}`);
-  log(`  POST /restart - Restart all processes${token ? " (token required)" : ""}`);
+  log(`Server Launcher listening on http://0.0.0.0:${port}`);
+  log(`  POST /restart - Restart servers + frontend${token ? " (token required)" : ""}`);
   log("  GET  /status  - Get process status");
-  if (token) {
-    log("  Authorization: Bearer <token>");
-  }
 }
 
 // Graceful shutdown
@@ -330,11 +265,12 @@ process.on("SIGTERM", async () => {
 const launcherConfig = loadLauncherConfig();
 
 console.log("========================================");
-console.log("  ADAS Dev Launcher");
+console.log("  ADAS Server Launcher");
+console.log("  (servers + frontend)");
 console.log("========================================");
 console.log("");
 
-startRestartServer(launcherConfig);
+startServer(launcherConfig);
 startAllProcesses();
 
 console.log("");

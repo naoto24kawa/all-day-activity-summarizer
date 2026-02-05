@@ -63,6 +63,7 @@ export interface AIProviderProviders {
   analyzeProfile: LLMProviderType;
   extractLearnings: LLMProviderType;
   taskExtract: LLMProviderType;
+  slackPriority: LLMProviderType;
 }
 
 /** AI プロバイダー設定 */
@@ -115,6 +116,20 @@ export interface IntegrationsConfig {
   rateLimit: RateLimitConfig;
   aiProvider: AIProviderConfig;
   launcher: {
+    url: string;
+    token: string;
+  };
+  worker: {
+    url: string;
+    remote: boolean;
+    token: string;
+  };
+  localWorker: {
+    url: string;
+    remote: boolean;
+    token: string;
+  };
+  workerLauncher: {
     url: string;
     token: string;
   };

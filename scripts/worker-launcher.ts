@@ -1,13 +1,9 @@
 #!/usr/bin/env bun
 /**
- * Dev Launcher
+ * Worker Launcher
  *
- * 全プロセス (Servers, AI Worker, Local Worker, Frontend) を起動・管理
- * /restart エンドポイントで一括再起動が可能
- * リモートからのアクセスに対応 (トークン認証)
- *
- * Workers を別マシンで起動する場合:
- * ~/.adas/config.json で worker.remote: true, localWorker.remote: true を設定
+ * Worker マシン用: ai-worker と local-worker を管理
+ * メインマシンの UI から操作可能
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -18,118 +14,98 @@ import type { Subprocess } from "bun";
 interface LauncherConfig {
   port: number;
   token: string;
-}
-
-interface WorkerConfig {
-  url: string;
-  remote: boolean;
-  token: string;
-}
-
-interface AdasConfig {
-  worker?: WorkerConfig;
-  localWorker?: WorkerConfig;
-  launcher?: LauncherConfig;
+  aiWorkerEnabled: boolean;
+  localWorkerEnabled: boolean;
+  aiWorkerPort: number;
+  localWorkerPort: number;
 }
 
 interface ProcessConfig {
   name: string;
   command: string[];
-  cwd?: string;
-  skipIfRemote?: "worker" | "localWorker"; // remote: true の場合スキップ
+  env?: Record<string, string>;
 }
-
-const allProcesses: ProcessConfig[] = [
-  {
-    name: "servers",
-    command: ["bun", "run", "apps/cli/src/index.ts", "servers"],
-  },
-  {
-    name: "ai-worker",
-    command: ["bun", "run", "apps/ai-worker/src/index.ts"],
-    skipIfRemote: "worker",
-  },
-  {
-    name: "local-worker",
-    command: ["bun", "run", "apps/local-worker/src/index.ts"],
-    skipIfRemote: "localWorker",
-  },
-  {
-    name: "frontend",
-    command: ["bun", "run", "dev"],
-    cwd: "apps/frontend",
-  },
-];
 
 let runningProcesses: Map<string, Subprocess> = new Map();
 let isRestarting = false;
+let launcherConfig: LauncherConfig;
 
-/**
- * ~/.adas/config.json を読み込む
- */
-function loadAdasConfig(): AdasConfig {
+function loadLauncherConfig(): LauncherConfig {
   const configPath = join(homedir(), ".adas", "config.json");
+  const defaults: LauncherConfig = {
+    port: 3998,
+    token: "",
+    aiWorkerEnabled: true,
+    localWorkerEnabled: true,
+    aiWorkerPort: 3100,
+    localWorkerPort: 3200,
+  };
 
   if (!existsSync(configPath)) {
-    return {};
+    return defaults;
   }
 
   try {
     const raw = readFileSync(configPath, "utf-8");
-    return JSON.parse(raw) as AdasConfig;
+    const config = JSON.parse(raw);
+    return {
+      port: config.workerLauncher?.port ?? defaults.port,
+      token: config.workerLauncher?.token ?? defaults.token,
+      aiWorkerEnabled: config.workerLauncher?.aiWorkerEnabled ?? defaults.aiWorkerEnabled,
+      localWorkerEnabled: config.workerLauncher?.localWorkerEnabled ?? defaults.localWorkerEnabled,
+      aiWorkerPort: config.workerLauncher?.aiWorkerPort ?? defaults.aiWorkerPort,
+      localWorkerPort: config.workerLauncher?.localWorkerPort ?? defaults.localWorkerPort,
+    };
   } catch {
-    return {};
+    return defaults;
   }
 }
 
-/**
- * ~/.adas/config.json から launcher 設定を読み込む
- */
-function loadLauncherConfig(): LauncherConfig {
-  const config = loadAdasConfig();
-  return {
-    port: config.launcher?.port ?? 3999,
-    token: config.launcher?.token ?? "",
-  };
-}
+function getProcesses(): ProcessConfig[] {
+  const processes: ProcessConfig[] = [];
 
-/**
- * remote 設定に基づいて起動するプロセスをフィルタリング
- */
-function getProcessesToLaunch(): ProcessConfig[] {
-  const config = loadAdasConfig();
-  const workerRemote = config.worker?.remote ?? false;
-  const localWorkerRemote = config.localWorker?.remote ?? false;
+  if (launcherConfig.aiWorkerEnabled) {
+    processes.push({
+      name: "ai-worker",
+      command: ["bun", "run", "apps/ai-worker/src/index.ts"],
+      env: { AI_WORKER_PORT: String(launcherConfig.aiWorkerPort) },
+    });
+  }
 
-  return allProcesses.filter((proc) => {
-    if (proc.skipIfRemote === "worker" && workerRemote) {
-      log(`Skipping ${proc.name} (remote mode)`);
-      return false;
-    }
-    if (proc.skipIfRemote === "localWorker" && localWorkerRemote) {
-      log(`Skipping ${proc.name} (remote mode)`);
-      return false;
-    }
-    return true;
-  });
+  if (launcherConfig.localWorkerEnabled) {
+    processes.push({
+      name: "local-worker",
+      command: ["bun", "run", "apps/local-worker/src/index.ts"],
+      env: { LOCAL_WORKER_PORT: String(launcherConfig.localWorkerPort) },
+    });
+  }
+
+  return processes;
 }
 
 function log(message: string): void {
   const timestamp = new Date().toISOString().substring(11, 19);
-  console.log(`[${timestamp}] [launcher] ${message}`);
+  console.log(`[${timestamp}] [worker-launcher] ${message}`);
 }
 
 function startProcess(config: ProcessConfig): Subprocess {
   log(`Starting ${config.name}...`);
 
   const proc = Bun.spawn(config.command, {
-    cwd: config.cwd,
     stdout: "inherit",
     stderr: "inherit",
-    env: { ...process.env, FORCE_COLOR: "1" },
+    env: { ...process.env, ...config.env, FORCE_COLOR: "1" },
     onExit: (_proc, exitCode, _signalCode, _error) => {
       if (!isRestarting) {
         log(`${config.name} exited with code ${exitCode}`);
+        // 自動再起動
+        setTimeout(() => {
+          if (!isRestarting && !runningProcesses.get(config.name)?.killed === false) {
+            log(`Auto-restarting ${config.name}...`);
+            const newProc = startProcess(config);
+            runningProcesses.set(config.name, newProc);
+          }
+        }, 2000);
       }
     },
   });
@@ -139,7 +115,7 @@ function startProcess(config: ProcessConfig): Subprocess {
 
 function startAllProcesses(): void {
   log("Starting all processes...");
-  const processes = getProcessesToLaunch();
+  const processes = getProcesses();
   for (const config of processes) {
     const proc = startProcess(config);
     runningProcesses.set(config.name, proc);
@@ -153,7 +129,6 @@ async function stopAllProcesses(): Promise<void> {
   const killPromises = Array.from(runningProcesses.entries()).map(async ([name, proc]) => {
     try {
       proc.kill("SIGTERM");
-      // 最大5秒待機
       const timeout = setTimeout(() => {
         log(`Force killing ${name}...`);
         proc.kill("SIGKILL");
@@ -170,6 +145,44 @@ async function stopAllProcesses(): Promise<void> {
   await Promise.all(killPromises);
   runningProcesses.clear();
   log("All processes stopped");
+}
+
+async function stopProcess(name: string): Promise<boolean> {
+  const proc = runningProcesses.get(name);
+  if (!proc) {
+    return false;
+  }
+
+  try {
+    proc.kill("SIGTERM");
+    const timeout = setTimeout(() => {
+      log(`Force killing ${name}...`);
+      proc.kill("SIGKILL");
+    }, 5000);
+
+    await proc.exited;
+    clearTimeout(timeout);
+    runningProcesses.delete(name);
+    log(`${name} stopped`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function restartProcess(name: string): Promise<boolean> {
+  const processes = getProcesses();
+  const config = processes.find((p) => p.name === name);
+  if (!config) {
+    return false;
+  }
+
+  await stopProcess(name);
+  await Bun.sleep(500);
+
+  const proc = startProcess(config);
+  runningProcesses.set(name, proc);
+  return true;
 }
 
 async function gitPull(): Promise<{ success: boolean; output: string }> {
@@ -219,11 +232,7 @@ async function restart(): Promise<{ gitPull: { success: boolean; output: string 
   return { gitPull: gitResult };
 }
 
-/**
- * トークン認証をチェック
- */
 function validateToken(req: Request, expectedToken: string): boolean {
-  // トークンが設定されていない場合は認証スキップ
   if (!expectedToken) {
     return true;
   }
@@ -233,7 +242,6 @@ function validateToken(req: Request, expectedToken: string): boolean {
     return false;
   }
 
-  // Bearer <token> 形式
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) {
     return false;
@@ -242,16 +250,15 @@ function validateToken(req: Request, expectedToken: string): boolean {
   return match[1] === expectedToken;
 }
 
-function startRestartServer(config: LauncherConfig): void {
+function startServer(config: LauncherConfig): void {
   const { port, token } = config;
 
   Bun.serve({
-    hostname: "0.0.0.0", // 外部からのアクセスを許可
+    hostname: "0.0.0.0",
     port,
     fetch: async (req) => {
       const url = new URL(req.url);
 
-      // CORS
       const headers = {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -262,8 +269,8 @@ function startRestartServer(config: LauncherConfig): void {
         return new Response(null, { headers });
       }
 
-      // トークン認証 (restart エンドポイントのみ)
-      if (url.pathname === "/restart") {
+      // トークン認証 (restart エンドポイント)
+      if (url.pathname.startsWith("/restart")) {
         if (!validateToken(req, token)) {
           log(`Unauthorized restart attempt from ${req.headers.get("x-forwarded-for") || "unknown"}`);
           return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -273,8 +280,8 @@ function startRestartServer(config: LauncherConfig): void {
         }
       }
 
+      // 全プロセス再起動
       if (url.pathname === "/restart" && req.method === "POST") {
-        // 同期的に再起動を実行 (git pull の結果を返すため)
         const result = await restart();
         return new Response(
           JSON.stringify({
@@ -287,8 +294,26 @@ function startRestartServer(config: LauncherConfig): void {
         );
       }
 
+      // 個別プロセス再起動
+      const restartMatch = url.pathname.match(/^\/restart\/(.+)$/);
+      if (restartMatch && req.method === "POST") {
+        const processName = restartMatch[1];
+        const success = await restartProcess(processName);
+        if (success) {
+          return new Response(
+            JSON.stringify({ message: `${processName} restarted` }),
+            { headers: { ...headers, "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({ error: `Process ${processName} not found` }),
+          { status: 404, headers: { ...headers, "Content-Type": "application/json" } },
+        );
+      }
+
       if (url.pathname === "/status") {
         const status = {
+          type: "worker",
           processes: Array.from(runningProcesses.entries()).map(([name, proc]) => ({
             name,
             pid: proc.pid,
@@ -305,36 +330,37 @@ function startRestartServer(config: LauncherConfig): void {
     },
   });
 
-  log(`Restart server listening on http://0.0.0.0:${port}`);
-  log(`  POST /restart - Restart all processes${token ? " (token required)" : ""}`);
-  log("  GET  /status  - Get process status");
-  if (token) {
-    log("  Authorization: Bearer <token>");
-  }
+  log(`Worker Launcher listening on http://0.0.0.0:${port}`);
+  log(`  POST /restart         - Restart all workers${token ? " (token required)" : ""}`);
+  log(`  POST /restart/:name   - Restart specific worker`);
+  log("  GET  /status          - Get process status");
 }
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
   log("Received SIGINT, shutting down...");
+  isRestarting = true; // 自動再起動を防ぐ
   await stopAllProcesses();
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
   log("Received SIGTERM, shutting down...");
+  isRestarting = true; // 自動再起動を防ぐ
   await stopAllProcesses();
   process.exit(0);
 });
 
 // Main
-const launcherConfig = loadLauncherConfig();
+launcherConfig = loadLauncherConfig();
 
 console.log("========================================");
-console.log("  ADAS Dev Launcher");
+console.log("  ADAS Worker Launcher");
+console.log("  (ai-worker + local-worker)");
 console.log("========================================");
 console.log("");
 
-startRestartServer(launcherConfig);
+startServer(launcherConfig);
 startAllProcesses();
 
 console.log("");

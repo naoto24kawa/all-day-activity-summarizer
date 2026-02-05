@@ -503,7 +503,7 @@ export const tasks = sqliteTable("tasks", {
     .notNull()
     .default("pending"),
   priority: text("priority", {
-    enum: ["high", "medium", "low"],
+    enum: ["high", "medium", "low", "someday"],
   }),
   workType: text("work_type", {
     enum: [

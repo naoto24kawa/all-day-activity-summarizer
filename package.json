@@ -8,6 +8,8 @@
   ],
   "scripts": {
     "dev:all": "bun run scripts/dev-launcher.ts",
+    "dev:server": "bun run scripts/server-launcher.ts",
+    "dev:worker": "bun run scripts/worker-launcher.ts",
     "dev": "cd apps/frontend && bun run dev",
     "dev:backend": "cd apps/backend && bun run dev",
     "build": "cd apps/frontend && bun run build",

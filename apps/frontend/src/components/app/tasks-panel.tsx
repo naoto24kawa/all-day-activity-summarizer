@@ -124,7 +124,6 @@ const TASK_STATUS_STYLES: Record<TaskStatus | "selected" | "suggested", string> 
   in_progress: "",
   paused: "border-yellow-400 bg-yellow-50 dark:border-yellow-600 dark:bg-yellow-950",
   suggested: "border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-950",
-  someday: "opacity-50 border-purple-300 dark:border-purple-700",
   accepted: "",
 };
 
@@ -177,13 +176,6 @@ const STATUS_FILTER_CONFIG: {
     activeClass:
       "bg-red-100 border-red-400 text-red-700 dark:bg-red-950 dark:border-red-600 dark:text-red-300",
   },
-  {
-    status: "someday",
-    label: "いつか",
-    icon: Moon,
-    activeClass:
-      "bg-purple-100 border-purple-400 text-purple-700 dark:bg-purple-950 dark:border-purple-600 dark:text-purple-300",
-  },
 ];
 
 /** 用語提案ソースタイプのラベルマップ */
@@ -214,9 +206,7 @@ export function TasksPanel({ className }: TasksPanelProps) {
     const saved = localStorage.getItem(STORAGE_KEY_STATUS_FILTER);
     if (
       saved &&
-      ["pending", "accepted", "in_progress", "paused", "completed", "rejected", "someday"].includes(
-        saved,
-      )
+      ["pending", "accepted", "in_progress", "paused", "completed", "rejected"].includes(saved)
     ) {
       return saved as TaskStatus;
     }
@@ -732,7 +722,6 @@ export function TasksPanel({ className }: TasksPanelProps) {
     paused: "中断",
     completed: "完了",
     rejected: "却下",
-    someday: "いつか",
   };
 
   // 楽観的更新でタスクを更新 (UIを即座に反映し、完了時にトースト通知)
@@ -880,7 +869,7 @@ export function TasksPanel({ className }: TasksPanelProps) {
   const handleBatchUpdate = async (updates: {
     status?: TaskStatus;
     projectId?: number | null;
-    priority?: "high" | "medium" | "low" | null;
+    priority?: "high" | "medium" | "low" | "someday" | null;
     reason?: string;
   }) => {
     if (selectedTaskIds.size === 0) return;
@@ -1485,10 +1474,6 @@ export function TasksPanel({ className }: TasksPanelProps) {
                           <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
                           完了
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleBatchUpdate({ status: "someday" })}>
-                          <Moon className="mr-2 h-4 w-4 text-purple-500" />
-                          いつか
-                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                     {/* 優先度変更 */}
@@ -1526,6 +1511,13 @@ export function TasksPanel({ className }: TasksPanelProps) {
                         >
                           <Minus className="mr-2 h-4 w-4" />
                           LOW
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleBatchUpdate({ priority: "someday" })}
+                          className="text-purple-500"
+                        >
+                          <Moon className="mr-2 h-4 w-4" />
+                          いつか
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => handleBatchUpdate({ priority: null })}
@@ -1835,7 +1827,7 @@ function TaskList({
       rejectReason?: string;
       title?: string;
       description?: string;
-      priority?: "high" | "medium" | "low" | null;
+      priority?: "high" | "medium" | "low" | "someday" | null;
       workType?: WorkType | null;
       projectId?: number | null;
     },
@@ -1941,7 +1933,7 @@ function TaskItem({
       rejectReason?: string;
       title?: string;
       description?: string;
-      priority?: "high" | "medium" | "low" | null;
+      priority?: "high" | "medium" | "low" | "someday" | null;
       workType?: WorkType | null;
       projectId?: number | null;
     },
@@ -2421,130 +2413,151 @@ function TaskItem({
 
           {/* アクションボタン - 常に表示 */}
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            {/* 優先度変更 */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={`gap-1 ${task.priority === "high" ? "text-red-500 border-red-200" : task.priority === "medium" ? "text-yellow-500 border-yellow-200" : task.priority === "low" ? "text-green-500 border-green-200" : ""}`}
-                >
-                  {task.priority === "high" ? (
-                    <AlertTriangle className="h-3 w-3" />
-                  ) : task.priority === "medium" ? (
-                    <Signal className="h-3 w-3" />
-                  ) : task.priority === "low" ? (
-                    <Minus className="h-3 w-3" />
-                  ) : (
-                    <Circle className="h-3 w-3" />
+            {/* 優先度変更 - 承認のみタスクでは非表示 */}
+            {!isApprovalOnlyTask(task.sourceType) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={`gap-1 ${task.priority === "high" ? "text-red-500 border-red-200" : task.priority === "medium" ? "text-yellow-500 border-yellow-200" : task.priority === "low" ? "text-green-500 border-green-200" : task.priority === "someday" ? "text-purple-500 border-purple-200" : ""}`}
+                  >
+                    {task.priority === "high" ? (
+                      <AlertTriangle className="h-3 w-3" />
+                    ) : task.priority === "medium" ? (
+                      <Signal className="h-3 w-3" />
+                    ) : task.priority === "low" ? (
+                      <Minus className="h-3 w-3" />
+                    ) : task.priority === "someday" ? (
+                      <Moon className="h-3 w-3" />
+                    ) : (
+                      <Circle className="h-3 w-3" />
+                    )}
+                    {task.priority === "someday"
+                      ? "いつか"
+                      : task.priority
+                        ? task.priority.toUpperCase()
+                        : "優先度"}
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem
+                    onClick={() => onUpdateTask(task.id, { priority: "high" })}
+                    className="text-red-500"
+                  >
+                    <AlertTriangle className="mr-2 h-4 w-4" />
+                    HIGH - 高優先度
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => onUpdateTask(task.id, { priority: "medium" })}
+                    className="text-yellow-500"
+                  >
+                    <Signal className="mr-2 h-4 w-4" />
+                    MEDIUM - 中優先度
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => onUpdateTask(task.id, { priority: "low" })}
+                    className="text-green-500"
+                  >
+                    <Minus className="mr-2 h-4 w-4" />
+                    LOW - 低優先度
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => onUpdateTask(task.id, { priority: "someday" })}
+                    className="text-purple-500"
+                  >
+                    <Moon className="mr-2 h-4 w-4" />
+                    いつか - 後で検討
+                  </DropdownMenuItem>
+                  {task.priority && (
+                    <DropdownMenuItem
+                      onClick={() => onUpdateTask(task.id, { priority: null })}
+                      className="text-muted-foreground"
+                    >
+                      <X className="mr-2 h-4 w-4" />
+                      優先度を解除
+                    </DropdownMenuItem>
                   )}
-                  {task.priority ? task.priority.toUpperCase() : "優先度"}
-                  <ChevronDown className="h-3 w-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem
-                  onClick={() => onUpdateTask(task.id, { priority: "high" })}
-                  className="text-red-500"
-                >
-                  <AlertTriangle className="mr-2 h-4 w-4" />
-                  HIGH - 高優先度
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => onUpdateTask(task.id, { priority: "medium" })}
-                  className="text-yellow-500"
-                >
-                  <Signal className="mr-2 h-4 w-4" />
-                  MEDIUM - 中優先度
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => onUpdateTask(task.id, { priority: "low" })}
-                  className="text-green-500"
-                >
-                  <Minus className="mr-2 h-4 w-4" />
-                  LOW - 低優先度
-                </DropdownMenuItem>
-                {task.priority && (
-                  <DropdownMenuItem
-                    onClick={() => onUpdateTask(task.id, { priority: null })}
-                    className="text-muted-foreground"
-                  >
-                    <X className="mr-2 h-4 w-4" />
-                    優先度を解除
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
 
-            {/* プロジェクト変更 */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={`gap-1 ${projectName ? "text-blue-500 border-blue-200" : ""}`}
-                >
-                  <FolderGit2 className="h-3 w-3" />
-                  {projectName || "プロジェクト"}
-                  <ChevronDown className="h-3 w-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
-                {projects.map((project) => (
-                  <DropdownMenuItem
-                    key={project.id}
-                    onClick={() => onUpdateTask(task.id, { projectId: project.id })}
-                    className={task.projectId === project.id ? "bg-accent" : ""}
+            {/* プロジェクト変更 - 承認のみタスクでは非表示 */}
+            {!isApprovalOnlyTask(task.sourceType) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={`gap-1 ${projectName ? "text-blue-500 border-blue-200" : ""}`}
                   >
-                    <FolderGit2 className="mr-2 h-4 w-4" />
-                    {project.name}
-                  </DropdownMenuItem>
-                ))}
-                {task.projectId && (
-                  <DropdownMenuItem
-                    onClick={() => onUpdateTask(task.id, { projectId: null })}
-                    className="text-muted-foreground"
-                  >
-                    <X className="mr-2 h-4 w-4" />
-                    プロジェクト解除
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                    <FolderGit2 className="h-3 w-3" />
+                    {projectName || "プロジェクト"}
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-64 overflow-y-auto">
+                  {projects.map((project) => (
+                    <DropdownMenuItem
+                      key={project.id}
+                      onClick={() => onUpdateTask(task.id, { projectId: project.id })}
+                      className={task.projectId === project.id ? "bg-accent" : ""}
+                    >
+                      <FolderGit2 className="mr-2 h-4 w-4" />
+                      {project.name}
+                    </DropdownMenuItem>
+                  ))}
+                  {task.projectId && (
+                    <DropdownMenuItem
+                      onClick={() => onUpdateTask(task.id, { projectId: null })}
+                      className="text-muted-foreground"
+                    >
+                      <X className="mr-2 h-4 w-4" />
+                      プロジェクト解除
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
 
-            {/* 業務パターン変更 */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={`gap-1 ${task.workType ? "text-purple-500 border-purple-200" : ""}`}
-                >
-                  {task.workType ? WORK_TYPE_LABELS[task.workType] : "パターン"}
-                  <ChevronDown className="h-3 w-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {(Object.entries(WORK_TYPE_LABELS) as [WorkType, string][]).map(([type, label]) => (
-                  <DropdownMenuItem
-                    key={type}
-                    onClick={() => onUpdateTask(task.id, { workType: type })}
-                    className={task.workType === type ? "bg-accent" : ""}
+            {/* 業務パターン変更 - 承認のみタスクでは非表示 */}
+            {!isApprovalOnlyTask(task.sourceType) && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={`gap-1 ${task.workType ? "text-purple-500 border-purple-200" : ""}`}
                   >
-                    {label}
-                  </DropdownMenuItem>
-                ))}
-                {task.workType && (
-                  <DropdownMenuItem
-                    onClick={() => onUpdateTask(task.id, { workType: null })}
-                    className="text-muted-foreground"
-                  >
-                    <X className="mr-2 h-4 w-4" />
-                    パターン解除
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                    {task.workType ? WORK_TYPE_LABELS[task.workType] : "パターン"}
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {(Object.entries(WORK_TYPE_LABELS) as [WorkType, string][]).map(
+                    ([type, label]) => (
+                      <DropdownMenuItem
+                        key={type}
+                        onClick={() => onUpdateTask(task.id, { workType: type })}
+                        className={task.workType === type ? "bg-accent" : ""}
+                      >
+                        {label}
+                      </DropdownMenuItem>
+                    ),
+                  )}
+                  {task.workType && (
+                    <DropdownMenuItem
+                      onClick={() => onUpdateTask(task.id, { workType: null })}
+                      className="text-muted-foreground"
+                    >
+                      <X className="mr-2 h-4 w-4" />
+                      パターン解除
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
 
             {/* 承認・修正して承認・却下ボタン (承認待ちのみ) */}
             {task.status === "pending" && (
@@ -2580,14 +2593,6 @@ function TaskItem({
                   <X className="mr-1 h-3 w-3" />
                   却下
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onUpdateTask(task.id, { status: "someday" })}
-                >
-                  <Moon className="mr-1 h-3 w-3" />
-                  いつか
-                </Button>
               </>
             )}
 
@@ -2616,12 +2621,10 @@ function TaskItem({
                         {task.status === "in_progress" && <Play className="h-3 w-3" />}
                         {task.status === "paused" && <Pause className="h-3 w-3" />}
                         {task.status === "completed" && <CheckCircle2 className="h-3 w-3" />}
-                        {task.status === "someday" && <Moon className="h-3 w-3" />}
                         {task.status === "accepted" && "未着手"}
                         {task.status === "in_progress" && "進行中"}
                         {task.status === "paused" && "中断"}
                         {task.status === "completed" && "完了"}
-                        {task.status === "someday" && "いつか"}
                         <ChevronDown className="h-3 w-3" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -2660,14 +2663,6 @@ function TaskItem({
                       >
                         <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
                         完了
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => onUpdateTask(task.id, { status: "someday" })}
-                        className={task.status === "someday" ? "bg-accent" : ""}
-                      >
-                        <Moon className="mr-2 h-4 w-4 text-purple-500" />
-                        いつか
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

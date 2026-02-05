@@ -114,8 +114,8 @@ ${request.text}
 ## 判定結果 (JSON のみ)`;
 
   // LLM Provider を取得
-  const provider = getLLMProviderForProcess("taskExtract", SLACK_PRIORITY_MODEL);
-  const providerInfo = getProviderInfo("taskExtract");
+  const provider = getLLMProviderForProcess("slackPriority", SLACK_PRIORITY_MODEL);
+  const providerInfo = getProviderInfo("slackPriority");
 
   consola.info(
     `[worker/slack-priority] Determining priority for message ${request.messageId} (${request.text.length} chars, provider: ${providerInfo.provider})`,

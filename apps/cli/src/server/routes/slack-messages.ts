@@ -2,12 +2,13 @@
  * Slack Messages API Routes
  */
 
-import type { AdasDatabase } from "@repo/db";
+import type { AdasDatabase, NewSlackMessage } from "@repo/db";
 import { schema } from "@repo/db";
 import type { SlackMessagePriority, SlackPriorityCounts } from "@repo/types";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { enqueueJob } from "../../ai-job/queue.js";
+import { insertMessageIfNotExists } from "../../slack/fetcher.js";
 
 /**
  * チャンネル一覧を取得してマップを作成
@@ -103,6 +104,173 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
     const messagesWithEffective = addEffectiveProjectId(messages, channelProjectMap);
 
     return c.json(messagesWithEffective);
+  });
+
+  /**
+   * POST /api/slack-messages
+   *
+   * Create a new Slack message (external input)
+   * Body: {
+   *   date: string (YYYY-MM-DD),
+   *   messageTs: string,
+   *   channelId: string,
+   *   userId: string,
+   *   messageType: "mention" | "channel" | "dm" | "keyword",
+   *   text: string,
+   *   channelName?: string,
+   *   userName?: string,
+   *   threadTs?: string,
+   *   permalink?: string,
+   *   isRead?: boolean,
+   *   priority?: "high" | "medium" | "low",
+   *   projectId?: number
+   * }
+   */
+  router.post("/", async (c) => {
+    const body = await c.req.json<Partial<NewSlackMessage>>();
+
+    // Validate required fields
+    const requiredFields = ["date", "messageTs", "channelId", "userId", "messageType", "text"];
+    const missingFields = requiredFields.filter((f) => !body[f as keyof typeof body]);
+    if (missingFields.length > 0) {
+      return c.json({ error: `Missing required fields: ${missingFields.join(", ")}` }, 400);
+    }
+
+    // Validate messageType
+    const validMessageTypes = ["mention", "channel", "dm", "keyword"];
+    if (!validMessageTypes.includes(body.messageType as string)) {
+      return c.json(
+        { error: `Invalid messageType. Must be one of: ${validMessageTypes.join(", ")}` },
+        400,
+      );
+    }
+
+    // Insert message
+    const message: NewSlackMessage = {
+      date: body.date!,
+      messageTs: body.messageTs!,
+      channelId: body.channelId!,
+      userId: body.userId!,
+      messageType: body.messageType as "mention" | "channel" | "dm" | "keyword",
+      text: body.text!,
+      channelName: body.channelName ?? null,
+      userName: body.userName ?? null,
+      threadTs: body.threadTs ?? null,
+      permalink: body.permalink ?? null,
+      isRead: body.isRead ?? false,
+      priority: body.priority ?? null,
+      projectId: body.projectId ?? null,
+    };
+
+    const insertedId = insertMessageIfNotExists(db, message);
+
+    if (insertedId === null) {
+      // Already exists
+      return c.json({ error: "Message already exists", duplicate: true }, 409);
+    }
+
+    // Fetch the inserted message
+    const inserted = db
+      .select()
+      .from(schema.slackMessages)
+      .where(eq(schema.slackMessages.id, insertedId))
+      .get();
+
+    return c.json(inserted, 201);
+  });
+
+  /**
+   * POST /api/slack-messages/bulk
+   *
+   * Create multiple Slack messages (external input)
+   * Body: {
+   *   messages: Array<{
+   *     date: string (YYYY-MM-DD),
+   *     messageTs: string,
+   *     channelId: string,
+   *     userId: string,
+   *     messageType: "mention" | "channel" | "dm" | "keyword",
+   *     text: string,
+   *     channelName?: string,
+   *     userName?: string,
+   *     threadTs?: string,
+   *     permalink?: string,
+   *     isRead?: boolean,
+   *     priority?: "high" | "medium" | "low",
+   *     projectId?: number
+   *   }>
+   * }
+   */
+  router.post("/bulk", async (c) => {
+    const body = await c.req.json<{ messages: Partial<NewSlackMessage>[] }>();
+
+    if (!body.messages || !Array.isArray(body.messages)) {
+      return c.json({ error: "messages array is required" }, 400);
+    }
+
+    if (body.messages.length === 0) {
+      return c.json({ inserted: 0, duplicates: 0, errors: [] });
+    }
+
+    if (body.messages.length > 100) {
+      return c.json({ error: "Maximum 100 messages per request" }, 400);
+    }
+
+    const requiredFields = ["date", "messageTs", "channelId", "userId", "messageType", "text"];
+    const validMessageTypes = ["mention", "channel", "dm", "keyword"];
+
+    const results = {
+      inserted: 0,
+      duplicates: 0,
+      errors: [] as { index: number; error: string }[],
+    };
+
+    for (let i = 0; i < body.messages.length; i++) {
+      const msg = body.messages[i];
+      if (!msg) continue;
+
+      // Validate required fields
+      const missingFields = requiredFields.filter((f) => !msg[f as keyof typeof msg]);
+      if (missingFields.length > 0) {
+        results.errors.push({
+          index: i,
+          error: `Missing required fields: ${missingFields.join(", ")}`,
+        });
+        continue;
+      }
+
+      // Validate messageType
+      if (!validMessageTypes.includes(msg.messageType as string)) {
+        results.errors.push({ index: i, error: `Invalid messageType: ${msg.messageType}` });
+        continue;
+      }
+
+      const message: NewSlackMessage = {
+        date: msg.date!,
+        messageTs: msg.messageTs!,
+        channelId: msg.channelId!,
+        userId: msg.userId!,
+        messageType: msg.messageType as "mention" | "channel" | "dm" | "keyword",
+        text: msg.text!,
+        channelName: msg.channelName ?? null,
+        userName: msg.userName ?? null,
+        threadTs: msg.threadTs ?? null,
+        permalink: msg.permalink ?? null,
+        isRead: msg.isRead ?? false,
+        priority: msg.priority ?? null,
+        projectId: msg.projectId ?? null,
+      };
+
+      const insertedId = insertMessageIfNotExists(db, message);
+
+      if (insertedId === null) {
+        results.duplicates++;
+      } else {
+        results.inserted++;
+      }
+    }
+
+    return c.json(results);
   });
 
   /**

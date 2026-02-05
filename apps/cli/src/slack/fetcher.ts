@@ -223,7 +223,10 @@ function autoLinkProject(
  * Insert message if not exists
  * Returns the inserted message ID if successful, null otherwise
  */
-function insertMessageIfNotExists(db: AdasDatabase, message: NewSlackMessage): number | null {
+export function insertMessageIfNotExists(
+  db: AdasDatabase,
+  message: NewSlackMessage,
+): number | null {
   // Check if already exists (using unique constraint on channel_id + message_ts)
   const existing = db
     .select()

@@ -5,6 +5,7 @@
     { "path": "./apps/frontend" },
     { "path": "./apps/backend" },
     { "path": "./apps/worker" },
+    { "path": "./apps/mcp-server" },
     { "path": "./packages/core" },
     { "path": "./packages/db" },
     { "path": "./packages/types" }

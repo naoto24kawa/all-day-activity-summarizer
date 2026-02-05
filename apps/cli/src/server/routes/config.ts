@@ -362,6 +362,20 @@ export function createConfigRouter() {
         url: config.launcher?.url ?? "http://localhost:3999",
         token: config.launcher?.token ?? "",
       },
+      worker: {
+        url: config.worker.url,
+        remote: config.worker.remote ?? false,
+        token: config.worker.token ?? "",
+      },
+      localWorker: {
+        url: config.localWorker.url,
+        remote: config.localWorker.remote ?? false,
+        token: config.localWorker.token ?? "",
+      },
+      workerLauncher: {
+        url: config.workerLauncher?.url ?? "http://localhost:3998",
+        token: config.workerLauncher?.token ?? "",
+      },
     };
 
     return c.json({ integrations });
