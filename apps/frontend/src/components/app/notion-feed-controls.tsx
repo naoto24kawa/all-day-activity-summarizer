@@ -1,0 +1,36 @@
+/**
+ * Notion Feed Controls Component
+ *
+ * Notion フィードのコントロールバー (Mark all read, Refresh)
+ */
+
+import { CheckCheck } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useNotionFeedContext } from "./notion-feed-context";
+
+export function NotionFeedControls() {
+  const { date, counts, markAllAsRead, refetchUnreadCounts } = useNotionFeedContext();
+
+  return (
+    <div className="flex items-center justify-end gap-2">
+      {/* Unread badge */}
+      {counts.total > 0 && <Badge variant="destructive">{counts.total} unread</Badge>}
+
+      {/* Mark all read */}
+      {counts.total > 0 && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={async () => {
+            await markAllAsRead({ date });
+            refetchUnreadCounts();
+          }}
+        >
+          <CheckCheck className="mr-1 h-3 w-3" />
+          Mark all read
+        </Button>
+      )}
+    </div>
+  );
+}

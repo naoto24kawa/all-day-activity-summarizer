@@ -9,17 +9,14 @@ import {
   Check,
   Clock,
   Code,
-  ExternalLink,
   Loader2,
   MessageSquare,
-  RefreshCw,
   Settings,
   Sparkles,
   Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -32,8 +29,8 @@ interface ClaudeCodeRecentPanelProps {
   className?: string;
 }
 
-const INITIAL_LIMIT = 5;
-const LOAD_MORE_COUNT = 5;
+const INITIAL_LIMIT = 15;
+const LOAD_MORE_COUNT = 10;
 
 export function ClaudeCodeRecentPanel({ className }: ClaudeCodeRecentPanelProps) {
   const { integrations, loading: configLoading } = useConfig();
@@ -75,12 +72,19 @@ export function ClaudeCodeRecentPanel({ className }: ClaudeCodeRecentPanelProps)
           loadMore();
         }
       },
-      { threshold: 0.1 },
+      { threshold: 0.1, rootMargin: "100px" },
     );
 
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [hasMore, loadMore]);
+
+  // feeds-refresh (統一更新) をリッスン
+  useEffect(() => {
+    const handleRefresh = () => refetch();
+    window.addEventListener("feeds-refresh", handleRefresh);
+    return () => window.removeEventListener("feeds-refresh", handleRefresh);
+  }, [refetch]);
 
   // 連携が無効でデータもない場合
   if (
@@ -140,8 +144,8 @@ export function ClaudeCodeRecentPanel({ className }: ClaudeCodeRecentPanelProps)
   }
 
   return (
-    <Card className={`flex flex-col ${className ?? ""}`}>
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between pb-3">
+    <Card className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className ?? ""}`}>
+      <CardHeader className="shrink-0 pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Sparkles className="h-4 w-4 text-purple-500" />
           Recent Sessions
@@ -154,9 +158,6 @@ export function ClaudeCodeRecentPanel({ className }: ClaudeCodeRecentPanelProps)
             </Badge>
           )}
         </CardTitle>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetch()}>
-          <RefreshCw className="h-3.5 w-3.5" />
-        </Button>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col pt-0">
         {recentSessions.length === 0 ? (

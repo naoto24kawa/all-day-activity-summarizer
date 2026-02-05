@@ -12,7 +12,6 @@ import {
   CheckCheck,
   Filter,
   Loader2,
-  RefreshCw,
   Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -42,21 +41,21 @@ export function SlackFeedControls() {
     setUsersPopoverOpen,
     editingUserId,
     userNameInput,
+    setUserNameInput,
     pendingUserAction,
     handleStartUserEdit,
     handleCancelUserEdit,
     handleSaveUserName,
     handleResetUserName,
     markingAllAsRead,
-    refetch,
     markAllAsRead,
     refetchUnreadCounts,
     refetchPriorityCounts,
   } = useSlackFeedContext();
 
   return (
-    <div className="flex items-center justify-end gap-2">
-      {/* 優先度フィルター */}
+    <div className="flex w-full items-center gap-2">
+      {/* 優先度フィルター (左寄せ) */}
       <Select
         value={priorityFilter}
         onValueChange={(value) => setPriorityFilter(value as SlackMessagePriority | "all")}
@@ -84,6 +83,9 @@ export function SlackFeedControls() {
           </SelectItem>
         </SelectContent>
       </Select>
+
+      {/* 右寄せ用スペーサー */}
+      <div className="flex-1" />
 
       {/* Mark all read */}
       {counts.total > 0 && (
@@ -222,11 +224,6 @@ export function SlackFeedControls() {
           )}
         </PopoverContent>
       </Popover>
-
-      {/* Refresh */}
-      <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
-        <RefreshCw className="h-4 w-4" />
-      </Button>
     </div>
   );
 }

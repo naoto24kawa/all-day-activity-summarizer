@@ -5,15 +5,7 @@
  */
 
 import type { GitHubComment } from "@repo/types";
-import {
-  Check,
-  ExternalLink,
-  Github,
-  Loader2,
-  MessageSquare,
-  RefreshCw,
-  Settings,
-} from "lucide-react";
+import { Check, ExternalLink, Github, Loader2, MessageSquare, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,13 +20,20 @@ interface GitHubPriorityPanelProps {
   className?: string;
 }
 
-const INITIAL_LIMIT = 5;
-const LOAD_MORE_COUNT = 5;
+const INITIAL_LIMIT = 15;
+const LOAD_MORE_COUNT = 10;
 
 export function GitHubPriorityPanel({ className }: GitHubPriorityPanelProps) {
   const { integrations, loading: configLoading } = useConfig();
   const { comments, loading, error, refetch, markAsRead } = useGitHubComments();
   const [limit, setLimit] = useState(INITIAL_LIMIT);
+
+  // github-refresh イベントをリッスン
+  useEffect(() => {
+    const handleRefresh = () => refetch();
+    window.addEventListener("github-refresh", handleRefresh);
+    return () => window.removeEventListener("github-refresh", handleRefresh);
+  }, [refetch]);
 
   // 未読コメントを直近順でソート
   const recentUnreadComments = useMemo(() => {
@@ -70,7 +69,7 @@ export function GitHubPriorityPanel({ className }: GitHubPriorityPanelProps) {
           loadMore();
         }
       },
-      { threshold: 0.1 },
+      { threshold: 0.1, rootMargin: "100px" },
     );
 
     observer.observe(sentinel);
@@ -131,7 +130,7 @@ export function GitHubPriorityPanel({ className }: GitHubPriorityPanelProps) {
 
   return (
     <Card className={`flex flex-col ${className ?? ""}`}>
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between pb-3">
+      <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <MessageSquare className="h-4 w-4 text-gray-600" />
           Recent Comments
@@ -144,9 +143,6 @@ export function GitHubPriorityPanel({ className }: GitHubPriorityPanelProps) {
             </Badge>
           )}
         </CardTitle>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetch()}>
-          <RefreshCw className="h-3.5 w-3.5" />
-        </Button>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col pt-0">
         {recentUnreadComments.length === 0 ? (

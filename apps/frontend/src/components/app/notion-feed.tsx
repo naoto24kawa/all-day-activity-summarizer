@@ -4,68 +4,36 @@
  * Notion データベースアイテムとページを表示
  */
 
-import type { NotionDatabase, NotionItem, Project } from "@repo/types";
+import type { NotionDatabase, NotionItem } from "@repo/types";
 import {
   Check,
-  CheckCheck,
   ChevronDown,
   ChevronRight,
   Database,
   ExternalLink,
   FileText,
-  RefreshCw,
   Settings,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfig } from "@/hooks/use-config";
-import { useNotionDatabases, useNotionItems, useNotionUnreadCounts } from "@/hooks/use-notion";
-import { useProjects } from "@/hooks/use-projects";
-import { getTodayDateString } from "@/lib/date";
+import { useNotionFeedContext } from "./notion-feed-context";
 
 interface NotionFeedProps {
   className?: string;
 }
 
 export function NotionFeed({ className }: NotionFeedProps) {
-  const date = getTodayDateString();
-  const { integrations } = useConfig();
-  const { items, loading, error, refetch, markAsRead, markAllAsRead } = useNotionItems();
-  const { counts } = useNotionUnreadCounts(date);
-  const { databases } = useNotionDatabases();
-
-  // プロジェクト管理
-  const { projects: allProjects } = useProjects(false);
-
-  // アクティブなプロジェクト一覧 (紐付け先選択用)
-  const activeProjects = useMemo(
-    () => allProjects.filter((p) => p.isActive && !p.excludedAt),
-    [allProjects],
-  );
-
-  // databaseId → database info のマップ
-  const databaseMap = useMemo(() => {
-    const map = new Map<string, NotionDatabase>();
-    for (const db of databases) {
-      map.set(db.databaseId, db);
-    }
-    return map;
-  }, [databases]);
+  const { integrations, loading: configLoading } = useConfig();
+  const { items, loading, error, databaseMap, markAsRead } = useNotionFeedContext();
 
   if (loading) {
     return (
-      <Card>
+      <Card className={className}>
         <CardContent className="space-y-3 pt-6">
           {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
             <Skeleton key={id} className="h-16 w-full" />
@@ -77,7 +45,7 @@ export function NotionFeed({ className }: NotionFeedProps) {
 
   if (error) {
     return (
-      <Card>
+      <Card className={className}>
         <CardContent className="pt-6">
           <p className="text-sm text-muted-foreground">{error}</p>
         </CardContent>
@@ -85,42 +53,42 @@ export function NotionFeed({ className }: NotionFeedProps) {
     );
   }
 
+  // 連携が無効な場合
+  if (!configLoading && integrations && !integrations.notion?.enabled && items.length === 0) {
+    return (
+      <Card className={className}>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Database className="h-4 w-4 text-muted-foreground" />
+            Databases
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center py-8">
+          <Settings className="mb-2 h-8 w-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Notion 連携は無効化されています</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Settings タブの Integrations で有効にできます
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between">
-        <div className="flex items-center gap-2">
-          {counts.total > 0 && <Badge variant="destructive">{counts.total} unread</Badge>}
-        </div>
-        <div className="flex items-center gap-2">
-          {counts.total > 0 && (
-            <Button variant="outline" size="sm" onClick={() => markAllAsRead({ date })}>
-              <CheckCheck className="mr-1 h-3 w-3" />
-              Mark all read
-            </Button>
-          )}
-          <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
+      <CardHeader className="shrink-0 pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Database className="h-4 w-4 text-muted-foreground" />
+          Databases
+        </CardTitle>
       </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col">
+      <CardContent className="flex min-h-0 flex-1 flex-col pt-0">
         {items.length === 0 ? (
-          !integrations?.notion?.enabled ? (
-            <div className="flex flex-col items-center justify-center py-8">
-              <Settings className="mb-2 h-8 w-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Notion 連携は無効化されています</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Settings タブの Integrations で有効にできます
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No Notion activity.</p>
-          )
+          <p className="text-sm text-muted-foreground">No Notion activity.</p>
         ) : (
           <DatabaseGroupedItemList
             items={items}
             databaseMap={databaseMap}
-            activeProjects={activeProjects}
             onMarkAsRead={markAsRead}
           />
         )}
@@ -141,12 +109,10 @@ interface DatabaseGroup {
 function DatabaseGroupedItemList({
   items,
   databaseMap,
-  activeProjects,
   onMarkAsRead,
 }: {
   items: NotionItem[];
   databaseMap: Map<string, NotionDatabase>;
-  activeProjects: Project[];
   onMarkAsRead: (id: number) => void;
 }) {
   // データベース別にグループ化

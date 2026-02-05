@@ -1,15 +1,5 @@
 import type { InterpretIssueType, TranscriptionSegment } from "@repo/types";
-import {
-  BookPlus,
-  Check,
-  Loader2,
-  Mic,
-  RefreshCw,
-  Speaker,
-  Speech,
-  ThumbsDown,
-  ThumbsUp,
-} from "lucide-react";
+import { BookPlus, Check, Loader2, Mic, Speaker, Speech, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FeedbackDialog } from "@/components/app/feedback-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -68,6 +58,13 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
     return result;
   };
 
+  // 外部からの更新イベントをリッスン
+  useEffect(() => {
+    const handleRefresh = () => refetch();
+    window.addEventListener("audio-refresh", handleRefresh);
+    return () => window.removeEventListener("audio-refresh", handleRefresh);
+  }, [refetch]);
+
   if (loading) {
     return (
       <Card>
@@ -107,7 +104,7 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
   return (
     <>
       <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
-        <CardHeader className="flex shrink-0 flex-row items-center justify-between">
+        <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Speech className="h-5 w-5 text-emerald-500" />
             Transcribe
@@ -115,9 +112,6 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
               {segments.length}
             </Badge>
           </CardTitle>
-          <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
-            <RefreshCw className="h-4 w-4" />
-          </Button>
         </CardHeader>
         <CardContent className="flex min-h-0 flex-1 flex-col">
           {segments.length === 0 ? (

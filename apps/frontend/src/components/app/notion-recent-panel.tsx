@@ -7,48 +7,33 @@
 import type { NotionItem } from "@repo/types";
 import {
   Check,
-  CheckCheck,
   Clock,
   Database,
   ExternalLink,
   FileText,
   Loader2,
-  RefreshCw,
   Settings,
   Sparkles,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfig } from "@/hooks/use-config";
-import { useNotionItems, useNotionUnreadCounts } from "@/hooks/use-notion";
-import { getTodayDateString } from "@/lib/date";
+import { useNotionFeedContext } from "./notion-feed-context";
 
 interface NotionRecentPanelProps {
   className?: string;
 }
 
-const INITIAL_LIMIT = 5;
-const LOAD_MORE_COUNT = 5;
+const INITIAL_LIMIT = 15;
+const LOAD_MORE_COUNT = 10;
 
 export function NotionRecentPanel({ className }: NotionRecentPanelProps) {
-  const date = getTodayDateString();
   const { integrations, loading: configLoading } = useConfig();
-  const { items, loading, error, refetch, markAsRead, markAllAsRead } = useNotionItems();
-  const { counts } = useNotionUnreadCounts(date);
+  const { unreadItems, loading, error, markAsRead } = useNotionFeedContext();
   const [limit, setLimit] = useState(INITIAL_LIMIT);
-
-  // 未読アイテムを最新順にソート
-  const unreadItems = useMemo(() => {
-    return [...items]
-      .filter((item) => !item.isRead)
-      .sort((a, b) => {
-        return new Date(b.lastEditedTime).getTime() - new Date(a.lastEditedTime).getTime();
-      });
-  }, [items]);
 
   const displayedItems = unreadItems.slice(0, limit);
   const hasMore = unreadItems.length > limit;
@@ -73,7 +58,7 @@ export function NotionRecentPanel({ className }: NotionRecentPanelProps) {
           loadMore();
         }
       },
-      { threshold: 0.1 },
+      { threshold: 0.1, rootMargin: "100px" },
     );
 
     observer.observe(sentinel);
@@ -134,35 +119,11 @@ export function NotionRecentPanel({ className }: NotionRecentPanelProps) {
 
   return (
     <Card className={`flex flex-col ${className ?? ""}`}>
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between pb-3">
+      <CardHeader className="shrink-0 pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Sparkles className="h-4 w-4 text-blue-500" />
           Recent Updates
-          {counts.total > 0 && (
-            <Badge
-              variant="secondary"
-              className="ml-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
-            >
-              {counts.total} unread
-            </Badge>
-          )}
         </CardTitle>
-        <div className="flex items-center gap-1">
-          {counts.total > 0 && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => markAllAsRead({ date })}
-              title="Mark all as read"
-            >
-              <CheckCheck className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetch()}>
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
-        </div>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col pt-0">
         {unreadItems.length === 0 ? (

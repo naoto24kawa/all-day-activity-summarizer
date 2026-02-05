@@ -1,7 +1,8 @@
-import { getPromptFilePath, runClaude } from "@repo/core";
+import { getPromptFilePath } from "@repo/core";
 import type { ExtractedTerm, RpcInterpretResponse } from "@repo/types";
 import consola from "consola";
 import { Hono } from "hono";
+import { getLLMProviderForProcess, getProviderInfo } from "../utils/llm-config.js";
 import { withProcessingLog } from "../utils/log-processing.js";
 
 const INTERPRET_MODEL = "haiku";
@@ -36,7 +37,7 @@ export function createInterpretRouter() {
         "interpret",
         INTERPRET_MODEL,
         () =>
-          interpretWithClaude(
+          interpretWithLLM(
             body.text,
             body.speaker,
             body.context,
@@ -59,7 +60,7 @@ export function createInterpretRouter() {
   return router;
 }
 
-async function interpretWithClaude(
+async function interpretWithLLM(
   text: string,
   speaker?: string,
   context?: string,
@@ -123,22 +124,41 @@ ${speakerInfo}${contextInfo}${feedbackSection}
 文字起こしテキスト:
 ${text}`;
 
-  consola.info(`[worker/interpret] Interpreting (${text.length} chars)...`);
+  // LLM Provider を取得 (設定で claude/lmstudio を切り替え)
+  const provider = getLLMProviderForProcess("interpret", INTERPRET_MODEL);
+  const providerInfo = getProviderInfo("interpret");
 
-  const result = await runClaude(prompt, {
+  consola.info(
+    `[worker/interpret] Interpreting (${text.length} chars, provider: ${providerInfo.provider})...`,
+  );
+
+  const result = await provider.generate(prompt, {
     model: INTERPRET_MODEL,
     appendSystemPromptFile: getPromptFilePath("interpret"),
     disableTools: true,
+    temperature: 0.3, // 安定した出力のため低めに
   });
 
   if (!result) {
     throw new Error("No response from interpreter");
   }
 
-  // JSON パース
+  // JSON パース (コードブロックがある場合は除去、または {} を抽出)
   try {
+    let jsonStr = result.trim();
+
     // コードブロックがある場合は除去
-    const jsonStr = result.replace(/```(?:json)?\s*([\s\S]*?)```/g, "$1").trim();
+    const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      jsonStr = codeBlockMatch[1].trim();
+    } else {
+      // コードブロックがない場合は {} を抽出
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[0];
+      }
+    }
+
     const parsed = JSON.parse(jsonStr) as InterpretJsonResponse;
 
     consola.info(

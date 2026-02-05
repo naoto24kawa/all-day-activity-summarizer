@@ -1,5 +1,5 @@
-import { Clock, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Clock } from "lucide-react";
+import { useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useTranscriptions } from "@/hooks/use-transcriptions";
@@ -12,6 +12,13 @@ interface TimelineProps {
 export function Timeline({ className }: TimelineProps) {
   const date = getTodayDateString();
   const { segments, refetch } = useTranscriptions(date);
+
+  // 外部からの更新イベントをリッスン
+  useEffect(() => {
+    const handleRefresh = () => refetch();
+    window.addEventListener("audio-refresh", handleRefresh);
+    return () => window.removeEventListener("audio-refresh", handleRefresh);
+  }, [refetch]);
 
   const START_HOUR = 9;
   const END_HOUR = 19;
@@ -34,14 +41,11 @@ export function Timeline({ className }: TimelineProps) {
 
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between">
+      <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Clock className="h-5 w-5 text-cyan-500" />
           Activity Timeline
         </CardTitle>
-        <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
-          <RefreshCw className="h-4 w-4" />
-        </Button>
       </CardHeader>
       <CardContent className="min-h-0 flex-1 overflow-auto">
         <div className="space-y-1">

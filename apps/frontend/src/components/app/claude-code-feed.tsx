@@ -150,7 +150,7 @@ export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
   }
 
   return (
-    <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
+    <Card className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className ?? ""}`}>
       <CardHeader className="flex shrink-0 flex-row items-center justify-between">
         <div className="flex items-center gap-2">
           {stats.totalSessions > 0 && (

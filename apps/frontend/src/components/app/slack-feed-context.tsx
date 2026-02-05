@@ -5,7 +5,7 @@
  */
 
 import type { Project, SlackMessage, SlackMessagePriority, SlackUser } from "@repo/types";
-import { createContext, type ReactNode, useContext, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import { useProjects } from "@/hooks/use-projects";
 import { useSlackChannels } from "@/hooks/use-slack-channels";
 import {
@@ -117,6 +117,21 @@ export function SlackFeedProvider({ children }: { children: ReactNode }) {
       setPendingUserAction(null);
     }
   };
+
+  // feeds-refresh (統一更新) と slack-refresh (個別) をリッスン
+  useEffect(() => {
+    const handleRefresh = () => {
+      refetch();
+      refetchUnreadCounts();
+      refetchPriorityCounts();
+    };
+    window.addEventListener("feeds-refresh", handleRefresh);
+    window.addEventListener("slack-refresh", handleRefresh);
+    return () => {
+      window.removeEventListener("feeds-refresh", handleRefresh);
+      window.removeEventListener("slack-refresh", handleRefresh);
+    };
+  }, [refetch, refetchUnreadCounts, refetchPriorityCounts]);
 
   // フィルタリング
   const filteredMessages =

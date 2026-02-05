@@ -8,7 +8,6 @@
 import type { GitHubComment, GitHubItem, Project } from "@repo/types";
 import {
   Check,
-  CheckCheck,
   ChevronDown,
   ChevronRight,
   CircleDot,
@@ -18,14 +17,13 @@ import {
   GitMerge,
   GitPullRequest,
   MessageSquare,
-  RefreshCw,
   Settings,
   XCircle,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SegmentedTabContent, SegmentedTabs } from "@/components/ui/segmented-tabs";
 import {
@@ -37,12 +35,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfig } from "@/hooks/use-config";
-import {
-  useGitHubComments,
-  useGitHubCommentsUnreadCounts,
-  useGitHubItems,
-  useGitHubUnreadCounts,
-} from "@/hooks/use-github";
+import { useGitHubComments, useGitHubItems, useGitHubUnreadCounts } from "@/hooks/use-github";
 import { useProjects } from "@/hooks/use-projects";
 import { postAdasApi } from "@/lib/adas-api";
 import { formatGitHubDateJST, getTodayDateString } from "@/lib/date";
@@ -54,15 +47,34 @@ interface GitHubFeedProps {
 export function GitHubFeed({ className }: GitHubFeedProps) {
   const date = getTodayDateString();
   const { integrations, loading: configLoading } = useConfig();
-  const { items, loading, error, refetch, markAsRead, markAllAsRead } = useGitHubItems();
+  const { items, loading, error, refetch, markAsRead } = useGitHubItems();
   const { counts } = useGitHubUnreadCounts(date);
-  const { comments, loading: commentsLoading, markAsRead: markCommentAsRead } = useGitHubComments();
-  const { counts: commentCounts } = useGitHubCommentsUnreadCounts(date);
+  const {
+    comments,
+    loading: commentsLoading,
+    refetch: refetchComments,
+    markAsRead: markCommentAsRead,
+  } = useGitHubComments();
 
   // プロジェクト管理
   const { projects: allProjects, updateProject } = useProjects(false);
   const [syncing, setSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState("issues");
+
+  // feeds-refresh (統一更新) と github-refresh (個別) をリッスン
+  const handleRefresh = useCallback(() => {
+    refetch();
+    refetchComments();
+  }, [refetch, refetchComments]);
+
+  useEffect(() => {
+    window.addEventListener("feeds-refresh", handleRefresh);
+    window.addEventListener("github-refresh", handleRefresh);
+    return () => {
+      window.removeEventListener("feeds-refresh", handleRefresh);
+      window.removeEventListener("github-refresh", handleRefresh);
+    };
+  }, [handleRefresh]);
 
   // アクティブなプロジェクト一覧 (紐付け先選択用)
   const activeProjects = useMemo(
@@ -194,27 +206,9 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
     counts.reviewRequest +
     reviewRequests.reduce((acc, item) => acc + getItemCommentUnreadCount(item), 0);
 
-  const totalUnread = counts.total + commentCounts.total;
-
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between">
-        <div className="flex items-center gap-2">
-          {totalUnread > 0 && <Badge variant="destructive">{totalUnread} unread</Badge>}
-        </div>
-        <div className="flex items-center gap-2">
-          {counts.total > 0 && (
-            <Button variant="outline" size="sm" onClick={() => markAllAsRead({ date })}>
-              <CheckCheck className="mr-1 h-3 w-3" />
-              Mark all read
-            </Button>
-          )}
-          <Button variant="ghost" size="icon" onClick={() => refetch()} title="Refresh">
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col">
+      <CardContent className="flex min-h-0 flex-1 flex-col pt-4">
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">No GitHub activity for this date.</p>
         ) : (

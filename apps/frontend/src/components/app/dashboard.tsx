@@ -1,6 +1,8 @@
 import type { Project } from "@repo/types";
+import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useJobNotifications } from "@/hooks/use-job-notifications";
 import { useTabBadges } from "@/hooks/use-tab-badges";
@@ -19,12 +21,16 @@ import { LearningsFeed } from "./learnings-feed";
 import { MemoFloatingChat } from "./memo-floating-chat";
 import { MonitoringPanel } from "./monitoring-panel";
 import { NotionFeed } from "./notion-feed";
+import { NotionFeedProvider } from "./notion-feed-context";
+import { NotionFeedControls } from "./notion-feed-controls";
 import { NotionRecentPanel } from "./notion-recent-panel";
 import { ProfilePanel } from "./profile-panel";
 import { ProjectActivityPanel } from "./project-activity-panel";
 import { ProjectsPanel } from "./projects-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
-import { SlackFeed } from "./slack-feed";
+import { SlackFeedInner } from "./slack-feed";
+import { SlackFeedProvider } from "./slack-feed-context";
+import { SlackFeedControls } from "./slack-feed-controls";
 import { SlackPriorityPanel } from "./slack-priority-panel";
 import { SubTabNav } from "./sub-tab-nav";
 import { SummaryView } from "./summary-view";
@@ -232,14 +238,27 @@ export function Dashboard() {
           {/* 2段目: サブタブ (背景付き、インデント) */}
           {currentGroup && (
             <div className="bg-muted/30 mt-2 flex min-h-0 flex-1 flex-col rounded-lg border p-2">
-              <SubTabNav
-                tabs={currentGroup.tabs}
-                value={currentTab}
-                onValueChange={handleTabChange}
-                badges={badges}
-                badgeVariants={BADGE_VARIANTS}
-                className="mb-2"
-              />
+              <div className="relative mb-2 shrink-0">
+                <SubTabNav
+                  tabs={currentGroup.tabs}
+                  value={currentTab}
+                  onValueChange={handleTabChange}
+                  badges={badges}
+                  badgeVariants={BADGE_VARIANTS}
+                />
+                {/* Feeds グループの統一更新ボタン */}
+                {activeGroup === "feeds" && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-1 right-1"
+                    onClick={() => window.dispatchEvent(new CustomEvent("feeds-refresh"))}
+                    title="Refresh all feeds"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
               <Tabs
                 value={currentTab}
                 onValueChange={handleTabChange}
@@ -253,16 +272,35 @@ export function Dashboard() {
                   <TasksPanel className="h-full" />
                 </TabsContent>
                 <TabsContent value="audio" className="min-h-0 flex-1">
-                  <div className="grid h-full gap-4 lg:grid-cols-2">
-                    <ActivityFeed className="h-full" />
-                    <Timeline className="h-full" />
+                  <div className="flex h-full flex-col">
+                    <div className="mb-2 flex shrink-0 justify-end">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => window.dispatchEvent(new CustomEvent("audio-refresh"))}
+                        title="Refresh"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
+                      <ActivityFeed className="h-full" />
+                      <Timeline className="h-full" />
+                    </div>
                   </div>
                 </TabsContent>
                 <TabsContent value="slack" className="min-h-0 flex-1">
-                  <div className="grid h-full gap-4 lg:grid-cols-2">
-                    <SlackFeed className="h-full" />
-                    <SlackPriorityPanel className="h-full" />
-                  </div>
+                  <SlackFeedProvider>
+                    <div className="flex h-full flex-col">
+                      <div className="mb-2 flex shrink-0 justify-end">
+                        <SlackFeedControls />
+                      </div>
+                      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
+                        <SlackFeedInner className="h-full" />
+                        <SlackPriorityPanel className="h-full" />
+                      </div>
+                    </div>
+                  </SlackFeedProvider>
                 </TabsContent>
                 <TabsContent value="github" className="min-h-0 flex-1">
                   <div className="grid h-full gap-4 lg:grid-cols-2">
@@ -271,10 +309,17 @@ export function Dashboard() {
                   </div>
                 </TabsContent>
                 <TabsContent value="notion" className="min-h-0 flex-1">
-                  <div className="grid h-full gap-4 lg:grid-cols-2">
-                    <NotionFeed className="h-full" />
-                    <NotionRecentPanel className="h-full" />
-                  </div>
+                  <NotionFeedProvider>
+                    <div className="flex h-full flex-col">
+                      <div className="mb-2 flex shrink-0 justify-end">
+                        <NotionFeedControls />
+                      </div>
+                      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
+                        <NotionFeed className="h-full" />
+                        <NotionRecentPanel className="h-full" />
+                      </div>
+                    </div>
+                  </NotionFeedProvider>
                 </TabsContent>
                 <TabsContent value="claude" className="min-h-0 flex-1">
                   <div className="grid h-full gap-4 lg:grid-cols-2">

@@ -15,7 +15,6 @@ import {
   Hash,
   Loader2,
   MessageSquare,
-  RefreshCw,
   Search,
   Settings,
   Sparkles,
@@ -34,8 +33,8 @@ interface SlackPriorityPanelProps {
   className?: string;
 }
 
-const INITIAL_LIMIT = 5;
-const LOAD_MORE_COUNT = 5;
+const INITIAL_LIMIT = 15;
+const LOAD_MORE_COUNT = 10;
 
 export function SlackPriorityPanel({ className }: SlackPriorityPanelProps) {
   const { integrations, loading: configLoading } = useConfig();
@@ -77,17 +76,24 @@ export function SlackPriorityPanel({ className }: SlackPriorityPanelProps) {
           loadMore();
         }
       },
-      { threshold: 0.1 },
+      { threshold: 0.1, rootMargin: "100px" },
     );
 
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [hasMore, loadMore]);
 
+  // SlackFeedControls からの更新イベントをリッスン
+  useEffect(() => {
+    const handleRefresh = () => refetch();
+    window.addEventListener("slack-refresh", handleRefresh);
+    return () => window.removeEventListener("slack-refresh", handleRefresh);
+  }, [refetch]);
+
   // 連携が無効な場合
   if (!configLoading && integrations && !integrations.slack.enabled) {
     return (
-      <Card className={className}>
+      <Card className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className ?? ""}`}>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Sparkles className="h-4 w-4 text-amber-500" />
@@ -104,7 +110,7 @@ export function SlackPriorityPanel({ className }: SlackPriorityPanelProps) {
 
   if (loading) {
     return (
-      <Card className={className}>
+      <Card className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className ?? ""}`}>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Sparkles className="h-4 w-4 text-amber-500" />
@@ -122,7 +128,7 @@ export function SlackPriorityPanel({ className }: SlackPriorityPanelProps) {
 
   if (error) {
     return (
-      <Card className={className}>
+      <Card className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className ?? ""}`}>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Sparkles className="h-4 w-4 text-amber-500" />
@@ -137,8 +143,8 @@ export function SlackPriorityPanel({ className }: SlackPriorityPanelProps) {
   }
 
   return (
-    <Card className={`flex flex-col ${className ?? ""}`}>
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between pb-3">
+    <Card className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className ?? ""}`}>
+      <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Sparkles className="h-4 w-4 text-amber-500" />
           Priority Messages
@@ -151,9 +157,6 @@ export function SlackPriorityPanel({ className }: SlackPriorityPanelProps) {
             </Badge>
           )}
         </CardTitle>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetch()}>
-          <RefreshCw className="h-3.5 w-3.5" />
-        </Button>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col pt-0">
         {allPriorityMessages.length === 0 ? (
@@ -162,8 +165,8 @@ export function SlackPriorityPanel({ className }: SlackPriorityPanelProps) {
             <p className="text-sm">優先度の高い未読メッセージはありません</p>
           </div>
         ) : (
-          <ScrollArea className="flex-1">
-            <div className="space-y-2 pr-3">
+          <ScrollArea className="flex-1 [&>div>div]:!block">
+            <div className="max-w-full space-y-2 pr-3">
               {displayedMessages.map((message) => (
                 <PriorityMessageItem key={message.id} message={message} onMarkAsRead={markAsRead} />
               ))}
@@ -221,7 +224,7 @@ function PriorityMessageItem({
 
   return (
     <div
-      className={`flex items-start gap-2 rounded-md border p-2 ${
+      className={`relative rounded-md border p-2 pr-14 ${
         message.priority === "high"
           ? "border-l-4 border-l-red-500 bg-red-50/50 dark:bg-red-950/20"
           : message.priority === "medium"
@@ -229,21 +232,23 @@ function PriorityMessageItem({
             : "border-l-4 border-l-green-500 bg-green-50/50 dark:bg-green-950/20"
       }`}
     >
-      <div className="mt-0.5 shrink-0">{getPriorityIcon(message.priority)}</div>
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="flex items-center gap-0.5">
-            {getMessageTypeIcon(message.messageType)}
-            {message.messageType === "dm" ? message.channelName : `#${message.channelName}`}
-          </span>
-          {message.userName && (
-            <span className="flex items-center gap-0.5 font-medium">@{message.userName}</span>
-          )}
-          <span className="opacity-60">{formatSlackTsJST(message.messageTs)}</span>
+      <div className="flex items-start gap-2">
+        <div className="mt-0.5 shrink-0">{getPriorityIcon(message.priority)}</div>
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="flex items-center gap-0.5">
+              {getMessageTypeIcon(message.messageType)}
+              {message.messageType === "dm" ? message.channelName : `#${message.channelName}`}
+            </span>
+            {message.userName && (
+              <span className="flex items-center gap-0.5 font-medium">@{message.userName}</span>
+            )}
+            <span className="opacity-60">{formatSlackTsJST(message.messageTs)}</span>
+          </div>
+          <p className="line-clamp-2 break-words text-sm">{message.text}</p>
         </div>
-        <p className="line-clamp-2 text-sm">{message.text}</p>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="absolute right-1 top-1 flex items-center gap-1">
         {message.permalink && (
           <Button variant="ghost" size="icon" className="h-6 w-6" asChild>
             <a href={message.permalink} target="_blank" rel="noopener noreferrer">

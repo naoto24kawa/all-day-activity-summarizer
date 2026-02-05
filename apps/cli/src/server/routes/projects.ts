@@ -13,7 +13,7 @@ import type {
   UpdateProjectRequest,
 } from "@repo/types";
 import consola from "consola";
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { loadConfig } from "../../config.js";
 import { getTodayDateString } from "../../utils/date.js";
@@ -53,25 +53,14 @@ export function createProjectsRouter(db: AdasDatabase) {
    *
    * Query params:
    * - active: boolean (optional, filters by isActive)
-   * - excluded: boolean (optional, filters by excludedAt)
    */
   router.get("/", (c) => {
     const activeOnly = c.req.query("active") === "true";
-    const excludedOnly = c.req.query("excluded") === "true";
 
     let query = db.select().from(schema.projects).orderBy(desc(schema.projects.updatedAt));
 
-    if (excludedOnly) {
-      // 除外済みプロジェクトのみ
-      query = query.where(isNotNull(schema.projects.excludedAt)) as typeof query;
-    } else if (activeOnly) {
-      // アクティブかつ除外されていないプロジェクト
-      query = query.where(
-        and(eq(schema.projects.isActive, true), isNull(schema.projects.excludedAt)),
-      ) as typeof query;
-    } else {
-      // デフォルト: 除外されていないプロジェクト
-      query = query.where(isNull(schema.projects.excludedAt)) as typeof query;
+    if (activeOnly) {
+      query = query.where(eq(schema.projects.isActive, true)) as typeof query;
     }
 
     const projects = query.all();
@@ -395,84 +384,6 @@ export function createProjectsRouter(db: AdasDatabase) {
       skipped,
       repos: repos as GitRepoScanResult[],
     });
-  });
-
-  /**
-   * POST /api/projects/:id/exclude
-   *
-   * プロジェクトを除外 (ソフトデリート)
-   */
-  router.post("/:id/exclude", (c) => {
-    const id = Number(c.req.param("id"));
-    if (Number.isNaN(id)) {
-      return c.json({ error: "Invalid id" }, 400);
-    }
-
-    const existing = db.select().from(schema.projects).where(eq(schema.projects.id, id)).get();
-
-    if (!existing) {
-      return c.json({ error: "Project not found" }, 404);
-    }
-
-    const now = new Date().toISOString();
-    const result = db
-      .update(schema.projects)
-      .set({
-        excludedAt: now,
-        updatedAt: now,
-      })
-      .where(eq(schema.projects.id, id))
-      .returning()
-      .get();
-
-    return c.json(result);
-  });
-
-  /**
-   * POST /api/projects/:id/restore
-   *
-   * 除外済みプロジェクトを復活
-   */
-  router.post("/:id/restore", (c) => {
-    const id = Number(c.req.param("id"));
-    if (Number.isNaN(id)) {
-      return c.json({ error: "Invalid id" }, 400);
-    }
-
-    const existing = db.select().from(schema.projects).where(eq(schema.projects.id, id)).get();
-
-    if (!existing) {
-      return c.json({ error: "Project not found" }, 404);
-    }
-
-    const now = new Date().toISOString();
-    const result = db
-      .update(schema.projects)
-      .set({
-        excludedAt: null,
-        updatedAt: now,
-      })
-      .where(eq(schema.projects.id, id))
-      .returning()
-      .get();
-
-    return c.json(result);
-  });
-
-  /**
-   * GET /api/projects/excluded
-   *
-   * 除外済みプロジェクト一覧
-   */
-  router.get("/excluded", (c) => {
-    const projects = db
-      .select()
-      .from(schema.projects)
-      .where(isNotNull(schema.projects.excludedAt))
-      .orderBy(desc(schema.projects.excludedAt))
-      .all();
-
-    return c.json(projects);
   });
 
   /**

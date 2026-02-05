@@ -6,9 +6,6 @@
 
 import type { Project, ProjectStats, ScanGitReposResponse } from "@repo/types";
 import {
-  Archive,
-  ChevronDown,
-  ChevronRight,
   FolderGit2,
   FolderKanban,
   Github,
@@ -17,14 +14,12 @@ import {
   Search,
   Settings,
   Trash2,
-  Undo2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -65,9 +60,6 @@ export function ProjectsPanel({
     fetchProjectStats,
     autoDetect,
     scanGitRepos,
-    excludeProject,
-    restoreProject,
-    fetchExcludedProjects,
   } = useProjects(false); // 全プロジェクトを取得
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -78,10 +70,6 @@ export function ProjectsPanel({
     created: number;
   } | null>(null);
   const [scanResult, setScanResult] = useState<ScanGitReposResponse | null>(null);
-
-  // 除外済みプロジェクト
-  const [excludedProjects, setExcludedProjects] = useState<Project[]>([]);
-  const [excludedOpen, setExcludedOpen] = useState(false);
 
   // プロジェクト別統計を保持
   const [projectStats, setProjectStats] = useState<Record<number, ProjectStats>>({});
@@ -104,13 +92,6 @@ export function ProjectsPanel({
     }
   }, [projects, fetchProjectStats]);
 
-  // 除外済みプロジェクトを取得
-  useEffect(() => {
-    if (excludedOpen) {
-      fetchExcludedProjects().then(setExcludedProjects);
-    }
-  }, [excludedOpen, fetchExcludedProjects]);
-
   const handleAutoDetect = async () => {
     const result = await autoDetect();
     if (result) {
@@ -128,19 +109,6 @@ export function ProjectsPanel({
       setScanResult(result);
       setTimeout(() => setScanResult(null), 5000);
     }
-  };
-
-  const handleExclude = async (project: Project) => {
-    if (!window.confirm(`「${project.name}」を除外しますか? 除外後も復活できます。`)) {
-      return;
-    }
-    await excludeProject(project.id);
-  };
-
-  const handleRestore = async (project: Project) => {
-    await restoreProject(project.id);
-    // 除外済みリストを更新
-    setExcludedProjects((prev) => prev.filter((p) => p.id !== project.id));
   };
 
   const handleDelete = async (project: Project) => {
@@ -248,7 +216,7 @@ export function ProjectsPanel({
               プロジェクトがありません。「新規作成」または「自動検出」でプロジェクトを追加してください。
             </p>
           ) : (
-            <ScrollArea className="min-h-0 flex-1">
+            <ScrollArea className="min-h-0 flex-1 [&>div>div]:!overflow-x-hidden">
               <div className="space-y-3 pr-4">
                 {projects.map((project) => (
                   <ProjectItem
@@ -258,44 +226,10 @@ export function ProjectsPanel({
                     isSelected={selectedProjectId === project.id}
                     onSelect={onSelectProject ? () => onSelectProject(project) : undefined}
                     onEdit={() => setEditingProject(project)}
-                    onExclude={() => handleExclude(project)}
                     onDelete={() => handleDelete(project)}
                   />
                 ))}
               </div>
-
-              {/* 除外済みセクション */}
-              <Collapsible open={excludedOpen} onOpenChange={setExcludedOpen} className="mt-4">
-                <CollapsibleTrigger asChild>
-                  <Button variant="ghost" size="sm" className="w-full justify-start gap-2">
-                    {excludedOpen ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" />
-                    )}
-                    <Archive className="h-4 w-4" />
-                    除外済み ({excludedProjects.length})
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  {excludedProjects.length === 0 ? (
-                    <p className="py-2 text-sm text-muted-foreground">
-                      除外済みプロジェクトはありません
-                    </p>
-                  ) : (
-                    <div className="mt-2 space-y-2">
-                      {excludedProjects.map((project) => (
-                        <ExcludedProjectItem
-                          key={project.id}
-                          project={project}
-                          onRestore={() => handleRestore(project)}
-                          onDelete={() => handleDelete(project)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </CollapsibleContent>
-              </Collapsible>
             </ScrollArea>
           )}
         </CardContent>
@@ -342,24 +276,15 @@ interface ProjectItemProps {
   isSelected?: boolean;
   onSelect?: () => void;
   onEdit: () => void;
-  onExclude: () => void;
   onDelete: () => void;
 }
 
-function ProjectItem({
-  project,
-  stats,
-  isSelected,
-  onSelect,
-  onEdit,
-  onExclude,
-  onDelete,
-}: ProjectItemProps) {
+function ProjectItem({ project, stats, isSelected, onSelect, onEdit, onDelete }: ProjectItemProps) {
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: role is conditionally set based on onSelect
     <div
       className={cn(
-        "rounded-md border p-3 transition-colors",
+        "w-full rounded-md border p-3 transition-colors overflow-hidden",
         onSelect && "cursor-pointer hover:bg-muted/50",
         isSelected && "border-primary bg-primary/5",
       )}
@@ -373,8 +298,8 @@ function ProjectItem({
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1 space-y-1">
+      <div className="flex items-start gap-2">
+        <div className="w-0 flex-1 space-y-1">
           <div className="flex items-center gap-2">
             <span className="truncate font-medium">{project.name}</span>
             {!project.isActive && (
@@ -430,65 +355,8 @@ function ProjectItem({
           <Button
             size="icon"
             variant="ghost"
-            onClick={onExclude}
-            title="除外"
-            className="h-7 w-7 text-muted-foreground hover:text-orange-500"
-          >
-            <Archive className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
             onClick={onDelete}
-            title="完全削除"
-            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface ExcludedProjectItemProps {
-  project: Project;
-  onRestore: () => void;
-  onDelete: () => void;
-}
-
-function ExcludedProjectItem({ project, onRestore, onDelete }: ExcludedProjectItemProps) {
-  // リポジトリからローカルパスを取得
-  const localPaths =
-    project.repositories?.map((r) => r.localPath).filter((p): p is string => p !== null) ?? [];
-  const displayPath = localPaths[0] ?? project.path;
-
-  return (
-    <div className="rounded-md border border-dashed p-3 opacity-60">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1 space-y-1">
-          <span className="truncate font-medium">{project.name}</span>
-          {displayPath && (
-            <p className="truncate text-xs text-muted-foreground" title={displayPath}>
-              {displayPath}
-            </p>
-          )}
-        </div>
-        <div className="flex shrink-0 gap-1">
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={onRestore}
-            title="復活"
-            className="h-7 w-7 text-muted-foreground hover:text-green-500"
-          >
-            <Undo2 className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={onDelete}
-            title="完全削除"
+            title="削除"
             className="h-7 w-7 text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3.5 w-3.5" />

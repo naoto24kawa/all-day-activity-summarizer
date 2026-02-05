@@ -36,13 +36,22 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfig } from "@/hooks/use-config";
 import { formatSlackTsJST } from "@/lib/date";
-import { useSlackFeedContext } from "./slack-feed-context";
+import { SlackFeedProvider, useSlackFeedContext } from "./slack-feed-context";
 
 interface SlackFeedProps {
   className?: string;
 }
 
 export function SlackFeed({ className }: SlackFeedProps) {
+  return (
+    <SlackFeedProvider>
+      <SlackFeedInner className={className} />
+    </SlackFeedProvider>
+  );
+}
+
+/** SlackFeed の内部コンポーネント (Provider なし) */
+export function SlackFeedInner({ className }: SlackFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
   const {
     messages,
@@ -78,7 +87,7 @@ export function SlackFeed({ className }: SlackFeedProps) {
 
   if (loading) {
     return (
-      <Card>
+      <Card className={className}>
         <CardContent className="space-y-3 pt-6">
           {["skeleton-1", "skeleton-2", "skeleton-3"].map((id) => (
             <Skeleton key={id} className="h-16 w-full" />
@@ -90,7 +99,7 @@ export function SlackFeed({ className }: SlackFeedProps) {
 
   if (error) {
     return (
-      <Card>
+      <Card className={className}>
         <CardContent className="pt-6">
           <p className="text-sm text-muted-foreground">{error}</p>
         </CardContent>
@@ -104,7 +113,7 @@ export function SlackFeed({ className }: SlackFeedProps) {
   const keywordMessages = filteredMessages.filter((m) => m.messageType === "keyword");
 
   return (
-    <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
+    <Card className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className ?? ""}`}>
       <CardContent className="flex min-h-0 flex-1 flex-col pt-4">
         {messages.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Slack messages for this date.</p>
@@ -541,7 +550,7 @@ function PriorityBadge({
 
   return (
     <Select value={priority ?? "unassigned"} onValueChange={onChange}>
-      <SelectTrigger className={`h-5 w-[60px] border-0 px-1.5 text-xs ${config.className}`}>
+      <SelectTrigger className={`h-5 w-[70px] border-0 px-1.5 text-xs ${config.className}`}>
         {Icon && <Icon className="mr-0.5 h-3 w-3" />}
         <span>{config.label}</span>
       </SelectTrigger>

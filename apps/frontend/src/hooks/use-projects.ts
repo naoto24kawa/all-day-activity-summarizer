@@ -136,46 +136,6 @@ export function useProjects(activeOnly = true) {
     }
   }, [fetchProjects]);
 
-  /** プロジェクトを除外 */
-  const excludeProject = useCallback(
-    async (id: number): Promise<boolean> => {
-      try {
-        await postAdasApi<Project>(`/api/projects/${id}/exclude`, {});
-        await fetchProjects();
-        return true;
-      } catch (err) {
-        console.error("Failed to exclude project:", err);
-        return false;
-      }
-    },
-    [fetchProjects],
-  );
-
-  /** 除外済みプロジェクトを復活 */
-  const restoreProject = useCallback(
-    async (id: number): Promise<boolean> => {
-      try {
-        await postAdasApi<Project>(`/api/projects/${id}/restore`, {});
-        await fetchProjects();
-        return true;
-      } catch (err) {
-        console.error("Failed to restore project:", err);
-        return false;
-      }
-    },
-    [fetchProjects],
-  );
-
-  /** 除外済みプロジェクト一覧を取得 */
-  const fetchExcludedProjects = useCallback(async (): Promise<Project[]> => {
-    try {
-      return await fetchAdasApi<Project[]>("/api/projects/excluded");
-    } catch (err) {
-      console.error("Failed to fetch excluded projects:", err);
-      return [];
-    }
-  }, []);
-
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
@@ -193,9 +153,6 @@ export function useProjects(activeOnly = true) {
     fetchProjectStats,
     autoDetect,
     scanGitRepos,
-    excludeProject,
-    restoreProject,
-    fetchExcludedProjects,
   };
 }
 
