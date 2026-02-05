@@ -1432,6 +1432,33 @@ export function TasksPanel({ className }: TasksPanelProps) {
                       : "タスクを選択してください"}
                   </span>
                 </div>
+                {/* 承認待ちタブ専用: 全て選択 + 一括承認 */}
+                {statusFilter === "pending" && (
+                  <>
+                    <div className="h-4 w-px bg-border" />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => toggleSelectAll(filteredTasksByStatus)}
+                      disabled={batchUpdating}
+                    >
+                      {filteredTasksByStatus.every((t) => selectedTaskIds.has(t.id))
+                        ? "全て解除"
+                        : "全て選択"}
+                    </Button>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-7 bg-green-600 hover:bg-green-700"
+                      onClick={() => handleBatchUpdate({ status: "accepted" })}
+                      disabled={batchUpdating || selectedTaskIds.size === 0}
+                    >
+                      <Check className="mr-1 h-3 w-3" />
+                      一括承認
+                    </Button>
+                  </>
+                )}
                 {selectedTaskIds.size > 0 && (
                   <>
                     <div className="h-4 w-px bg-border" />

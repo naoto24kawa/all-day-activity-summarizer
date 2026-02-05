@@ -9,6 +9,7 @@
   "scripts": {
     "dev:all": "bun run scripts/dev-launcher.ts",
     "dev:mcp": "bun run apps/mcp-server/src/index.ts",
+    "mcp": "bun run apps/mcp-server/src/stdio.ts",
     "dev:frontend": "cd apps/frontend && bun run dev",
     "dev": "bunx concurrently -n mcp,front -c blue,green \"bun run dev:mcp\" \"bun run dev:frontend\"",
     "dev:backend": "cd apps/backend && bun run dev",

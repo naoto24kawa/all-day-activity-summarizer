@@ -12,7 +12,7 @@
       ]
     },
     "adas": {
-      "type": "streamable-http",
+      "type": "http",
       "url": "http://localhost:3050/mcp"
     }
   }
