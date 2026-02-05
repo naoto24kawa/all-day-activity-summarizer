@@ -359,20 +359,22 @@ async function extractAndSaveTerms(
   sourceId: number | null,
   date: string,
 ): Promise<ExtractTermsResult> {
-  // 既存の用語を取得 (vocabulary + pending suggestions)
+  // 既存の用語を取得 (vocabulary + 全 suggestions)
+  // - vocabulary: 登録済み用語
+  // - suggestions (全ステータス): pending, accepted, rejected すべて除外
+  //   → rejected を除外しないと、却下済み用語が再度提案される
   const existingVocabulary = db
     .select({ term: schema.vocabulary.term })
     .from(schema.vocabulary)
     .all();
-  const pendingSuggestions = db
+  const allSuggestions = db
     .select({ term: schema.vocabularySuggestions.term })
     .from(schema.vocabularySuggestions)
-    .where(eq(schema.vocabularySuggestions.status, "pending"))
     .all();
 
   const existingTerms = [
     ...existingVocabulary.map((v) => v.term),
-    ...pendingSuggestions.map((s) => s.term),
+    ...allSuggestions.map((s) => s.term),
   ];
 
   consola.info(`[vocabulary/extract] Extracting from ${sourceType} (${text.length} chars)...`);
@@ -408,18 +410,24 @@ async function extractAndSaveTerms(
       );
     }
 
+    // 候補が0件の場合は AI をスキップ (コスト削減)
+    if (candidates.length === 0) {
+      consola.info(`[vocabulary/extract] No candidates from tokenizer, skipping AI`);
+      return { extracted: 0, skippedDuplicate: 0, tasksCreated: 0 };
+    }
+
     // Step 2: ai-worker で AI 精査
     const aiWorkerUrl = `${config.worker.url}/rpc/extract-terms`;
-    consola.info(`[vocabulary/extract] Step 2: Refining with ai-worker...`);
+    consola.info(
+      `[vocabulary/extract] Step 2: Refining ${candidates.length} candidates with ai-worker...`,
+    );
 
     const aiResponse = await fetch(aiWorkerUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        text: candidates.length > 0 ? undefined : text,
-        candidates: candidates.length > 0 ? candidates : undefined,
+        candidates,
         sourceType,
-        existingTerms,
       }),
       signal: AbortSignal.timeout(config.worker.timeout),
     });

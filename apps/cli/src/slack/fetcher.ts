@@ -6,11 +6,11 @@
 
 import type { AdasDatabase, NewSlackMessage, SlackQueueJob } from "@repo/db";
 import { schema } from "@repo/db";
+import type { SlackClient, SlackMessageAttachment } from "@repo/slack-api";
 import consola from "consola";
 import { and, eq } from "drizzle-orm";
 import { enqueueJob } from "../ai-job/queue.js";
 import { findProjectByName, findProjectFromContent } from "../utils/project-lookup.js";
-import type { SlackClient, SlackMessageAttachment } from "./client.js";
 
 /**
  * Convert a glob pattern to regex (supports * wildcard)

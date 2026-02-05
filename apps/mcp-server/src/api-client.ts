@@ -4,10 +4,23 @@
  * CLI API (localhost:3001/api) へのリクエストヘルパー
  */
 
-const DEFAULT_API_URL = "http://localhost:3001/api";
+const DEFAULT_API_URL = "http://localhost:3001";
 
 function getApiUrl(): string {
   return process.env.ADAS_API_URL || DEFAULT_API_URL;
+}
+
+/**
+ * パスを正規化 (/api/xxx の形式に統一)
+ */
+function normalizePath(path: string): string {
+  // 先頭の / を削除
+  const cleanPath = path.replace(/^\/+/, "");
+  // /api で始まっていなければ追加
+  if (cleanPath.startsWith("api/")) {
+    return `/${cleanPath}`;
+  }
+  return `/api/${cleanPath}`;
 }
 
 export interface ApiResponse<T> {
@@ -25,7 +38,7 @@ export async function apiGet<T>(
   params?: Record<string, string | number | undefined>,
 ): Promise<ApiResponse<T>> {
   const baseUrl = getApiUrl();
-  const url = new URL(path, baseUrl);
+  const url = new URL(normalizePath(path), baseUrl);
 
   if (params) {
     for (const [key, value] of Object.entries(params)) {
@@ -63,7 +76,7 @@ export async function apiPost<T>(
   body?: Record<string, unknown>,
 ): Promise<ApiResponse<T>> {
   const baseUrl = getApiUrl();
-  const url = new URL(path, baseUrl);
+  const url = new URL(normalizePath(path), baseUrl);
 
   try {
     const response = await fetch(url.toString(), {
@@ -99,7 +112,7 @@ export async function apiPatch<T>(
   body?: Record<string, unknown>,
 ): Promise<ApiResponse<T>> {
   const baseUrl = getApiUrl();
-  const url = new URL(path, baseUrl);
+  const url = new URL(normalizePath(path), baseUrl);
 
   try {
     const response = await fetch(url.toString(), {

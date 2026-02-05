@@ -5,9 +5,9 @@
  */
 
 import type { AdasDatabase } from "@repo/db";
+import type { SlackClient } from "@repo/slack-api";
 import consola from "consola";
 import type { AdasConfig } from "../config.js";
-import type { SlackClient } from "./client.js";
 import { processSlackJob } from "./fetcher.js";
 import {
   cleanupOldSlackJobs,

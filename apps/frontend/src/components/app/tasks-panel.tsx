@@ -1432,7 +1432,7 @@ export function TasksPanel({ className }: TasksPanelProps) {
                       : "タスクを選択してください"}
                   </span>
                 </div>
-                {/* 承認待ちタブ専用: 全て選択 + 一括承認 */}
+                {/* 承認待ちタブ専用: 全て選択 */}
                 {statusFilter === "pending" && (
                   <>
                     <div className="h-4 w-px bg-border" />
@@ -1447,15 +1447,30 @@ export function TasksPanel({ className }: TasksPanelProps) {
                         ? "全て解除"
                         : "全て選択"}
                     </Button>
+                  </>
+                )}
+                {/* 承認待ちタブ専用: 一括承認・却下 (選択時のみ) */}
+                {statusFilter === "pending" && selectedTaskIds.size > 0 && (
+                  <>
                     <Button
                       variant="default"
                       size="sm"
                       className="h-7 bg-green-600 hover:bg-green-700"
                       onClick={() => handleBatchUpdate({ status: "accepted" })}
-                      disabled={batchUpdating || selectedTaskIds.size === 0}
+                      disabled={batchUpdating}
                     >
                       <Check className="mr-1 h-3 w-3" />
                       一括承認
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => handleBatchUpdate({ status: "rejected" })}
+                      disabled={batchUpdating}
+                    >
+                      <X className="mr-1 h-3 w-3" />
+                      一括却下
                     </Button>
                   </>
                 )}

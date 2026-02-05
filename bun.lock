@@ -65,6 +65,7 @@
         "@modelcontextprotocol/sdk": "^1.0.0",
         "@repo/core": "workspace:*",
         "@repo/db": "workspace:*",
+        "@repo/slack-api": "workspace:*",
         "@repo/sse-server": "workspace:*",
         "@repo/types": "workspace:*",
         "commander": "^14.0.0",
@@ -182,6 +183,10 @@
       "devDependencies": {
         "drizzle-kit": "^0.31.1",
       },
+    },
+    "packages/slack-api": {
+      "name": "@repo/slack-api",
+      "version": "0.1.0",
     },
     "packages/types": {
       "name": "@repo/types",
@@ -617,6 +622,8 @@
     "@repo/local-worker": ["@repo/local-worker@workspace:apps/local-worker"],
 
     "@repo/mcp-server": ["@repo/mcp-server@workspace:apps/mcp-server"],
+
+    "@repo/slack-api": ["@repo/slack-api@workspace:packages/slack-api"],
 
     "@repo/sse-server": ["@repo/sse-server@workspace:apps/sse-server"],
 

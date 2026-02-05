@@ -1,12 +1,35 @@
 /**
  * Slack Integration Module
  *
- * Exports all Slack-related functionality
+ * Re-exports from @repo/slack-api and local implementations
  */
 
-export type { SlackChannel, SlackClientConfig, SlackMessage, SlackUser } from "./client.js";
-export { createSlackClient, SlackClient } from "./client.js";
-export { fetchChannel, fetchDM, fetchMentions, processSlackJob } from "./fetcher.js";
+// Re-export from @repo/slack-api
+export type {
+  ConversationsHistoryOptions,
+  ConversationsListOptions,
+  ConversationsRepliesOptions,
+  PostMessageOptions,
+  SearchMessagesOptions,
+  SlackBot,
+  SlackChannel,
+  SlackClientConfig,
+  SlackFile,
+  SlackMessage,
+  SlackMessageAttachment,
+  SlackReaction,
+  SlackUser,
+} from "@repo/slack-api";
+export { createSlackClient, SlackClient } from "@repo/slack-api";
+
+// Local implementations
+export {
+  fetchChannel,
+  fetchDM,
+  fetchMentions,
+  insertMessageIfNotExists,
+  processSlackJob,
+} from "./fetcher.js";
 export type { EnqueueSlackJobOptions, SlackJobType } from "./queue.js";
 export {
   cleanupOldSlackJobs,

@@ -5,10 +5,9 @@
  */
 
 import type { AdasDatabase } from "@repo/db";
+import { createSlackClient, type SlackClient } from "@repo/slack-api";
 import consola from "consola";
 import type { AdasConfig } from "../config.js";
-import type { SlackClient } from "./client.js";
-import { createSlackClient } from "./client.js";
 import { enqueueSlackJob, getSlackQueueStats } from "./queue.js";
 import { startSlackWorker } from "./worker.js";
 

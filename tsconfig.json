@@ -8,6 +8,7 @@
     { "path": "./apps/mcp-server" },
     { "path": "./packages/core" },
     { "path": "./packages/db" },
-    { "path": "./packages/types" }
+    { "path": "./packages/types" },
+    { "path": "./packages/slack-api" }
   ]
 }
