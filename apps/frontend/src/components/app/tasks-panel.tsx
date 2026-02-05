@@ -1168,14 +1168,21 @@ export function TasksPanel({ className }: TasksPanelProps) {
                                     </Badge>
                                   )}
                                 </div>
-                                {project.path && (
-                                  <p
-                                    className="text-xs text-muted-foreground truncate"
-                                    title={project.path}
-                                  >
-                                    {project.path}
-                                  </p>
-                                )}
+                                {(() => {
+                                  const localPaths =
+                                    project.repositories
+                                      ?.map((r) => r.localPath)
+                                      .filter((p): p is string => p !== null) ?? [];
+                                  const displayPath = localPaths[0] ?? project.path;
+                                  return displayPath ? (
+                                    <p
+                                      className="text-xs text-muted-foreground truncate"
+                                      title={displayPath}
+                                    >
+                                      {displayPath}
+                                    </p>
+                                  ) : null;
+                                })()}
                                 <div className="mt-1 flex items-center gap-1">
                                   <Button
                                     size="sm"

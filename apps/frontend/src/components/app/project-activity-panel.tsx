@@ -79,11 +79,18 @@ export function ProjectActivityPanel({ project, className }: ProjectActivityPane
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
-        {project.path && (
-          <p className="text-xs text-muted-foreground truncate" title={project.path}>
-            {project.path}
-          </p>
-        )}
+        {/* リポジトリのローカルパスを表示 (後方互換性: project.path も考慮) */}
+        {(() => {
+          const localPaths =
+            project.repositories?.map((r) => r.localPath).filter((p): p is string => p !== null) ??
+            [];
+          const displayPath = localPaths[0] ?? project.path;
+          return displayPath ? (
+            <p className="text-xs text-muted-foreground truncate" title={displayPath}>
+              {displayPath}
+            </p>
+          ) : null;
+        })()}
       </CardHeader>
 
       <CardContent className="flex min-h-0 flex-1 flex-col pt-0">

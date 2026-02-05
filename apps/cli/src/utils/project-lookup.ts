@@ -54,8 +54,21 @@ export function findOrCreateProjectByGitHub(
 
 /**
  * プロジェクトを検索 (path 用 - 完全一致)
+ * projectRepositories.localPath を使用
  */
 export function findProjectByPath(db: AdasDatabase, path: string): number | null {
+  // projectRepositories から検索
+  const repo = db
+    .select()
+    .from(schema.projectRepositories)
+    .where(eq(schema.projectRepositories.localPath, path))
+    .get();
+
+  if (repo) {
+    return repo.projectId;
+  }
+
+  // 後方互換性: projects.path からも検索
   const project = db.select().from(schema.projects).where(eq(schema.projects.path, path)).get();
 
   return project?.id ?? null;
@@ -64,23 +77,43 @@ export function findProjectByPath(db: AdasDatabase, path: string): number | null
 /**
  * プロジェクトを検索 (path 用 - 部分一致対応)
  * projectPath からプロジェクトを検索。完全一致 → 部分一致の順で検索。
+ * projectRepositories.localPath を使用
  */
 export function findProjectByPathFuzzy(db: AdasDatabase, projectPath: string): number | null {
-  // Get all projects with path
-  const projects = db.select().from(schema.projects).where(isNotNull(schema.projects.path)).all();
+  // Get all repositories with localPath
+  const repos = db
+    .select()
+    .from(schema.projectRepositories)
+    .where(isNotNull(schema.projectRepositories.localPath))
+    .all();
 
   // Exact match first
-  const exactMatch = projects.find((p) => p.path === projectPath);
+  const exactMatch = repos.find((r) => r.localPath === projectPath);
   if (exactMatch) {
-    return exactMatch.id;
+    return exactMatch.projectId;
   }
 
-  // Partial match (projectPath ends with project.path or project.path ends with projectPath)
-  const partialMatch = projects.find(
-    (p) => p.path && (projectPath.endsWith(p.path) || p.path.endsWith(projectPath)),
+  // Partial match (projectPath ends with localPath or localPath ends with projectPath)
+  const partialMatch = repos.find(
+    (r) => r.localPath && (projectPath.endsWith(r.localPath) || r.localPath.endsWith(projectPath)),
   );
   if (partialMatch) {
-    return partialMatch.id;
+    return partialMatch.projectId;
+  }
+
+  // 後方互換性: projects.path からも検索
+  const projects = db.select().from(schema.projects).where(isNotNull(schema.projects.path)).all();
+
+  const exactProjectMatch = projects.find((p) => p.path === projectPath);
+  if (exactProjectMatch) {
+    return exactProjectMatch.id;
+  }
+
+  const partialProjectMatch = projects.find(
+    (p) => p.path && (projectPath.endsWith(p.path) || p.path.endsWith(projectPath)),
+  );
+  if (partialProjectMatch) {
+    return partialProjectMatch.id;
   }
 
   return null;

@@ -23,6 +23,33 @@ let workers: WorkerProcess[] = [];
 let isRestarting = false;
 
 /**
+ * git checkout . を実行 (ローカル変更を破棄)
+ */
+async function gitCheckout(): Promise<{ success: boolean; output: string }> {
+  consola.info("Running git checkout . ...");
+
+  const proc = Bun.spawn(["git", "checkout", "."], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  const output = (stdout + stderr).trim();
+  const success = exitCode === 0;
+
+  if (success) {
+    consola.success(`git checkout: ${output || "Done"}`);
+  } else {
+    consola.error(`git checkout failed: ${output}`);
+  }
+
+  return { success, output };
+}
+
+/**
  * git pull を実行
  */
 async function gitPull(): Promise<{ success: boolean; output: string }> {
@@ -44,6 +71,33 @@ async function gitPull(): Promise<{ success: boolean; output: string }> {
     consola.success(`git pull: ${output || "Already up to date"}`);
   } else {
     consola.error(`git pull failed: ${output}`);
+  }
+
+  return { success, output };
+}
+
+/**
+ * bun install を実行
+ */
+async function bunInstall(): Promise<{ success: boolean; output: string }> {
+  consola.info("Running bun install...");
+
+  const proc = Bun.spawn(["bun", "i"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  const output = (stdout + stderr).trim();
+  const success = exitCode === 0;
+
+  if (success) {
+    consola.success(`bun install: ${output || "Done"}`);
+  } else {
+    consola.error(`bun install failed: ${output}`);
   }
 
   return { success, output };
@@ -98,12 +152,19 @@ async function stopWorker(worker: WorkerProcess): Promise<void> {
   worker.proc = null;
 }
 
+interface RestartResult {
+  gitCheckout: { success: boolean; output: string };
+  gitPull: { success: boolean; output: string };
+  bunInstall: { success: boolean; output: string };
+}
+
 /**
  * 全 Worker を再起動
  */
-async function restartAllWorkers(): Promise<{ gitPull: { success: boolean; output: string } }> {
+async function restartAllWorkers(): Promise<RestartResult> {
+  const emptyResult = { success: false, output: "Already restarting" };
   if (isRestarting) {
-    return { gitPull: { success: false, output: "Already restarting" } };
+    return { gitCheckout: emptyResult, gitPull: emptyResult, bunInstall: emptyResult };
   }
 
   isRestarting = true;
@@ -112,8 +173,14 @@ async function restartAllWorkers(): Promise<{ gitPull: { success: boolean; outpu
   // 全 Worker を停止
   await Promise.all(workers.map(stopWorker));
 
+  // git checkout . を実行 (ローカル変更を破棄)
+  const checkoutResult = await gitCheckout();
+
   // git pull を実行
-  const gitResult = await gitPull();
+  const pullResult = await gitPull();
+
+  // bun install を実行
+  const installResult = await bunInstall();
 
   // 少し待機
   await Bun.sleep(1000);
@@ -124,7 +191,11 @@ async function restartAllWorkers(): Promise<{ gitPull: { success: boolean; outpu
   }
 
   isRestarting = false;
-  return { gitPull: gitResult };
+  return {
+    gitCheckout: checkoutResult,
+    gitPull: pullResult,
+    bunInstall: installResult,
+  };
 }
 
 /**
@@ -182,7 +253,9 @@ function createLauncherApp(token: string): Hono {
     const result = await restartAllWorkers();
     return c.json({
       message: "Restart completed",
+      gitCheckout: result.gitCheckout,
       gitPull: result.gitPull,
+      bunInstall: result.bunInstall,
     });
   });
 

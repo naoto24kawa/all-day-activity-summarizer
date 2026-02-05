@@ -383,32 +383,40 @@ function ProjectItem({
               </Badge>
             )}
           </div>
-          {project.path && (
-            <p className="truncate text-xs text-muted-foreground" title={project.path}>
-              {project.path}
-            </p>
-          )}
           {/* 複数リポジトリ表示 */}
           {project.repositories && project.repositories.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-              <Github className="h-3 w-3" />
-              {project.repositories.map((repo, idx) => (
-                <span key={repo.id}>
-                  {repo.githubOwner}/{repo.githubRepo}
-                  {idx < (project.repositories?.length ?? 0) - 1 && ", "}
-                </span>
+            <div className="space-y-0.5 text-xs text-muted-foreground">
+              {project.repositories.map((repo) => (
+                <div key={repo.id} className="flex items-center gap-1">
+                  <Github className="h-3 w-3 shrink-0" />
+                  <span className="truncate">
+                    {repo.githubOwner}/{repo.githubRepo}
+                  </span>
+                  {repo.localPath && (
+                    <span className="truncate opacity-60" title={repo.localPath}>
+                      ({repo.localPath})
+                    </span>
+                  )}
+                </div>
               ))}
             </div>
           )}
-          {/* 後方互換性: repositories がない場合は githubOwner/githubRepo を表示 */}
-          {(!project.repositories || project.repositories.length === 0) &&
-            project.githubOwner &&
-            project.githubRepo && (
-              <p className="text-xs text-muted-foreground">
-                <Github className="mr-1 inline h-3 w-3" />
-                {project.githubOwner}/{project.githubRepo}
-              </p>
-            )}
+          {/* 後方互換性: repositories がない場合 */}
+          {(!project.repositories || project.repositories.length === 0) && (
+            <>
+              {project.path && (
+                <p className="truncate text-xs text-muted-foreground" title={project.path}>
+                  {project.path}
+                </p>
+              )}
+              {project.githubOwner && project.githubRepo && (
+                <p className="text-xs text-muted-foreground">
+                  <Github className="mr-1 inline h-3 w-3" />
+                  {project.githubOwner}/{project.githubRepo}
+                </p>
+              )}
+            </>
+          )}
           {stats && (
             <p className="text-xs text-muted-foreground">
               タスク: {stats.tasksCount} / 学び: {stats.learningsCount}
@@ -450,14 +458,19 @@ interface ExcludedProjectItemProps {
 }
 
 function ExcludedProjectItem({ project, onRestore, onDelete }: ExcludedProjectItemProps) {
+  // リポジトリからローカルパスを取得
+  const localPaths =
+    project.repositories?.map((r) => r.localPath).filter((p): p is string => p !== null) ?? [];
+  const displayPath = localPaths[0] ?? project.path;
+
   return (
     <div className="rounded-md border border-dashed p-3 opacity-60">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 space-y-1">
           <span className="truncate font-medium">{project.name}</span>
-          {project.path && (
-            <p className="truncate text-xs text-muted-foreground" title={project.path}>
-              {project.path}
+          {displayPath && (
+            <p className="truncate text-xs text-muted-foreground" title={displayPath}>
+              {displayPath}
             </p>
           )}
         </div>
@@ -492,8 +505,7 @@ interface ProjectDialogProps {
   project?: Project;
   onSubmit: (data: {
     name: string;
-    path?: string;
-    repositories?: Array<{ githubOwner: string; githubRepo: string }>;
+    repositories?: Array<{ githubOwner: string; githubRepo: string; localPath?: string }>;
     isActive?: boolean;
   }) => Promise<void>;
 }
@@ -501,11 +513,11 @@ interface ProjectDialogProps {
 interface RepoInput {
   githubOwner: string;
   githubRepo: string;
+  localPath: string;
 }
 
 function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogProps) {
   const [name, setName] = useState(project?.name ?? "");
-  const [path, setPath] = useState(project?.path ?? "");
   const [repositories, setRepositories] = useState<RepoInput[]>([]);
   const [isActive, setIsActive] = useState(project?.isActive ?? true);
   const [submitting, setSubmitting] = useState(false);
@@ -514,18 +526,24 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
   useEffect(() => {
     if (open) {
       setName(project?.name ?? "");
-      setPath(project?.path ?? "");
       // 既存のリポジトリを読み込み
       if (project?.repositories && project.repositories.length > 0) {
         setRepositories(
           project.repositories.map((r) => ({
             githubOwner: r.githubOwner,
             githubRepo: r.githubRepo,
+            localPath: r.localPath ?? "",
           })),
         );
       } else if (project?.githubOwner && project?.githubRepo) {
         // 後方互換性: 旧フィールドから
-        setRepositories([{ githubOwner: project.githubOwner, githubRepo: project.githubRepo }]);
+        setRepositories([
+          {
+            githubOwner: project.githubOwner,
+            githubRepo: project.githubRepo,
+            localPath: project.path ?? "",
+          },
+        ]);
       } else {
         setRepositories([]);
       }
@@ -534,14 +552,18 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
   }, [open, project]);
 
   const addRepository = () => {
-    setRepositories([...repositories, { githubOwner: "", githubRepo: "" }]);
+    setRepositories([...repositories, { githubOwner: "", githubRepo: "", localPath: "" }]);
   };
 
   const removeRepository = (index: number) => {
     setRepositories(repositories.filter((_, i) => i !== index));
   };
 
-  const updateRepository = (index: number, field: "githubOwner" | "githubRepo", value: string) => {
+  const updateRepository = (
+    index: number,
+    field: "githubOwner" | "githubRepo" | "localPath",
+    value: string,
+  ) => {
     const updated = [...repositories];
     const current = updated[index];
     if (current) {
@@ -556,17 +578,22 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
     setSubmitting(true);
     try {
       // 空のリポジトリを除外
-      const validRepos = repositories.filter((r) => r.githubOwner.trim() && r.githubRepo.trim());
+      const validRepos = repositories
+        .filter((r) => r.githubOwner.trim() && r.githubRepo.trim())
+        .map((r) => ({
+          githubOwner: r.githubOwner.trim(),
+          githubRepo: r.githubRepo.trim(),
+          localPath: r.localPath.trim() || undefined,
+        }));
       await onSubmit({
         name: name.trim(),
-        path: path.trim() || undefined,
         repositories: validRepos.length > 0 ? validRepos : undefined,
         isActive,
       });
     } finally {
       setSubmitting(false);
     }
-  }, [name, path, repositories, isActive, onSubmit]);
+  }, [name, repositories, isActive, onSubmit]);
 
   // キーボードショートカット (Cmd/Ctrl+Enter で送信)
   useEffect(() => {
@@ -607,21 +634,11 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
               disabled={submitting}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="path">パス</Label>
-            <Input
-              id="path"
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              placeholder="例: /Users/username/projects/my-project"
-              disabled={submitting}
-            />
-          </div>
 
           {/* GitHub リポジトリ (複数対応) */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label>GitHub リポジトリ</Label>
+              <Label>リポジトリ</Label>
               <Button
                 type="button"
                 size="sm"
@@ -639,34 +656,43 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
                 リポジトリを追加すると、GitHub Issues/PRs と連携できます
               </p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {repositories.map((repo, index) => (
-                  <div key={`repo-${index}`} className="flex items-center gap-2">
+                  <div key={`repo-${index}`} className="space-y-2 rounded-md border p-3">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={repo.githubOwner}
+                        onChange={(e) => updateRepository(index, "githubOwner", e.target.value)}
+                        placeholder="owner"
+                        disabled={submitting}
+                        className="flex-1"
+                      />
+                      <span className="text-muted-foreground">/</span>
+                      <Input
+                        value={repo.githubRepo}
+                        onChange={(e) => updateRepository(index, "githubRepo", e.target.value)}
+                        placeholder="repo"
+                        disabled={submitting}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => removeRepository(index)}
+                        disabled={submitting}
+                        className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
                     <Input
-                      value={repo.githubOwner}
-                      onChange={(e) => updateRepository(index, "githubOwner", e.target.value)}
-                      placeholder="owner"
+                      value={repo.localPath}
+                      onChange={(e) => updateRepository(index, "localPath", e.target.value)}
+                      placeholder="ローカルパス (例: /Users/username/projects/repo)"
                       disabled={submitting}
-                      className="flex-1"
+                      className="text-xs"
                     />
-                    <span className="text-muted-foreground">/</span>
-                    <Input
-                      value={repo.githubRepo}
-                      onChange={(e) => updateRepository(index, "githubRepo", e.target.value)}
-                      placeholder="repo"
-                      disabled={submitting}
-                      className="flex-1"
-                    />
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => removeRepository(index)}
-                      disabled={submitting}
-                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
                   </div>
                 ))}
               </div>

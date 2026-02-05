@@ -346,11 +346,15 @@ export function TaskElaborateDialog({
               <div>
                 <Label className="text-sm font-medium">プロジェクト</Label>
                 <p className="mt-1 text-sm text-muted-foreground">{project.name}</p>
-                {!project.path && (
-                  <p className="mt-1 text-xs text-yellow-600">
-                    プロジェクトパスが未設定のため、コードベースを参照できません
-                  </p>
-                )}
+                {(() => {
+                  const hasLocalPath =
+                    project.repositories?.some((r) => r.localPath) || project.path;
+                  return !hasLocalPath ? (
+                    <p className="mt-1 text-xs text-yellow-600">
+                      プロジェクトパスが未設定のため、コードベースを参照できません
+                    </p>
+                  ) : null;
+                })()}
               </div>
             )}
 

@@ -1,7 +1,7 @@
 /**
  * Servers Command
  *
- * API サーバーと SSE サーバーを子プロセスとして起動
+ * API サーバーと SSE サーバーを別々の子プロセスとして起動
  * Launcher エンドポイント (再起動用) も提供
  */
 
@@ -19,8 +19,35 @@ interface ServerProcess {
   env: Record<string, string>;
 }
 
-let serverProcess: ServerProcess | null = null;
+let servers: ServerProcess[] = [];
 let isRestarting = false;
+
+/**
+ * git checkout . を実行 (ローカル変更を破棄)
+ */
+async function gitCheckout(): Promise<{ success: boolean; output: string }> {
+  consola.info("Running git checkout . ...");
+
+  const proc = Bun.spawn(["git", "checkout", "."], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  const output = (stdout + stderr).trim();
+  const success = exitCode === 0;
+
+  if (success) {
+    consola.success(`git checkout: ${output || "Done"}`);
+  } else {
+    consola.error(`git checkout failed: ${output}`);
+  }
+
+  return { success, output };
+}
 
 /**
  * git pull を実行
@@ -50,6 +77,33 @@ async function gitPull(): Promise<{ success: boolean; output: string }> {
 }
 
 /**
+ * bun install を実行
+ */
+async function bunInstall(): Promise<{ success: boolean; output: string }> {
+  consola.info("Running bun install...");
+
+  const proc = Bun.spawn(["bun", "i"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  const output = (stdout + stderr).trim();
+  const success = exitCode === 0;
+
+  if (success) {
+    consola.success(`bun install: ${output || "Done"}`);
+  } else {
+    consola.error(`bun install failed: ${output}`);
+  }
+
+  return { success, output };
+}
+
+/**
  * Server プロセスを起動
  */
 function startServer(server: ServerProcess): void {
@@ -60,12 +114,7 @@ function startServer(server: ServerProcess): void {
     stdout: "inherit",
     stderr: "inherit",
     onExit: (_proc, exitCode) => {
-      if (isRestarting) {
-        // 再起動中の終了はログのみ
-        if (exitCode !== 0) {
-          consola.error(`${server.name} exited with code ${exitCode} during restart`);
-        }
-      } else {
+      if (!isRestarting) {
         consola.warn(`${server.name} exited with code ${exitCode}`);
         // 自動再起動
         setTimeout(() => {
@@ -103,45 +152,76 @@ async function stopServer(server: ServerProcess): Promise<void> {
   server.proc = null;
 }
 
-/**
- * Server を再起動
- */
-async function restartServer(): Promise<{ gitPull: { success: boolean; output: string } }> {
-  if (isRestarting) {
-    return { gitPull: { success: false, output: "Already restarting" } };
-  }
+interface RestartResult {
+  gitCheckout: { success: boolean; output: string };
+  gitPull: { success: boolean; output: string };
+  bunInstall: { success: boolean; output: string };
+}
 
-  if (!serverProcess) {
-    return { gitPull: { success: false, output: "Server not initialized" } };
+/**
+ * 全 Server を再起動
+ */
+async function restartAllServers(): Promise<RestartResult> {
+  const emptyResult = { success: false, output: "Already restarting" };
+  if (isRestarting) {
+    return { gitCheckout: emptyResult, gitPull: emptyResult, bunInstall: emptyResult };
   }
 
   isRestarting = true;
   consola.info("=== RESTART REQUESTED ===");
 
-  // Server を停止
-  await stopServer(serverProcess);
+  // 全 Server を停止
+  await Promise.all(servers.map(stopServer));
+
+  // git checkout . を実行 (ローカル変更を破棄)
+  const checkoutResult = await gitCheckout();
 
   // git pull を実行
-  const gitResult = await gitPull();
+  const pullResult = await gitPull();
+
+  // bun install を実行
+  const installResult = await bunInstall();
 
   // 少し待機
   await Bun.sleep(1000);
 
-  // Server を起動
-  consola.info("Restarting servers...");
-  startServer(serverProcess);
+  // 全 Server を起動
+  for (const server of servers) {
+    startServer(server);
+  }
 
   // プロセスが安定して起動したか確認
   await Bun.sleep(3000);
 
-  if (serverProcess.proc && !serverProcess.proc.killed) {
-    consola.success("Servers restarted successfully");
+  const allRunning = servers.every((s) => s.proc && !s.proc.killed);
+  if (allRunning) {
+    consola.success("All servers restarted successfully");
   } else {
-    consola.error("Servers failed to restart - check logs");
+    consola.error("Some servers failed to restart - check logs");
   }
 
   isRestarting = false;
-  return { gitPull: gitResult };
+  return {
+    gitCheckout: checkoutResult,
+    gitPull: pullResult,
+    bunInstall: installResult,
+  };
+}
+
+/**
+ * 単一 Server を再起動
+ */
+async function restartServer(name: string): Promise<boolean> {
+  const server = servers.find((s) => s.name === name);
+  if (!server) return false;
+
+  isRestarting = true;
+  await stopServer(server);
+  await Bun.sleep(500);
+  startServer(server);
+  isRestarting = false;
+
+  return true;
 }
 
 /**
@@ -164,25 +244,13 @@ function createLauncherApp(token: string): Hono {
   app.use("*", cors());
 
   app.get("/status", (c) => {
-    const isRunning = serverProcess?.proc !== null && !serverProcess?.proc?.killed;
-    const pid = serverProcess?.proc?.pid ?? 0;
-
     return c.json({
       type: "server",
-      processes: serverProcess
-        ? [
-            {
-              name: "API Server",
-              pid,
-              running: isRunning,
-            },
-            {
-              name: "SSE Server",
-              pid,
-              running: isRunning,
-            },
-          ]
-        : [],
+      processes: servers.map((s) => ({
+        name: s.name,
+        pid: s.proc?.pid ?? 0,
+        running: s.proc !== null && !s.proc.killed,
+      })),
       isRestarting,
     });
   });
@@ -192,11 +260,27 @@ function createLauncherApp(token: string): Hono {
       return c.json({ error: "Unauthorized" }, 401);
     }
 
-    const result = await restartServer();
+    const result = await restartAllServers();
     return c.json({
       message: "Restart completed",
+      gitCheckout: result.gitCheckout,
       gitPull: result.gitPull,
+      bunInstall: result.bunInstall,
     });
+  });
+
+  app.post("/restart/:name", async (c) => {
+    if (!validateToken(c.req.header("Authorization"), token)) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const name = c.req.param("name");
+    const success = await restartServer(name);
+
+    if (success) {
+      return c.json({ message: `${name} restarted` });
+    }
+    return c.json({ error: `Server ${name} not found` }, 404);
   });
 
   return app;
@@ -222,23 +306,30 @@ export function registerServersCommand(program: Command): void {
 
       consola.info("========================================");
       consola.info("  ADAS Servers");
-      consola.info("  (API + SSE + Schedulers)");
+      consola.info("  (API Server + SSE Server + Schedulers)");
       consola.info("========================================");
       consola.info("");
 
       // Server プロセス設定を初期化
-      serverProcess = {
-        name: "servers-main",
-        proc: null,
-        command: ["bun", "run", "apps/cli/src/commands/servers-main.ts"],
-        env: {
-          SERVERS_API_PORT: String(apiPort),
-          SERVERS_SSE_PORT: String(ssePort),
+      servers = [
+        {
+          name: "api-server",
+          proc: null,
+          command: ["bun", "run", "apps/cli/src/commands/api-server-main.ts"],
+          env: { API_SERVER_PORT: String(apiPort) },
         },
-      };
+        {
+          name: "sse-server",
+          proc: null,
+          command: ["bun", "run", "apps/cli/src/commands/sse-server-main.ts"],
+          env: { SSE_SERVER_PORT: String(ssePort) },
+        },
+      ];
 
       // Server を起動
-      startServer(serverProcess);
+      for (const server of servers) {
+        startServer(server);
+      }
 
       // Launcher サーバーを起動
       const launcherApp = createLauncherApp(token);
@@ -248,18 +339,17 @@ export function registerServersCommand(program: Command): void {
       });
 
       consola.success(`Launcher running on http://localhost:${launcherPort}`);
-      consola.info("  POST /restart - Restart servers (git pull + restart)");
-      consola.info("  GET  /status  - Get process status");
+      consola.info("  POST /restart       - Restart all servers (git pull)");
+      consola.info("  POST /restart/:name - Restart specific server (api-server, sse-server)");
+      consola.info("  GET  /status        - Get process status");
       consola.info("");
-      consola.info("Press Ctrl+C to stop servers");
+      consola.info("Press Ctrl+C to stop all servers");
 
       // Graceful shutdown
       const shutdown = async () => {
         consola.info("Shutting down...");
         isRestarting = true;
-        if (serverProcess) {
-          await stopServer(serverProcess);
-        }
+        await Promise.all(servers.map(stopServer));
         process.exit(0);
       };
 

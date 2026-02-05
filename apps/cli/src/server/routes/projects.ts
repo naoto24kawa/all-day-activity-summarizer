@@ -115,16 +115,22 @@ export function createProjectsRouter(db: AdasDatabase) {
     const now = new Date().toISOString();
 
     // 後方互換性: githubOwner/githubRepo が指定されている場合は repositories に変換
-    const repositories = body.repositories ?? [];
+    const repositories: Array<{ githubOwner: string; githubRepo: string; localPath?: string }> =
+      body.repositories ?? [];
     if (body.githubOwner && body.githubRepo && repositories.length === 0) {
-      repositories.push({ githubOwner: body.githubOwner, githubRepo: body.githubRepo });
+      repositories.push({
+        githubOwner: body.githubOwner,
+        githubRepo: body.githubRepo,
+        localPath: body.path ?? undefined,
+      });
     }
 
     const project = db
       .insert(schema.projects)
       .values({
         name: body.name,
-        path: body.path ?? null,
+        // 後方互換性のため、最初のリポジトリのローカルパスを保存
+        path: repositories[0]?.localPath ?? body.path ?? null,
         // 後方互換性のため、最初のリポジトリを保存
         githubOwner: repositories[0]?.githubOwner ?? null,
         githubRepo: repositories[0]?.githubRepo ?? null,
@@ -141,6 +147,7 @@ export function createProjectsRouter(db: AdasDatabase) {
           projectId: project.id,
           githubOwner: repo.githubOwner,
           githubRepo: repo.githubRepo,
+          localPath: repo.localPath ?? null,
           createdAt: now,
         })
         .run();
@@ -211,6 +218,7 @@ export function createProjectsRouter(db: AdasDatabase) {
             projectId: id,
             githubOwner: repo.githubOwner,
             githubRepo: repo.githubRepo,
+            localPath: repo.localPath ?? null,
             createdAt: now,
           })
           .run();
@@ -219,6 +227,7 @@ export function createProjectsRouter(db: AdasDatabase) {
       // 後方互換性のため、最初のリポジトリを projects テーブルにも保存
       updates.githubOwner = body.repositories[0]?.githubOwner ?? null;
       updates.githubRepo = body.repositories[0]?.githubRepo ?? null;
+      updates.path = body.repositories[0]?.localPath ?? null;
     }
 
     const result = db
@@ -792,7 +801,11 @@ export function createProjectsRouter(db: AdasDatabase) {
       return c.json({ error: "Invalid id" }, 400);
     }
 
-    const body = await c.req.json<{ githubOwner: string; githubRepo: string }>();
+    const body = await c.req.json<{
+      githubOwner: string;
+      githubRepo: string;
+      localPath?: string;
+    }>();
 
     if (!body.githubOwner || !body.githubRepo) {
       return c.json({ error: "githubOwner and githubRepo are required" }, 400);
@@ -828,6 +841,7 @@ export function createProjectsRouter(db: AdasDatabase) {
         projectId: id,
         githubOwner: body.githubOwner,
         githubRepo: body.githubRepo,
+        localPath: body.localPath ?? null,
         createdAt: now,
       })
       .returning()

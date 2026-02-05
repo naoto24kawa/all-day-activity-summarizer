@@ -38,6 +38,7 @@ interface SlackFeedContextValue {
   setUsersPopoverOpen: (open: boolean) => void;
   editingUserId: string | null;
   userNameInput: string;
+  setUserNameInput: (value: string) => void;
   pendingUserAction: string | null;
   handleStartUserEdit: (userId: string, currentName: string | null) => void;
   handleCancelUserEdit: () => void;
@@ -138,6 +139,7 @@ export function SlackFeedProvider({ children }: { children: ReactNode }) {
     setUsersPopoverOpen,
     editingUserId,
     userNameInput,
+    setUserNameInput,
     pendingUserAction,
     handleStartUserEdit,
     handleCancelUserEdit,

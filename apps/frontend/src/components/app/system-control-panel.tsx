@@ -37,9 +37,10 @@ interface LauncherStatus {
   isRestarting: boolean;
 }
 
-interface GitPullResult {
-  success: boolean;
-  output: string;
+interface RestartResult {
+  gitCheckout?: { success: boolean; output: string };
+  gitPull: { success: boolean; output: string };
+  bunInstall?: { success: boolean; output: string };
 }
 
 export function SystemControlPanel() {
@@ -49,14 +50,14 @@ export function SystemControlPanel() {
   const [serverStatus, setServerStatus] = useState<LauncherStatus | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [restartingServer, setRestartingServer] = useState(false);
-  const [serverGitPull, setServerGitPull] = useState<GitPullResult | null>(null);
+  const [serverRestartResult, setServerRestartResult] = useState<RestartResult | null>(null);
 
   // Worker Launcher state (port 3998)
   const [workerStatus, setWorkerStatus] = useState<LauncherStatus | null>(null);
   const [workerError, setWorkerError] = useState<string | null>(null);
   const [restartingWorker, setRestartingWorker] = useState(false);
   const [restartingProcess, setRestartingProcess] = useState<string | null>(null);
-  const [workerGitPull, setWorkerGitPull] = useState<GitPullResult | null>(null);
+  const [workerRestartResult, setWorkerRestartResult] = useState<RestartResult | null>(null);
 
   const serverLauncherUrl = integrations?.launcher?.url ?? "http://localhost:3999";
   const serverLauncherToken = integrations?.launcher?.token ?? "";
@@ -111,48 +112,79 @@ export function SystemControlPanel() {
     return () => clearInterval(interval);
   }, [configLoading, serverLauncherUrl, workerLauncherUrl, fetchLauncherStatus]);
 
-  const handleRestartLauncher = async (
-    url: string,
-    token: string,
-    setRestarting: (v: boolean) => void,
-    setGitPull: (result: GitPullResult | null) => void,
-    setStatus: (status: LauncherStatus | null) => void,
-    setError: (error: string | null) => void,
-  ) => {
-    setRestarting(true);
-    setGitPull(null);
+  const handleRestartServers = async () => {
+    setRestartingServer(true);
+    setServerRestartResult(null);
 
     try {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
+      if (serverLauncherToken) {
+        headers["Authorization"] = `Bearer ${serverLauncherToken}`;
       }
 
-      const res = await fetch(`${url}/restart`, {
+      const res = await fetch(`${serverLauncherUrl}/restart`, {
         method: "POST",
         headers,
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(120000),
       });
 
       if (res.status === 401) {
-        setError("Unauthorized - check token");
+        setServerError("Unauthorized - check token");
         return;
       }
 
       if (res.ok) {
-        const data = (await res.json()) as { gitPull: GitPullResult };
-        setGitPull(data.gitPull);
+        const data = (await res.json()) as RestartResult;
+        setServerRestartResult(data);
         await new Promise((resolve) => setTimeout(resolve, 3000));
-        await fetchLauncherStatus(url, setStatus, setError);
+        await fetchLauncherStatus(serverLauncherUrl, setServerStatus, setServerError);
       } else {
-        setError("Failed to restart");
+        setServerError("Failed to restart");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to connect");
+      setServerError(err instanceof Error ? err.message : "Failed to connect");
     } finally {
-      setRestarting(false);
+      setRestartingServer(false);
+    }
+  };
+
+  const handleRestartWorkers = async () => {
+    setRestartingWorker(true);
+    setWorkerRestartResult(null);
+
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (workerLauncherToken) {
+        headers["Authorization"] = `Bearer ${workerLauncherToken}`;
+      }
+
+      const res = await fetch(`${workerLauncherUrl}/restart`, {
+        method: "POST",
+        headers,
+        signal: AbortSignal.timeout(120000),
+      });
+
+      if (res.status === 401) {
+        setWorkerError("Unauthorized - check token");
+        return;
+      }
+
+      if (res.ok) {
+        const data = (await res.json()) as RestartResult;
+        setWorkerRestartResult(data);
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await fetchLauncherStatus(workerLauncherUrl, setWorkerStatus, setWorkerError);
+      } else {
+        setWorkerError("Failed to restart");
+      }
+    } catch (err) {
+      setWorkerError(err instanceof Error ? err.message : "Failed to connect");
+    } finally {
+      setRestartingWorker(false);
     }
   };
 
@@ -270,16 +302,7 @@ export function SystemControlPanel() {
               </div>
 
               <Button
-                onClick={() =>
-                  handleRestartLauncher(
-                    serverLauncherUrl,
-                    serverLauncherToken,
-                    setRestartingServer,
-                    setServerGitPull,
-                    setServerStatus,
-                    setServerError,
-                  )
-                }
+                onClick={handleRestartServers}
                 disabled={restartingServer || serverStatus.isRestarting}
                 className="w-full"
                 variant={allServerRunning ? "outline" : "default"}
@@ -298,17 +321,54 @@ export function SystemControlPanel() {
                 )}
               </Button>
 
-              {serverGitPull && (
-                <div
-                  className={`rounded-md border p-2 text-xs ${serverGitPull.success ? "border-green-500/30 bg-green-500/10" : "border-red-500/30 bg-red-500/10"}`}
-                >
-                  <div className="flex items-center gap-1 font-medium">
-                    <GitBranch className="h-3 w-3" />
-                    git pull {serverGitPull.success ? "成功" : "失敗"}
+              {serverRestartResult && (
+                <div className="space-y-2">
+                  {/* git checkout */}
+                  {serverRestartResult.gitCheckout && (
+                    <div
+                      className={`rounded-md border p-2 text-xs ${serverRestartResult.gitCheckout.success ? "border-green-500/30 bg-green-500/10" : "border-red-500/30 bg-red-500/10"}`}
+                    >
+                      <div className="flex items-center gap-1 font-medium">
+                        <GitBranch className="h-3 w-3" />
+                        git checkout . {serverRestartResult.gitCheckout.success ? "成功" : "失敗"}
+                      </div>
+                      {serverRestartResult.gitCheckout.output && (
+                        <p className="mt-1 whitespace-pre-wrap font-mono text-muted-foreground">
+                          {serverRestartResult.gitCheckout.output}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* git pull */}
+                  <div
+                    className={`rounded-md border p-2 text-xs ${serverRestartResult.gitPull.success ? "border-green-500/30 bg-green-500/10" : "border-red-500/30 bg-red-500/10"}`}
+                  >
+                    <div className="flex items-center gap-1 font-medium">
+                      <GitBranch className="h-3 w-3" />
+                      git pull {serverRestartResult.gitPull.success ? "成功" : "失敗"}
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap font-mono text-muted-foreground">
+                      {serverRestartResult.gitPull.output || "Already up to date"}
+                    </p>
                   </div>
-                  <p className="mt-1 whitespace-pre-wrap font-mono text-muted-foreground">
-                    {serverGitPull.output || "Already up to date"}
-                  </p>
+
+                  {/* bun install */}
+                  {serverRestartResult.bunInstall && (
+                    <div
+                      className={`rounded-md border p-2 text-xs ${serverRestartResult.bunInstall.success ? "border-green-500/30 bg-green-500/10" : "border-red-500/30 bg-red-500/10"}`}
+                    >
+                      <div className="flex items-center gap-1 font-medium">
+                        <GitBranch className="h-3 w-3" />
+                        bun install {serverRestartResult.bunInstall.success ? "成功" : "失敗"}
+                      </div>
+                      {serverRestartResult.bunInstall.output && (
+                        <p className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap font-mono text-muted-foreground">
+                          {serverRestartResult.bunInstall.output}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -382,16 +442,7 @@ export function SystemControlPanel() {
               </div>
 
               <Button
-                onClick={() =>
-                  handleRestartLauncher(
-                    workerLauncherUrl,
-                    workerLauncherToken,
-                    setRestartingWorker,
-                    setWorkerGitPull,
-                    setWorkerStatus,
-                    setWorkerError,
-                  )
-                }
+                onClick={handleRestartWorkers}
                 disabled={restartingWorker || workerStatus.isRestarting}
                 className="w-full"
                 variant={allWorkerRunning ? "outline" : "default"}
@@ -410,17 +461,54 @@ export function SystemControlPanel() {
                 )}
               </Button>
 
-              {workerGitPull && (
-                <div
-                  className={`rounded-md border p-2 text-xs ${workerGitPull.success ? "border-green-500/30 bg-green-500/10" : "border-red-500/30 bg-red-500/10"}`}
-                >
-                  <div className="flex items-center gap-1 font-medium">
-                    <GitBranch className="h-3 w-3" />
-                    git pull {workerGitPull.success ? "成功" : "失敗"}
+              {workerRestartResult && (
+                <div className="space-y-2">
+                  {/* git checkout */}
+                  {workerRestartResult.gitCheckout && (
+                    <div
+                      className={`rounded-md border p-2 text-xs ${workerRestartResult.gitCheckout.success ? "border-green-500/30 bg-green-500/10" : "border-red-500/30 bg-red-500/10"}`}
+                    >
+                      <div className="flex items-center gap-1 font-medium">
+                        <GitBranch className="h-3 w-3" />
+                        git checkout . {workerRestartResult.gitCheckout.success ? "成功" : "失敗"}
+                      </div>
+                      {workerRestartResult.gitCheckout.output && (
+                        <p className="mt-1 whitespace-pre-wrap font-mono text-muted-foreground">
+                          {workerRestartResult.gitCheckout.output}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* git pull */}
+                  <div
+                    className={`rounded-md border p-2 text-xs ${workerRestartResult.gitPull.success ? "border-green-500/30 bg-green-500/10" : "border-red-500/30 bg-red-500/10"}`}
+                  >
+                    <div className="flex items-center gap-1 font-medium">
+                      <GitBranch className="h-3 w-3" />
+                      git pull {workerRestartResult.gitPull.success ? "成功" : "失敗"}
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap font-mono text-muted-foreground">
+                      {workerRestartResult.gitPull.output || "Already up to date"}
+                    </p>
                   </div>
-                  <p className="mt-1 whitespace-pre-wrap font-mono text-muted-foreground">
-                    {workerGitPull.output || "Already up to date"}
-                  </p>
+
+                  {/* bun install */}
+                  {workerRestartResult.bunInstall && (
+                    <div
+                      className={`rounded-md border p-2 text-xs ${workerRestartResult.bunInstall.success ? "border-green-500/30 bg-green-500/10" : "border-red-500/30 bg-red-500/10"}`}
+                    >
+                      <div className="flex items-center gap-1 font-medium">
+                        <GitBranch className="h-3 w-3" />
+                        bun install {workerRestartResult.bunInstall.success ? "成功" : "失敗"}
+                      </div>
+                      {workerRestartResult.bunInstall.output && (
+                        <p className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap font-mono text-muted-foreground">
+                          {workerRestartResult.bunInstall.output}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -429,7 +517,7 @@ export function SystemControlPanel() {
 
         {/* Help text */}
         <p className="text-center text-xs text-muted-foreground">
-          Restart: git pull → プロセス再起動
+          Restart: git checkout . → git pull → bun i → 再起動
         </p>
       </CardContent>
     </Card>

@@ -4025,24 +4025,40 @@ async function checkClaudeCodeCompletion(
   }
 
   try {
-    // プロジェクトの path を取得
+    // プロジェクトに紐づくリポジトリのローカルパスを取得
+    const repos = db
+      .select({ localPath: schema.projectRepositories.localPath })
+      .from(schema.projectRepositories)
+      .where(eq(schema.projectRepositories.projectId, task.projectId))
+      .all();
+
+    // ローカルパスを収集 (後方互換性のため projects.path も含める)
+    const localPaths: string[] = repos
+      .map((r) => r.localPath)
+      .filter((p): p is string => p !== null);
+
+    // 後方互換性: projects.path も確認
     const project = db
       .select({ path: schema.projects.path })
       .from(schema.projects)
       .where(eq(schema.projects.id, task.projectId))
       .get();
 
-    if (!project?.path) {
+    if (project?.path && !localPaths.includes(project.path)) {
+      localPaths.push(project.path);
+    }
+
+    if (localPaths.length === 0) {
       return null;
     }
 
-    // タスク承認日以降のセッションを取得
+    // タスク承認日以降のセッションを取得 (すべてのローカルパスから)
     const sessions = db
       .select()
       .from(schema.claudeCodeSessions)
       .where(
         and(
-          eq(schema.claudeCodeSessions.projectPath, project.path),
+          inArray(schema.claudeCodeSessions.projectPath, localPaths),
           task.acceptedAt ? gte(schema.claudeCodeSessions.startTime, task.acceptedAt) : undefined,
         ),
       )

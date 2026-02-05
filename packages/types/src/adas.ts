@@ -1125,6 +1125,7 @@ export interface ProjectRepository {
   projectId: number;
   githubOwner: string;
   githubRepo: string;
+  localPath: string | null;
   createdAt: string;
 }
 
@@ -1132,6 +1133,7 @@ export interface ProjectRepository {
 export interface Project {
   id: number;
   name: string;
+  /** @deprecated Use repositories[].localPath instead */
   path: string | null;
   /** @deprecated Use repositories instead */
   githubOwner: string | null;
@@ -1148,18 +1150,20 @@ export interface Project {
 /** プロジェクト作成リクエスト */
 export interface CreateProjectRequest {
   name: string;
+  /** @deprecated Use repositories[].localPath instead */
   path?: string;
   /** @deprecated Use repositories instead */
   githubOwner?: string;
   /** @deprecated Use repositories instead */
   githubRepo?: string;
   /** 紐づけるGitHubリポジトリ */
-  repositories?: Array<{ githubOwner: string; githubRepo: string }>;
+  repositories?: Array<{ githubOwner: string; githubRepo: string; localPath?: string }>;
 }
 
 /** プロジェクト更新リクエスト */
 export interface UpdateProjectRequest {
   name?: string;
+  /** @deprecated Use repositories[].localPath instead */
   path?: string | null;
   /** @deprecated Use repositories instead */
   githubOwner?: string | null;
@@ -1167,7 +1171,7 @@ export interface UpdateProjectRequest {
   githubRepo?: string | null;
   isActive?: boolean;
   /** 紐づけるGitHubリポジトリ (指定した場合、既存のリポジトリは置き換えられる) */
-  repositories?: Array<{ githubOwner: string; githubRepo: string }>;
+  repositories?: Array<{ githubOwner: string; githubRepo: string; localPath?: string }>;
 }
 
 /** プロジェクト自動検出レスポンス */

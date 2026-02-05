@@ -140,10 +140,7 @@ export function SlackFeedControls() {
                       {editingUserId === user.userId ? (
                         <Input
                           value={userNameInput}
-                          onChange={(e) => {
-                            // Context の setUserNameInput を使いたいが、直接は難しいので
-                            // handleStartUserEdit で初期化された値を使う
-                          }}
+                          onChange={(e) => setUserNameInput(e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleSaveUserName(user.userId);
                             if (e.key === "Escape") handleCancelUserEdit();

@@ -1,7 +1,7 @@
 /**
- * Servers Main Process
+ * API Server Main Process
  *
- * API サーバーと SSE サーバーを起動するメインプロセス
+ * API サーバー + Schedulers を起動するメインプロセス
  * servers コマンドから子プロセスとして起動される
  */
 
@@ -21,7 +21,7 @@ import { initSSENotifier } from "../utils/sse-notifier.js";
 import { startVocabularyExtractScheduler } from "../vocabulary/scheduler.js";
 
 // ファイルログを有効化
-setupFileLogger("servers");
+setupFileLogger("api-server");
 
 /**
  * AI Worker への接続確認を行う
@@ -105,25 +105,9 @@ async function main(): Promise<void> {
   const config = loadConfig();
 
   // 環境変数からポートを取得 (デフォルト値あり)
-  const apiPort = process.env.SERVERS_API_PORT
-    ? Number.parseInt(process.env.SERVERS_API_PORT, 10)
+  const apiPort = process.env.API_SERVER_PORT
+    ? Number.parseInt(process.env.API_SERVER_PORT, 10)
     : config.server.port;
-  const ssePort = process.env.SERVERS_SSE_PORT
-    ? Number.parseInt(process.env.SERVERS_SSE_PORT, 10)
-    : config.sseServer.port;
-
-  // SSE サーバー起動
-  consola.info(`Starting SSE server on http://localhost:${ssePort}`);
-  const { createSSEServerApp } = await import("@repo/sse-server");
-  const sseApp = createSSEServerApp();
-
-  Bun.serve({
-    fetch: sseApp.fetch,
-    port: ssePort,
-    idleTimeout: 0, // SSE 接続のためタイムアウト無効
-  });
-
-  consola.success(`SSE server running at http://localhost:${ssePort}`);
 
   // API サーバー起動
   const db = createDatabase(config.dbPath);
@@ -178,11 +162,11 @@ async function main(): Promise<void> {
   // Start AI Job scheduler
   startAIJobScheduler(db, config);
 
-  consola.success("All servers and schedulers started");
+  consola.success("API server and all schedulers started");
 
   // Graceful shutdown
   const shutdown = () => {
-    consola.info("Shutting down servers...");
+    consola.info("Shutting down API server...");
     process.exit(0);
   };
 
@@ -194,6 +178,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  consola.error("Failed to start servers:", error);
+  consola.error("Failed to start API server:", error);
   process.exit(1);
 });

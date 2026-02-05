@@ -18,6 +18,7 @@ const LOG_LEVEL_LABELS: Record<number, string> = {
 export type LogSource =
   | "serve"
   | "servers"
+  | "api-server"
   | "worker"
   | "ai-worker"
   | "local-worker"

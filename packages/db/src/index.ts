@@ -1655,5 +1655,13 @@ export function createDatabase(dbPath: string) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_gmail_messages_unique ON gmail_messages(message_id, thread_id);
   `);
 
+  // Migration: add explanation columns to learnings (for AI explanation feature)
+  addColumnIfNotExists(sqlite, "learnings", "explanation_status", "TEXT");
+  addColumnIfNotExists(sqlite, "learnings", "pending_explanation", "TEXT");
+  addColumnIfNotExists(sqlite, "learnings", "expanded_content", "TEXT");
+
+  // Migration: add local_path column to project_repositories
+  addColumnIfNotExists(sqlite, "project_repositories", "local_path", "TEXT");
+
   return db;
 }

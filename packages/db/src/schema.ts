@@ -712,7 +712,8 @@ export type NewProfileSuggestion = typeof profileSuggestions.$inferInsert;
 export const projects = sqliteTable("projects", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
-  path: text("path"), // Claude Code の projectPath
+  // @deprecated - Use project_repositories.localPath instead
+  path: text("path"),
   // @deprecated - Use project_repositories table instead
   githubOwner: text("github_owner"),
   // @deprecated - Use project_repositories table instead
@@ -739,6 +740,7 @@ export const projectRepositories = sqliteTable("project_repositories", {
   projectId: integer("project_id").notNull(),
   githubOwner: text("github_owner").notNull(),
   githubRepo: text("github_repo").notNull(),
+  localPath: text("local_path"), // リポジトリのローカルパス
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
