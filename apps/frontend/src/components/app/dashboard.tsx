@@ -10,6 +10,7 @@ import { AISettingsPanel } from "./ai-settings-panel";
 import { ClaudeChatPanel } from "./claude-chat-panel";
 import { ClaudeCodeFeed } from "./claude-code-feed";
 import { GitHubFeed } from "./github-feed";
+import { GitHubPriorityPanel } from "./github-priority-panel";
 import { HeaderControls } from "./header-controls";
 import { IntegrationsPanel } from "./integrations-panel";
 import { LearningsFeed } from "./learnings-feed";
@@ -19,6 +20,7 @@ import { NotionFeed } from "./notion-feed";
 import { ProfilePanel } from "./profile-panel";
 import { ServerLogsPanel } from "./server-logs-panel";
 import { SlackFeed } from "./slack-feed";
+import { SlackPriorityPanel } from "./slack-priority-panel";
 import { SubTabNav } from "./sub-tab-nav";
 import { SummaryView } from "./summary-view";
 import { SystemControlPanel } from "./system-control-panel";
@@ -251,10 +253,16 @@ export function Dashboard() {
                   </div>
                 </TabsContent>
                 <TabsContent value="slack" className="min-h-0 flex-1">
-                  <SlackFeed className="h-full" />
+                  <div className="grid h-full gap-4 lg:grid-cols-2">
+                    <SlackFeed className="h-full" />
+                    <SlackPriorityPanel className="h-full" />
+                  </div>
                 </TabsContent>
                 <TabsContent value="github" className="min-h-0 flex-1">
-                  <GitHubFeed className="h-full" />
+                  <div className="grid h-full gap-4 lg:grid-cols-2">
+                    <GitHubFeed className="h-full" />
+                    <GitHubPriorityPanel className="h-full" />
+                  </div>
                 </TabsContent>
                 <TabsContent value="notion" className="min-h-0 flex-1">
                   <NotionFeed className="h-full" />

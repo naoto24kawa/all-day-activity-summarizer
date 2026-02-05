@@ -146,7 +146,46 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
       );
     }
 
-    // Insert message
+    // Check for existing message (upsert)
+    const existing = db
+      .select()
+      .from(schema.slackMessages)
+      .where(
+        and(
+          eq(schema.slackMessages.channelId, body.channelId!),
+          eq(schema.slackMessages.messageTs, body.messageTs!),
+        ),
+      )
+      .get();
+
+    if (existing) {
+      // Update existing message
+      db.update(schema.slackMessages)
+        .set({
+          date: body.date!,
+          userId: body.userId!,
+          messageType: body.messageType as "mention" | "channel" | "dm" | "keyword",
+          text: body.text!,
+          channelName: body.channelName ?? existing.channelName,
+          userName: body.userName ?? existing.userName,
+          threadTs: body.threadTs ?? existing.threadTs,
+          permalink: body.permalink ?? existing.permalink,
+          priority: body.priority ?? existing.priority,
+          projectId: body.projectId ?? existing.projectId,
+        })
+        .where(eq(schema.slackMessages.id, existing.id))
+        .run();
+
+      const updated = db
+        .select()
+        .from(schema.slackMessages)
+        .where(eq(schema.slackMessages.id, existing.id))
+        .get();
+
+      return c.json({ ...updated, updated: true }, 200);
+    }
+
+    // Insert new message
     const message: NewSlackMessage = {
       date: body.date!,
       messageTs: body.messageTs!,
@@ -165,16 +204,11 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
 
     const insertedId = insertMessageIfNotExists(db, message);
 
-    if (insertedId === null) {
-      // Already exists
-      return c.json({ error: "Message already exists", duplicate: true }, 409);
-    }
-
     // Fetch the inserted message
     const inserted = db
       .select()
       .from(schema.slackMessages)
-      .where(eq(schema.slackMessages.id, insertedId))
+      .where(eq(schema.slackMessages.id, insertedId!))
       .get();
 
     return c.json(inserted, 201);
@@ -210,7 +244,7 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
     }
 
     if (body.messages.length === 0) {
-      return c.json({ inserted: 0, duplicates: 0, errors: [] });
+      return c.json({ inserted: 0, updated: 0, errors: [] });
     }
 
     if (body.messages.length > 100) {
@@ -222,7 +256,7 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
 
     const results = {
       inserted: 0,
-      duplicates: 0,
+      updated: 0,
       errors: [] as { index: number; error: string }[],
     };
 
@@ -246,27 +280,60 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
         continue;
       }
 
-      const message: NewSlackMessage = {
-        date: msg.date!,
-        messageTs: msg.messageTs!,
-        channelId: msg.channelId!,
-        userId: msg.userId!,
-        messageType: msg.messageType as "mention" | "channel" | "dm" | "keyword",
-        text: msg.text!,
-        channelName: msg.channelName ?? null,
-        userName: msg.userName ?? null,
-        threadTs: msg.threadTs ?? null,
-        permalink: msg.permalink ?? null,
-        isRead: msg.isRead ?? false,
-        priority: msg.priority ?? null,
-        projectId: msg.projectId ?? null,
-      };
+      // Check for existing (upsert)
+      const existing = db
+        .select()
+        .from(schema.slackMessages)
+        .where(
+          and(
+            eq(schema.slackMessages.channelId, msg.channelId!),
+            eq(schema.slackMessages.messageTs, msg.messageTs!),
+          ),
+        )
+        .get();
 
-      const insertedId = insertMessageIfNotExists(db, message);
-
-      if (insertedId === null) {
-        results.duplicates++;
+      if (existing) {
+        // Update existing
+        db.update(schema.slackMessages)
+          .set({
+            date: msg.date!,
+            userId: msg.userId!,
+            messageType: msg.messageType as "mention" | "channel" | "dm" | "keyword",
+            text: msg.text!,
+            channelName: msg.channelName ?? existing.channelName,
+            userName: msg.userName ?? existing.userName,
+            threadTs: msg.threadTs ?? existing.threadTs,
+            permalink: msg.permalink ?? existing.permalink,
+            priority: msg.priority ?? existing.priority,
+            projectId: msg.projectId ?? existing.projectId,
+          })
+          .where(eq(schema.slackMessages.id, existing.id))
+          .run();
+        results.updated++;
       } else {
+        // Insert new
+        const message: NewSlackMessage = {
+          date: msg.date!,
+          messageTs: msg.messageTs!,
+          channelId: msg.channelId!,
+          userId: msg.userId!,
+          messageType: msg.messageType as "mention" | "channel" | "dm" | "keyword",
+          text: msg.text!,
+          channelName: msg.channelName ?? null,
+          userName: msg.userName ?? null,
+          threadTs: msg.threadTs ?? null,
+          permalink: msg.permalink ?? null,
+          isRead: msg.isRead ?? false,
+          priority: msg.priority ?? null,
+          projectId: msg.projectId ?? null,
+        };
+
+        db.insert(schema.slackMessages)
+          .values({
+            ...message,
+            createdAt: new Date().toISOString(),
+          })
+          .run();
         results.inserted++;
       }
     }

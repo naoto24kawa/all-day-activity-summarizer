@@ -3,8 +3,8 @@
  *
  * Slack 関連の 4 ツール:
  * - list_slack_messages: メッセージ一覧取得
- * - create_slack_message: メッセージ作成
- * - create_slack_messages_bulk: メッセージ一括作成
+ * - upsert_slack_message: メッセージ登録/更新
+ * - upsert_slack_messages_bulk: メッセージ一括登録/更新
  * - get_slack_unread_count: 未読カウント取得
  */
 
@@ -23,7 +23,7 @@ interface UnreadCounts {
 
 interface BulkResult {
   inserted: number;
-  duplicates: number;
+  updated: number;
   errors: { index: number; error: string }[];
 }
 
@@ -121,11 +121,11 @@ export function registerSlackTools(server: McpServer): void {
   );
 
   /**
-   * create_slack_message - Slack メッセージ作成
+   * upsert_slack_message - Slack メッセージ登録/更新
    */
   server.tool(
-    "create_slack_message",
-    "Slack メッセージを登録する (外部からのデータ取り込み用)",
+    "upsert_slack_message",
+    "Slack メッセージを登録/更新する (外部からのデータ取り込み用)。同じ channelId+messageTs が存在する場合は更新",
     {
       date: z.string().describe("日付 (YYYY-MM-DD)"),
       messageTs: z.string().describe("メッセージのタイムスタンプ (Slack の ts)"),
@@ -172,34 +172,24 @@ export function registerSlackTools(server: McpServer): void {
         isRead: false,
       });
 
-      if (!response.ok) {
-        // 重複の場合
-        if (response.status === 409) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "このメッセージは既に登録されています。",
-              },
-            ],
-          };
-        }
+      if (!response.ok || !response.data) {
         return {
           content: [
             {
               type: "text" as const,
-              text: `Slack メッセージ作成エラー: ${response.error}`,
+              text: `Slack メッセージ登録エラー: ${response.error}`,
             },
           ],
         };
       }
 
-      const message = response.data!;
+      const message = response.data as SlackMessage & { updated?: boolean };
+      const action = message.updated ? "更新" : "登録";
       return {
         content: [
           {
             type: "text" as const,
-            text: `Slack メッセージを登録しました:\n- ID: #${message.id}\n- チャンネル: ${message.channelName || message.channelId}\n- 送信者: ${message.userName || message.userId}\n- タイプ: ${message.messageType}`,
+            text: `Slack メッセージを${action}しました:\n- ID: #${message.id}\n- チャンネル: ${message.channelName || message.channelId}\n- 送信者: ${message.userName || message.userId}\n- タイプ: ${message.messageType}`,
           },
         ],
       };
@@ -207,11 +197,11 @@ export function registerSlackTools(server: McpServer): void {
   );
 
   /**
-   * create_slack_messages_bulk - Slack メッセージ一括作成
+   * upsert_slack_messages_bulk - Slack メッセージ一括登録/更新
    */
   server.tool(
-    "create_slack_messages_bulk",
-    "複数の Slack メッセージを一括登録する (最大100件)",
+    "upsert_slack_messages_bulk",
+    "複数の Slack メッセージを一括登録/更新する (最大100件)。同じ channelId+messageTs が存在する場合は更新",
     {
       messages: z.array(slackMessageSchema).describe("登録するメッセージの配列 (最大100件)"),
     },
@@ -254,7 +244,7 @@ export function registerSlackTools(server: McpServer): void {
       }
 
       const result = response.data;
-      let text = `Slack メッセージ一括登録結果:\n- 登録成功: ${result.inserted}件\n- 重複スキップ: ${result.duplicates}件`;
+      let text = `Slack メッセージ一括登録結果:\n- 新規登録: ${result.inserted}件\n- 更新: ${result.updated}件`;
 
       if (result.errors.length > 0) {
         text += `\n- エラー: ${result.errors.length}件`;
