@@ -26,9 +26,28 @@ function toJstDateString(isoString: string): string {
 
 /**
  * Find projectId by repoOwner/repoName match
+ * 1. project_repositories テーブルから検索 (優先)
+ * 2. projects テーブルから検索 (後方互換性)
  */
 function findProjectIdByRepo(db: AdasDatabase, repoOwner: string, repoName: string): number | null {
-  const project = db
+  // 1. project_repositories から検索
+  const repo = db
+    .select({ projectId: schema.projectRepositories.projectId })
+    .from(schema.projectRepositories)
+    .where(
+      and(
+        eq(schema.projectRepositories.githubOwner, repoOwner),
+        eq(schema.projectRepositories.githubRepo, repoName),
+      ),
+    )
+    .get();
+
+  if (repo) {
+    return repo.projectId;
+  }
+
+  // 2. 後方互換性: projects テーブルからも検索
+  const legacyProject = db
     .select()
     .from(schema.projects)
     .where(
@@ -40,7 +59,8 @@ function findProjectIdByRepo(db: AdasDatabase, repoOwner: string, repoName: stri
       ),
     )
     .get();
-  return project?.id ?? null;
+
+  return legacyProject?.id ?? null;
 }
 
 /**

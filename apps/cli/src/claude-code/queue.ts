@@ -5,6 +5,7 @@
 import type { AdasDatabase, ClaudeCodeQueueJob } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { moveToDLQ } from "../dlq/index.js";
 
 export type ClaudeCodeJobType = "fetch_sessions";
 
@@ -175,6 +176,9 @@ export function markClaudeCodeJobFailed(
       })
       .where(eq(schema.claudeCodeQueue.id, jobId))
       .run();
+
+    // DLQ に移動
+    moveToDLQ(db, "claude_code", jobId, job.jobType, job.projectPath, errorMessage, newRetryCount);
   }
 }
 

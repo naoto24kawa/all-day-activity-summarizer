@@ -101,11 +101,16 @@ async function collectFeedbackData(db: AdasDatabase, target: PromptTarget): Prom
     }
   } else if (target === "task-extract") {
     // task-extract は tasks テーブルの承認/却下を使用
+    // Slack, GitHub Comments, Memo からのタスクを対象とする
+
+    // 承認済みタスクを取得
     const acceptedTasks = db
       .select({
         id: schema.tasks.id,
         title: schema.tasks.title,
         slackMessageId: schema.tasks.slackMessageId,
+        githubCommentId: schema.tasks.githubCommentId,
+        memoId: schema.tasks.memoId,
       })
       .from(schema.tasks)
       .where(
@@ -113,16 +118,20 @@ async function collectFeedbackData(db: AdasDatabase, target: PromptTarget): Prom
           eq(schema.tasks.status, "accepted"),
           isNotNull(schema.tasks.acceptedAt),
           gte(schema.tasks.acceptedAt, sinceDate),
-          isNotNull(schema.tasks.slackMessageId),
         ),
       )
-      .all();
+      .all()
+      // Slack, GitHub Comment, Memo のいずれかからのタスクのみ
+      .filter((t) => t.slackMessageId !== null || t.githubCommentId !== null || t.memoId !== null);
 
+    // 却下済みタスクを取得
     const rejectedTasks = db
       .select({
         id: schema.tasks.id,
         title: schema.tasks.title,
         slackMessageId: schema.tasks.slackMessageId,
+        githubCommentId: schema.tasks.githubCommentId,
+        memoId: schema.tasks.memoId,
         rejectReason: schema.tasks.rejectReason,
       })
       .from(schema.tasks)
@@ -131,10 +140,10 @@ async function collectFeedbackData(db: AdasDatabase, target: PromptTarget): Prom
           eq(schema.tasks.status, "rejected"),
           isNotNull(schema.tasks.rejectedAt),
           gte(schema.tasks.rejectedAt, sinceDate),
-          isNotNull(schema.tasks.slackMessageId),
         ),
       )
-      .all();
+      .all()
+      .filter((t) => t.slackMessageId !== null || t.githubCommentId !== null || t.memoId !== null);
 
     // Slack メッセージを取得
     const slackMessageIds = [
@@ -151,23 +160,73 @@ async function collectFeedbackData(db: AdasDatabase, target: PromptTarget): Prom
             .all()
         : [];
 
-    const messageMap = new Map(slackMessages.map((m) => [m.id, m.text]));
+    const slackMessageMap = new Map(slackMessages.map((m) => [m.id, m.text]));
 
+    // GitHub Comments を取得
+    const githubCommentIds = [
+      ...acceptedTasks.map((t) => t.githubCommentId),
+      ...rejectedTasks.map((t) => t.githubCommentId),
+    ].filter((id): id is number => id !== null);
+
+    const githubComments =
+      githubCommentIds.length > 0
+        ? db
+            .select({ id: schema.githubComments.id, body: schema.githubComments.body })
+            .from(schema.githubComments)
+            .where(inArray(schema.githubComments.id, githubCommentIds))
+            .all()
+        : [];
+
+    const githubCommentMap = new Map(githubComments.map((c) => [c.id, c.body]));
+
+    // Memos を取得
+    const memoIds = [
+      ...acceptedTasks.map((t) => t.memoId),
+      ...rejectedTasks.map((t) => t.memoId),
+    ].filter((id): id is number => id !== null);
+
+    const memos =
+      memoIds.length > 0
+        ? db
+            .select({ id: schema.memos.id, content: schema.memos.content })
+            .from(schema.memos)
+            .where(inArray(schema.memos.id, memoIds))
+            .all()
+        : [];
+
+    const memoMap = new Map(memos.map((m) => [m.id, m.content]));
+
+    // 承認タスクから Good フィードバックを構築
     for (const task of acceptedTasks) {
-      const message = task.slackMessageId ? messageMap.get(task.slackMessageId) : null;
-      if (message) {
+      let input: string | null = null;
+      if (task.slackMessageId) {
+        input = slackMessageMap.get(task.slackMessageId) ?? null;
+      } else if (task.githubCommentId) {
+        input = githubCommentMap.get(task.githubCommentId) ?? null;
+      } else if (task.memoId) {
+        input = memoMap.get(task.memoId) ?? null;
+      }
+      if (input) {
         goodFeedbacks.push({
-          input: message.slice(0, 200),
+          input: input.slice(0, 200),
           output: task.title,
         });
       }
     }
 
+    // 却下タスクから Bad フィードバックを構築
     for (const task of rejectedTasks) {
-      const message = task.slackMessageId ? messageMap.get(task.slackMessageId) : null;
-      if (message) {
+      let input: string | null = null;
+      if (task.slackMessageId) {
+        input = slackMessageMap.get(task.slackMessageId) ?? null;
+      } else if (task.githubCommentId) {
+        input = githubCommentMap.get(task.githubCommentId) ?? null;
+      } else if (task.memoId) {
+        input = memoMap.get(task.memoId) ?? null;
+      }
+      if (input) {
         badFeedbacks.push({
-          input: message.slice(0, 200),
+          input: input.slice(0, 200),
           output: task.title,
           reason: task.rejectReason ?? undefined,
         });

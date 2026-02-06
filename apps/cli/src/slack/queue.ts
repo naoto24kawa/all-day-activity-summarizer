@@ -5,6 +5,7 @@
 import type { AdasDatabase, SlackQueueJob } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { moveToDLQ } from "../dlq/index.js";
 
 export type SlackJobType = "fetch_mentions" | "fetch_channel" | "fetch_dm" | "fetch_keywords";
 
@@ -172,6 +173,9 @@ export function markSlackJobFailed(db: AdasDatabase, jobId: number, errorMessage
       })
       .where(eq(schema.slackQueue.id, jobId))
       .run();
+
+    // DLQ に移動
+    moveToDLQ(db, "slack", jobId, job.jobType, job.channelId, errorMessage, newRetryCount);
   }
 }
 

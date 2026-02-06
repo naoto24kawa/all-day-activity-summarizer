@@ -4,7 +4,7 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { type NewNotionItem, notionDatabases, notionItems } from "@repo/db/schema";
-import type { NotionItem, NotionParentType, NotionUnreadCounts } from "@repo/types";
+import type { NotionParentType, NotionUnreadCounts } from "@repo/types";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 
@@ -359,7 +359,7 @@ export function createNotionItemsRouter(db: AdasDatabase) {
       .update(notionItems)
       .set({ isRead: true })
       .where(and(...conditions))
-      .run();
+      .run() as unknown as { changes: number };
 
     return c.json({ updated: result.changes });
   });

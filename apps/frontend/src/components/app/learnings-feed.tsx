@@ -638,7 +638,10 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
                   <span className="ml-1">{sourceInfo?.label || learning.sourceType}</span>
                 </Badge>
                 {projectName && (
-                  <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200 shrink-0">
+                  <Badge
+                    variant="outline"
+                    className="text-xs bg-blue-100 border-blue-300 text-blue-800 dark:bg-blue-950 dark:border-blue-700 dark:text-blue-200 shrink-0"
+                  >
                     <FolderGit2 className="mr-1 h-2 w-2" />
                     {projectName}
                   </Badge>
@@ -740,7 +743,11 @@ function LearningItem({ learning, projects, onEdit, onDelete }: LearningItemProp
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-1 pt-2 border-t">
               {tags.map((tag) => (
-                <Badge key={tag} variant="secondary" className="text-xs">
+                <Badge
+                  key={tag}
+                  variant="secondary"
+                  className="text-xs bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100"
+                >
                   <Tag className="mr-1 h-2 w-2" />
                   {tag}
                 </Badge>

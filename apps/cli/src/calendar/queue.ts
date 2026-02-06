@@ -5,6 +5,7 @@
 import type { AdasDatabase, CalendarQueueJob } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { moveToDLQ } from "../dlq/index.js";
 
 export type CalendarJobType = "fetch_events";
 
@@ -164,6 +165,9 @@ export function markCalendarJobFailed(db: AdasDatabase, jobId: number, errorMess
       })
       .where(eq(schema.calendarQueue.id, jobId))
       .run();
+
+    // DLQ に移動
+    moveToDLQ(db, "calendar", jobId, job.jobType, job.calendarId, errorMessage, newRetryCount);
   }
 }
 

@@ -57,7 +57,7 @@ export async function handleSlackPriority(
   config: AdasConfig,
   params: Record<string, unknown>,
 ): Promise<JobResult> {
-  const { messageId } = params as SlackPriorityParams;
+  const { messageId } = params as unknown as SlackPriorityParams;
 
   // メッセージを取得
   const message = db

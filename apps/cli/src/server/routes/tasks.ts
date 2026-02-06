@@ -1211,7 +1211,7 @@ export function createTasksRouter(db: AdasDatabase) {
         .where(
           and(
             eq(schema.slackMessages.date, date),
-            inArray(schema.slackMessages.messageType, ["mention", "dm"]),
+            inArray(schema.slackMessages.messageType, ["mention", "dm", "channel", "keyword"]),
           ),
         )
         .all();
@@ -3277,6 +3277,111 @@ export function createTasksRouter(db: AdasDatabase) {
     }
   });
 
+  // ===== フェーズ 3-5: 新しいタスク抽出エンドポイント =====
+
+  /**
+   * POST /api/tasks/extract-transcription
+   *
+   * 音声セグメントからタスクを抽出 (同期版)
+   * Body: { date?: string, aggregationType?: "time_window" | "speaker" }
+   */
+  router.post("/extract-transcription", async (c) => {
+    const body = await c.req.json<{ date?: string; aggregationType?: string }>();
+
+    const jobId = enqueueJob(db, "task-extract-transcription", {
+      date: body.date,
+      aggregationType: body.aggregationType,
+    });
+
+    // 同期版として、ジョブが完了するまで待機
+    return c.json({ jobId, message: "Job enqueued. Use /api/ai-jobs/:id for status" }, 202);
+  });
+
+  /**
+   * POST /api/tasks/extract-transcription/async
+   *
+   * 音声セグメントからタスクを抽出 (非同期版)
+   * Body: { date?: string, aggregationType?: "time_window" | "speaker" }
+   */
+  router.post("/extract-transcription/async", async (c) => {
+    const body = await c.req.json<{ date?: string; aggregationType?: string }>();
+
+    const jobId = enqueueJob(db, "task-extract-transcription", {
+      date: body.date,
+      aggregationType: body.aggregationType,
+    });
+
+    return c.json({ jobId, status: "pending" }, 202);
+  });
+
+  /**
+   * POST /api/tasks/extract-claude-code
+   *
+   * Claude Code セッションからタスクを抽出 (同期版)
+   * Body: { date?: string, confidenceThreshold?: number }
+   */
+  router.post("/extract-claude-code", async (c) => {
+    const body = await c.req.json<{ date?: string; confidenceThreshold?: number }>();
+
+    const jobId = enqueueJob(db, "task-extract-claude-code", {
+      date: body.date,
+      confidenceThreshold: body.confidenceThreshold,
+    });
+
+    return c.json({ jobId, message: "Job enqueued. Use /api/ai-jobs/:id for status" }, 202);
+  });
+
+  /**
+   * POST /api/tasks/extract-claude-code/async
+   *
+   * Claude Code セッションからタスクを抽出 (非同期版)
+   * Body: { date?: string, confidenceThreshold?: number }
+   */
+  router.post("/extract-claude-code/async", async (c) => {
+    const body = await c.req.json<{ date?: string; confidenceThreshold?: number }>();
+
+    const jobId = enqueueJob(db, "task-extract-claude-code", {
+      date: body.date,
+      confidenceThreshold: body.confidenceThreshold,
+    });
+
+    return c.json({ jobId, status: "pending" }, 202);
+  });
+
+  /**
+   * POST /api/tasks/extract-notion
+   *
+   * Notion アイテムからタスクを抽出 (同期版)
+   * Body: { date?: string, databaseId?: string }
+   */
+  router.post("/extract-notion", async (c) => {
+    const body = await c.req.json<{ date?: string; databaseId?: string }>();
+
+    const jobId = enqueueJob(db, "task-extract-notion", {
+      date: body.date,
+      databaseId: body.databaseId,
+    });
+
+    return c.json({ jobId, message: "Job enqueued. Use /api/ai-jobs/:id for status" }, 202);
+  });
+
+  /**
+   * POST /api/tasks/extract-notion/async
+   *
+   * Notion アイテムからタスクを抽出 (非同期版)
+   * Body: { date?: string, databaseId?: string }
+   */
+  router.post("/extract-notion/async", async (c) => {
+    const body = await c.req.json<{ date?: string; databaseId?: string }>();
+
+    const jobId = enqueueJob(db, "task-extract-notion", {
+      date: body.date,
+      databaseId: body.databaseId,
+    });
+
+    return c.json({ jobId, status: "pending" }, 202);
+  });
+
   return router;
 }
 
@@ -3957,6 +4062,7 @@ async function checkGitHubCompletion(
     // 完了判定
     if (state.state === "merged") {
       return {
+        completed: true,
         reason: `PR ${repo}#${number} がマージされました`,
         confidence: 1.0,
         evidence: `Merged at: ${state.mergedAt}`,
@@ -3965,6 +4071,7 @@ async function checkGitHubCompletion(
 
     if (state.state === "closed") {
       return {
+        completed: true,
         reason: `${repo}#${number} がクローズされました`,
         confidence: 0.9,
         evidence: `Closed at: ${state.closedAt}`,
@@ -4114,6 +4221,7 @@ async function checkClaudeCodeCompletion(
 
     if (result?.completed) {
       return {
+        completed: true,
         reason: result.reason,
         confidence: result.confidence,
         evidence: result.evidence,

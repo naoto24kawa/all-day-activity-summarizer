@@ -5,16 +5,8 @@
  */
 
 import type { ClaudeCodeMessage, ClaudeCodeSession } from "@repo/types";
-import {
-  ChevronDown,
-  Code,
-  FolderGit2,
-  MessageSquare,
-  RefreshCw,
-  Settings,
-  Wrench,
-} from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronDown, Code, FolderGit2, MessageSquare, Settings, Wrench } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -50,7 +42,7 @@ const DEFAULT_SESSION_LIMIT = 3;
 export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
   const date = getTodayDateString();
   const { integrations, loading: configLoading } = useConfig();
-  const { sessions, loading, error, syncSessions, syncing } = useClaudeCodeSessions();
+  const { sessions, loading, error, syncSessions } = useClaudeCodeSessions();
   const { stats } = useClaudeCodeStats(date);
   const { projects } = useProjects();
   const { updatePathProject, getPathProjectId } = useClaudeCodePaths();
@@ -85,6 +77,20 @@ export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
       return next;
     });
   };
+
+  // feeds-refresh (統一更新) と claude-refresh (個別) をリッスン
+  const handleRefresh = useCallback(() => {
+    syncSessions();
+  }, [syncSessions]);
+
+  useEffect(() => {
+    window.addEventListener("feeds-refresh", handleRefresh);
+    window.addEventListener("claude-refresh", handleRefresh);
+    return () => {
+      window.removeEventListener("feeds-refresh", handleRefresh);
+      window.removeEventListener("claude-refresh", handleRefresh);
+    };
+  }, [handleRefresh]);
 
   // Group sessions by project (moved before conditional returns for hooks rules)
   const sessionsByProject = useMemo(() => {
@@ -151,23 +157,11 @@ export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
 
   return (
     <Card className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className ?? ""}`}>
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between">
-        <div className="flex items-center gap-2">
-          {stats.totalSessions > 0 && (
-            <Badge variant="secondary">{stats.totalSessions} sessions</Badge>
-          )}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={syncSessions}
-          disabled={syncing}
-          title="Sync sessions"
-        >
-          <RefreshCw className={`mr-1 h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
-          {syncing ? "Syncing..." : "Sync"}
-        </Button>
-      </CardHeader>
+      {stats.totalSessions > 0 && (
+        <CardHeader className="shrink-0 py-3">
+          <Badge variant="secondary">{stats.totalSessions} sessions</Badge>
+        </CardHeader>
+      )}
       <CardContent className="min-h-0 flex-1 overflow-auto">
         {sessions.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Claude Code sessions for this date.</p>

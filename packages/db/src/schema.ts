@@ -470,6 +470,8 @@ export const tasks = sqliteTable("tasks", {
   slackMessageId: integer("slack_message_id"), // FK to slack_messages (nullable for manual tasks)
   githubCommentId: integer("github_comment_id"), // FK to github_comments
   memoId: integer("memo_id"), // FK to memos
+  transcriptionSegmentId: integer("transcription_segment_id"), // FK to transcription_segments (for transcription type)
+  claudeCodeSessionId: integer("claude_code_session_id"), // FK to claude_code_sessions (for claude-code type)
   promptImprovementId: integer("prompt_improvement_id"), // FK to prompt_improvements (for prompt-improvement type)
   profileSuggestionId: integer("profile_suggestion_id"), // FK to profile_suggestions (for profile-suggestion type)
   vocabularySuggestionId: integer("vocabulary_suggestion_id"), // FK to vocabulary_suggestions (for vocabulary type)
@@ -490,6 +492,8 @@ export const tasks = sqliteTable("tasks", {
       "server-log",
       "notion",
       "ai-processing-log",
+      "transcription",
+      "claude-code",
     ],
   })
     .notNull()
@@ -626,6 +630,7 @@ export const extractionLogs = sqliteTable("extraction_logs", {
       "git-scan",
       "server-log",
       "ai-processing-log",
+      "notion",
     ],
   }).notNull(), // ソースの種類
   sourceId: text("source_id").notNull(), // 各ソースの ID (message_id, session_id など)
@@ -798,6 +803,8 @@ export const aiProcessingLogs = sqliteTable("ai_processing_logs", {
       "analyze-profile",
       "suggest-tags",
       "match-channels",
+      "slack-priority",
+      "generate-readings",
     ],
   }).notNull(),
   status: text("status", { enum: ["success", "error"] }).notNull(),
@@ -847,12 +854,16 @@ export const aiJobQueue = sqliteTable("ai_job_queue", {
       "task-extract-github",
       "task-extract-github-comment",
       "task-extract-memo",
+      "task-extract-transcription",
+      "task-extract-claude-code",
+      "task-extract-notion",
       "task-elaborate",
       "task-check-completion",
       "task-check-completion-individual",
       "learning-extract",
       "learning-explain",
       "vocabulary-extract",
+      "vocabulary-generate-readings",
       "profile-analyze",
       "summarize-times",
       "summarize-daily",
@@ -1062,6 +1073,33 @@ export const gmailMessages = sqliteTable("gmail_messages", {
 
 export type GmailMessage = typeof gmailMessages.$inferSelect;
 export type NewGmailMessage = typeof gmailMessages.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Dead Letter Queue (最終失敗ジョブの統一管理)
+// ---------------------------------------------------------------------------
+
+export const deadLetterQueue = sqliteTable("dead_letter_queue", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  originalQueue: text("original_queue", {
+    enum: ["ai_job", "slack", "github", "claude_code", "notion", "calendar", "summary"],
+  }).notNull(),
+  originalId: integer("original_id").notNull(),
+  jobType: text("job_type").notNull(),
+  params: text("params"), // JSON (nullable)
+  errorMessage: text("error_message").notNull(),
+  retryCount: integer("retry_count").notNull(),
+  failedAt: text("failed_at").notNull(),
+  retriedAt: text("retried_at"), // 手動再実行日時
+  status: text("status", { enum: ["dead", "retried", "ignored"] })
+    .notNull()
+    .default("dead"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export type DeadLetterQueueJob = typeof deadLetterQueue.$inferSelect;
+export type NewDeadLetterQueueJob = typeof deadLetterQueue.$inferInsert;
 
 // ---------------------------------------------------------------------------
 // Notion (re-export from notion-schema.ts)

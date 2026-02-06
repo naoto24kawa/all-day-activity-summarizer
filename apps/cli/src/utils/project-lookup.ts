@@ -10,6 +10,10 @@ import { and, eq, isNotNull } from "drizzle-orm";
 
 /**
  * プロジェクトを検索または作成 (GitHub 用)
+ * 1. project_repositories テーブルから検索 (優先)
+ * 2. projects テーブルから検索 (後方互換性)
+ * 3. 存在しなければ両テーブルに作成
+ *
  * excludedAt が設定されている場合は新規作成しない
  */
 export function findOrCreateProjectByGitHub(
@@ -17,8 +21,35 @@ export function findOrCreateProjectByGitHub(
   repoOwner: string,
   repoName: string,
 ): number | null {
-  // 既存プロジェクトを検索
-  const existing = db
+  // 1. project_repositories から検索 (優先)
+  const repo = db
+    .select({
+      projectId: schema.projectRepositories.projectId,
+    })
+    .from(schema.projectRepositories)
+    .where(
+      and(
+        eq(schema.projectRepositories.githubOwner, repoOwner),
+        eq(schema.projectRepositories.githubRepo, repoName),
+      ),
+    )
+    .get();
+
+  if (repo) {
+    // プロジェクトの excludedAt をチェック
+    const project = db
+      .select()
+      .from(schema.projects)
+      .where(eq(schema.projects.id, repo.projectId))
+      .get();
+    if (project?.excludedAt) {
+      return null;
+    }
+    return repo.projectId;
+  }
+
+  // 2. 後方互換性: projects テーブルからも検索
+  const existingLegacy = db
     .select()
     .from(schema.projects)
     .where(
@@ -26,15 +57,15 @@ export function findOrCreateProjectByGitHub(
     )
     .get();
 
-  if (existing) {
+  if (existingLegacy) {
     // excludedAt が設定されている場合は null を返す (作成しない)
-    if (existing.excludedAt) {
+    if (existingLegacy.excludedAt) {
       return null;
     }
-    return existing.id;
+    return existingLegacy.id;
   }
 
-  // 存在しなければ作成
+  // 3. 存在しなければ作成 (両テーブルに追加)
   const now = new Date().toISOString();
   const project = db
     .insert(schema.projects)
@@ -48,6 +79,17 @@ export function findOrCreateProjectByGitHub(
     })
     .returning()
     .get();
+
+  // project_repositories にも追加 (後方互換性のため両方に保存)
+  db.insert(schema.projectRepositories)
+    .values({
+      projectId: project.id,
+      githubOwner: repoOwner,
+      githubRepo: repoName,
+      localPath: null,
+      createdAt: now,
+    })
+    .run();
 
   return project.id;
 }

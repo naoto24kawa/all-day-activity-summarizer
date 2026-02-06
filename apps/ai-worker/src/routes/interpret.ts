@@ -149,7 +149,7 @@ ${text}`;
 
     // コードブロックがある場合は除去
     const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (codeBlockMatch) {
+    if (codeBlockMatch?.[1]) {
       jsonStr = codeBlockMatch[1].trim();
     } else {
       // コードブロックがない場合は {} を抽出

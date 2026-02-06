@@ -238,7 +238,7 @@ export function Dashboard() {
           {/* 2段目: サブタブ (背景付き、インデント) */}
           {currentGroup && (
             <div className="bg-muted/30 mt-2 flex min-h-0 flex-1 flex-col rounded-lg border p-2">
-              <div className="relative mb-2 shrink-0">
+              <div className="mb-2 shrink-0">
                 <SubTabNav
                   tabs={currentGroup.tabs}
                   value={currentTab}
@@ -246,18 +246,6 @@ export function Dashboard() {
                   badges={badges}
                   badgeVariants={BADGE_VARIANTS}
                 />
-                {/* Feeds グループの統一更新ボタン */}
-                {activeGroup === "feeds" && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute top-1 right-1"
-                    onClick={() => window.dispatchEvent(new CustomEvent("feeds-refresh"))}
-                    title="Refresh all feeds"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
-                )}
               </div>
               <Tabs
                 value={currentTab}
@@ -303,9 +291,21 @@ export function Dashboard() {
                   </SlackFeedProvider>
                 </TabsContent>
                 <TabsContent value="github" className="min-h-0 flex-1">
-                  <div className="grid h-full gap-4 lg:grid-cols-2">
-                    <GitHubFeed className="h-full" />
-                    <GitHubPriorityPanel className="h-full" />
+                  <div className="flex h-full flex-col">
+                    <div className="mb-2 flex shrink-0 justify-end">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => window.dispatchEvent(new CustomEvent("github-refresh"))}
+                        title="Refresh"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
+                      <GitHubFeed className="h-full" />
+                      <GitHubPriorityPanel className="h-full" />
+                    </div>
                   </div>
                 </TabsContent>
                 <TabsContent value="notion" className="min-h-0 flex-1">
@@ -322,9 +322,21 @@ export function Dashboard() {
                   </NotionFeedProvider>
                 </TabsContent>
                 <TabsContent value="claude" className="min-h-0 flex-1">
-                  <div className="grid h-full gap-4 lg:grid-cols-2">
-                    <ClaudeCodeFeed className="h-full" />
-                    <ClaudeCodeRecentPanel className="h-full" />
+                  <div className="flex h-full flex-col">
+                    <div className="mb-2 flex shrink-0 justify-end">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => window.dispatchEvent(new CustomEvent("claude-refresh"))}
+                        title="Refresh"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
+                      <ClaudeCodeFeed className="h-full" />
+                      <ClaudeCodeRecentPanel className="h-full" />
+                    </div>
                   </div>
                 </TabsContent>
                 <TabsContent value="learnings" className="min-h-0 flex-1">

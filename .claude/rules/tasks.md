@@ -48,6 +48,12 @@ Slack/GitHub/メモから AI でタスクを自動抽出し、フィードバッ
 | `POST` | `/api/tasks/extract-memos` | メモから抽出 |
 | `POST` | `/api/tasks/extract-memos/async` | メモから抽出 (非同期) |
 | `POST` | `/api/tasks/extract-logs` | サーバーログから抽出 |
+| `POST` | `/api/tasks/extract-transcription` | 音声セグメントから抽出 |
+| `POST` | `/api/tasks/extract-transcription/async` | 音声セグメントから抽出 (非同期) |
+| `POST` | `/api/tasks/extract-claude-code` | Claude Code セッションから抽出 |
+| `POST` | `/api/tasks/extract-claude-code/async` | Claude Code セッションから抽出 (非同期) |
+| `POST` | `/api/tasks/extract-notion` | Notion アイテムから抽出 |
+| `POST` | `/api/tasks/extract-notion/async` | Notion アイテムから抽出 (非同期) |
 
 ### 依存関係
 
@@ -226,3 +232,73 @@ pending → accepted → in_progress → completed
 **プロンプト**: `packages/core/prompts/task-extract-logs.md`
 
 **workType**: `investigate` / `operate` / `maintain`
+
+---
+
+## 音声セグメントからのタスク抽出
+
+音声書き起こしから「TODO」「あとで」「対応が必要」などの言及を AI で検出してタスク化。
+
+**エンドポイント**: `POST /api/tasks/extract-transcription`
+
+**リクエスト**:
+```json
+{
+  "date": "YYYY-MM-DD",              // 省略時: 今日
+  "aggregationType": "time_window"   // "time_window" | "speaker"
+}
+```
+
+**集約方式**:
+- `time_window`: 30分単位で集約 (推奨)
+- `speaker`: 話者別に集約
+
+**DB カラム**: `tasks.transcriptionSegmentId`
+
+---
+
+## Claude Code セッションからのタスク抽出
+
+開発セッションから TODO/FIXME、改善提案、未解決問題を AI で検出してタスク化。
+
+**エンドポイント**: `POST /api/tasks/extract-claude-code`
+
+**リクエスト**:
+```json
+{
+  "date": "YYYY-MM-DD",          // 省略時: 今日
+  "confidenceThreshold": 0.5    // AI 確信度の閾値 (0.0-1.0)
+}
+```
+
+**タスク vs 学びの境界**:
+- タスク: 「〜する必要がある」「〜すべき」→ 具体的なアクションが必要
+- 学び: 「〜だと分かった」「〜という仕組み」→ 知識・ベストプラクティス
+
+**プロンプト**: `packages/core/prompts/task-extract-claude-code.md`
+
+**DB カラム**: `tasks.claudeCodeSessionId`
+
+---
+
+## Notion からのタスク抽出
+
+Notion アイテムからタスク化すべき内容を AI で検出。プロパティ (Priority, Due Date) も活用。
+
+**エンドポイント**: `POST /api/tasks/extract-notion`
+
+**リクエスト**:
+```json
+{
+  "date": "YYYY-MM-DD",       // 省略時: 今日
+  "databaseId": "xxx"         // 特定の DB のみ対象 (省略時: 全て)
+}
+```
+
+**Notion プロパティ活用**:
+| Notion プロパティ | タスクフィールド |
+|------------------|-----------------|
+| Priority | priority |
+| Due Date / Due | dueDate |
+
+**DB カラム**: `tasks.sourceId` (Notion Page ID)

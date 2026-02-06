@@ -43,6 +43,7 @@ const PROCESS_TYPE_LABELS: Record<AiProcessType, string> = {
   "suggest-tags": "Tags",
   "match-channels": "Channels",
   "slack-priority": "Slack Priority",
+  "generate-readings": "Readings",
 };
 
 const PROCESS_TYPE_COLORS: Record<AiProcessType, string> = {
@@ -58,6 +59,7 @@ const PROCESS_TYPE_COLORS: Record<AiProcessType, string> = {
   "suggest-tags": "text-amber-500",
   "match-channels": "text-teal-500",
   "slack-priority": "text-red-500",
+  "generate-readings": "text-lime-500",
 };
 
 export function AiProcessingLogPanel(_props: AiProcessingLogPanelProps) {

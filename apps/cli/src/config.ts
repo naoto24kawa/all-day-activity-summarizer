@@ -310,6 +310,7 @@ const defaultConfig: AdasConfig = {
       analyzeProfile: "claude",
       extractLearnings: "claude",
       taskExtract: "claude",
+      slackPriority: "claude",
       generateReadings: "lmstudio",
     },
     enableFallback: true,

@@ -4,7 +4,7 @@
  * SlackFeed と SlackFeedControls で状態を共有するための Context
  */
 
-import type { Project, SlackMessage, SlackMessagePriority, SlackUser } from "@repo/types";
+import type { Project, SlackMessage, SlackMessagePriority, SlackUserSummary } from "@repo/types";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import { useProjects } from "@/hooks/use-projects";
 import { useSlackChannels } from "@/hooks/use-slack-channels";
@@ -25,7 +25,7 @@ interface SlackFeedContextValue {
   counts: { total: number; mention: number; channel: number; dm: number; keyword: number };
   priorityCounts: { total: number; high: number; medium: number; low: number };
   projects: Project[];
-  users: SlackUser[];
+  users: SlackUserSummary[];
   usersLoading: boolean;
 
   // フィルター

@@ -606,7 +606,9 @@ export type TaskSourceType =
   | "project-suggestion"
   | "server-log"
   | "notion"
-  | "ai-processing-log";
+  | "ai-processing-log"
+  | "transcription"
+  | "claude-code";
 
 /** 承認のみで完了するタスクのソース種別 */
 export const APPROVAL_ONLY_SOURCE_TYPES: TaskSourceType[] = [
@@ -1248,7 +1250,8 @@ export type AiProcessType =
   | "analyze-profile"
   | "suggest-tags"
   | "match-channels"
-  | "slack-priority";
+  | "slack-priority"
+  | "generate-readings";
 
 /** AI処理ログのステータス */
 export type AiProcessStatus = "success" | "error";
@@ -1477,6 +1480,9 @@ export type AIJobType =
   | "task-extract-github"
   | "task-extract-github-comment"
   | "task-extract-memo"
+  | "task-extract-transcription"
+  | "task-extract-claude-code"
+  | "task-extract-notion"
   | "task-elaborate"
   | "task-check-completion"
   | "task-check-completion-individual"
@@ -2040,4 +2046,81 @@ export interface ApplyLearningExplanationResponse {
   expandedContent: string;
   /** 更新された学び */
   learning: Learning;
+}
+
+// ========== Slack User 型定義 ==========
+
+/** Slack ユーザー (表示名マッピング用) - DB スキーマ */
+export interface SlackUser {
+  id: number;
+  userId: string;
+  slackName: string | null;
+  displayName: string | null;
+  speakerNames: string | null; // JSON array
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Slack ユーザーサマリ (API レスポンス用) */
+export interface SlackUserSummary {
+  userId: string;
+  slackName: string | null;
+  displayName: string | null;
+  speakerNames: string[] | null;
+  messageCount: number;
+  firstSeen: string | null;
+  lastSeen: string | null;
+}
+
+// ========== Dead Letter Queue (DLQ) 型定義 ==========
+
+/** DLQ 元キュー種別 */
+export type DLQOriginalQueue =
+  | "ai_job"
+  | "slack"
+  | "github"
+  | "claude_code"
+  | "notion"
+  | "calendar"
+  | "summary";
+
+/** DLQ ステータス */
+export type DLQStatus = "dead" | "retried" | "ignored";
+
+/** DLQ ジョブ */
+export interface DLQJob {
+  id: number;
+  originalQueue: DLQOriginalQueue;
+  originalId: number;
+  jobType: string;
+  params: string | null; // JSON
+  errorMessage: string;
+  retryCount: number;
+  failedAt: string;
+  retriedAt: string | null;
+  status: DLQStatus;
+  createdAt: string;
+}
+
+/** DLQ 一覧取得クエリ */
+export interface DLQListQuery {
+  status?: DLQStatus;
+  queue?: DLQOriginalQueue;
+  limit?: number;
+}
+
+/** DLQ 統計 */
+export interface DLQStats {
+  total: number;
+  dead: number;
+  retried: number;
+  ignored: number;
+  byQueue: Record<DLQOriginalQueue, number>;
+}
+
+/** DLQ 再実行レスポンス */
+export interface DLQRetryResponse {
+  success: boolean;
+  newJobId?: number;
+  error?: string;
 }

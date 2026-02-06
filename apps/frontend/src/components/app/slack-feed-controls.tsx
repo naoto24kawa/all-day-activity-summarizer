@@ -12,6 +12,7 @@ import {
   CheckCheck,
   Filter,
   Loader2,
+  RefreshCw,
   Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,7 @@ export function SlackFeedControls() {
     handleResetUserName,
     markingAllAsRead,
     markAllAsRead,
+    refetch,
     refetchUnreadCounts,
     refetchPriorityCounts,
   } = useSlackFeedContext();
@@ -224,6 +226,11 @@ export function SlackFeedControls() {
           )}
         </PopoverContent>
       </Popover>
+
+      {/* Refresh */}
+      <Button variant="ghost" size="icon" onClick={refetch} title="Refresh">
+        <RefreshCw className="h-4 w-4" />
+      </Button>
     </div>
   );
 }

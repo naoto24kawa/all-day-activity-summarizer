@@ -19,7 +19,8 @@ export type ExtractionSourceType =
   | "transcription"
   | "git-scan"
   | "server-log"
-  | "ai-processing-log";
+  | "ai-processing-log"
+  | "notion";
 
 /**
  * Check if extraction has already been attempted for this source

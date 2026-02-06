@@ -4,13 +4,13 @@
  * Notion フィードのコントロールバー (Mark all read, Refresh)
  */
 
-import { CheckCheck } from "lucide-react";
+import { CheckCheck, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNotionFeedContext } from "./notion-feed-context";
 
 export function NotionFeedControls() {
-  const { date, counts, markAllAsRead, refetchUnreadCounts } = useNotionFeedContext();
+  const { date, counts, markAllAsRead, refetch, refetchUnreadCounts } = useNotionFeedContext();
 
   return (
     <div className="flex items-center justify-end gap-2">
@@ -31,6 +31,11 @@ export function NotionFeedControls() {
           Mark all read
         </Button>
       )}
+
+      {/* Refresh */}
+      <Button variant="ghost" size="icon" onClick={refetch} title="Refresh">
+        <RefreshCw className="h-4 w-4" />
+      </Button>
     </div>
   );
 }

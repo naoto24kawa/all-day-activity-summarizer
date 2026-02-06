@@ -1,15 +1,6 @@
+import type { SlackUserSummary } from "@repo/types";
 import { useCallback, useEffect, useState } from "react";
 import { deleteAdasApi, fetchAdasApi, patchAdasApi } from "@/lib/adas-api";
-
-export interface SlackUserSummary {
-  userId: string;
-  slackName: string | null;
-  displayName: string | null;
-  speakerNames: string[] | null;
-  messageCount: number;
-  firstSeen: string | null;
-  lastSeen: string | null;
-}
 
 export function useSlackUsers() {
   const [users, setUsers] = useState<SlackUserSummary[]>([]);

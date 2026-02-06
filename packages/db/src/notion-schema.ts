@@ -2,7 +2,7 @@
  * Notion DB Schema
  */
 
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 // ---------------------------------------------------------------------------
 // Notion Items (データベースアイテム・ページ)

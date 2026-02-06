@@ -71,7 +71,7 @@ export async function handleTaskExtractSlack(
       .where(
         and(
           eq(schema.slackMessages.date, date),
-          inArray(schema.slackMessages.messageType, ["mention", "dm"]),
+          inArray(schema.slackMessages.messageType, ["mention", "dm", "channel", "keyword"]),
         ),
       )
       .all();

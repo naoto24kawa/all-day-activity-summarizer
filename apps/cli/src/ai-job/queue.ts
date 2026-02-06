@@ -8,6 +8,7 @@ import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import type { AIJobStatus, AIJobType } from "@repo/types";
 import { and, desc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { moveToDLQ } from "../dlq/index.js";
 import { getTodayDateString } from "../utils/date.js";
 
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5分
@@ -210,6 +211,9 @@ export function markJobFailed(db: AdasDatabase, jobId: number, errorMessage: str
       })
       .where(eq(schema.aiJobQueue.id, jobId))
       .run();
+
+    // DLQ に移動
+    moveToDLQ(db, "ai_job", jobId, job.jobType, job.params, errorMessage, newRetryCount);
   }
 }
 

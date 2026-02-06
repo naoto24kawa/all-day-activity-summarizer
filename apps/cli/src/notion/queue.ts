@@ -6,7 +6,8 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { notionQueue } from "@repo/db/schema";
-import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { moveToDLQ } from "../dlq/index.js";
 
 interface EnqueueOptions {
   jobType: "fetch_recent_pages" | "fetch_database_items";
@@ -147,6 +148,9 @@ export function markNotionJobFailed(db: AdasDatabase, jobId: number, errorMessag
       })
       .where(eq(notionQueue.id, jobId))
       .run();
+
+    // DLQ に移動
+    moveToDLQ(db, "notion", jobId, job.jobType, job.databaseId, errorMessage, job.retryCount + 1);
   }
 }
 
@@ -164,7 +168,7 @@ export function cleanupOldNotionJobs(db: AdasDatabase, olderThanDays = 7): numbe
         lt(notionQueue.updatedAt, cutoff),
       ),
     )
-    .run();
+    .run() as unknown as { changes: number };
 
   return result.changes;
 }
@@ -184,7 +188,7 @@ export function recoverStaleNotionJobs(db: AdasDatabase, staleMinutes = 10): num
       updatedAt: now,
     })
     .where(and(eq(notionQueue.status, "processing"), lt(notionQueue.lockedAt, staleTime)))
-    .run();
+    .run() as unknown as { changes: number };
 
   return result.changes;
 }

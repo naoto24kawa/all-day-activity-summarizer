@@ -4,7 +4,7 @@ import type { TabConfig } from "@/lib/tab-groups";
 import { cn } from "@/lib/utils";
 
 /** 数値を返すバッジキー (taskBadges オブジェクトを除く) */
-export type BadgeKey = "tasks" | "learnings" | "slack" | "github";
+export type BadgeKey = "tasks" | "learnings" | "slack" | "github" | "notion";
 type BadgeVariant = "destructive" | "secondary" | "default" | "outline";
 
 interface SubTabNavProps {

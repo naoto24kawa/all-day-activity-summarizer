@@ -20,6 +20,9 @@ import {
   handleTaskExtractMemo,
   handleTaskExtractSlack,
 } from "./task-extract.js";
+import { handleTaskExtractClaudeCode } from "./task-extract-claude-code.js";
+import { handleTaskExtractNotion } from "./task-extract-notion.js";
+import { handleTaskExtractTranscription } from "./task-extract-transcription.js";
 import { handleVocabularyExtract } from "./vocabulary-extract.js";
 import { handleVocabularyGenerateReadings } from "./vocabulary-generate-readings.js";
 
@@ -32,6 +35,9 @@ export function registerAllHandlers(): void {
   registerJobHandler("task-extract-github", handleTaskExtractGitHub);
   registerJobHandler("task-extract-github-comment", handleTaskExtractGitHubComment);
   registerJobHandler("task-extract-memo", handleTaskExtractMemo);
+  registerJobHandler("task-extract-transcription", handleTaskExtractTranscription);
+  registerJobHandler("task-extract-claude-code", handleTaskExtractClaudeCode);
+  registerJobHandler("task-extract-notion", handleTaskExtractNotion);
   // タスク詳細化
   registerJobHandler("task-elaborate", handleTaskElaborate);
   // タスク完了チェック (一括)

@@ -264,9 +264,9 @@ function isValueInProfile(
     githubUsername: "githubUsername",
   };
 
-  if (field in singleValueFields) {
-    const fieldKey = singleValueFields[field];
-    return profile[fieldKey] === value;
+  const singleFieldKey = singleValueFields[field];
+  if (singleFieldKey) {
+    return profile[singleFieldKey] === value;
   }
 
   // 配列フィールド

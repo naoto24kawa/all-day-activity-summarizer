@@ -10,13 +10,34 @@ import { type NotionQueueJob, notionDatabases, notionItems } from "@repo/db/sche
 import consola from "consola";
 import { eq } from "drizzle-orm";
 import { getDateString } from "../utils/date.js";
-import {
-  extractDatabaseTitle,
-  extractIcon,
-  extractPageTitle,
-  type NotionClient,
-  serializeProperties,
-} from "./client.js";
+import { extractIcon, extractPageTitle, type NotionClient, serializeProperties } from "./client.js";
+
+// Notion SDK の型定義に query メソッドが含まれていないため、独自の型を定義
+interface QueryDatabaseParams {
+  database_id: string;
+  page_size?: number;
+  start_cursor?: string;
+  sorts?: Array<{ timestamp: string; direction: string }>;
+}
+
+interface QueryDatabaseResult {
+  results: Array<{ object: string; [key: string]: unknown }>;
+  has_more: boolean;
+  next_cursor: string | null;
+}
+
+// Database 情報の型 (SDK の型定義が不完全なため独自定義)
+interface DatabaseInfo {
+  id: string;
+  title: Array<{ plain_text: string }>;
+  url: string;
+  icon:
+    | { type: "emoji"; emoji: string }
+    | { type: "external"; external: { url: string } }
+    | { type: "file"; file: { url: string } }
+    | null;
+  properties: Record<string, unknown>;
+}
 
 interface FetchResult {
   saved: number;
@@ -87,15 +108,21 @@ async function fetchDatabaseItems(
   // データベース情報を取得・保存
   try {
     const dbInfo = await client.databases.retrieve({ database_id: databaseId });
-    if (dbInfo.object === "database" && "title" in dbInfo) {
-      saveDatabase(db, dbInfo);
+    if (dbInfo.object === "database" && "title" in dbInfo && "properties" in dbInfo) {
+      saveDatabase(db, dbInfo as unknown as DatabaseInfo);
     }
   } catch (error) {
     consola.warn(`[Notion] Failed to retrieve database ${databaseId}:`, error);
   }
 
   // データベースアイテムを取得
-  const response = await client.databases.query({
+  // Note: client.databases has query method at runtime but TypeScript types may be incomplete
+  const queryFn = (
+    client.databases as unknown as {
+      query: (args: QueryDatabaseParams) => Promise<QueryDatabaseResult>;
+    }
+  ).query;
+  const response = await queryFn({
     database_id: databaseId,
     page_size: 50,
     start_cursor: cursor,
@@ -139,7 +166,7 @@ async function savePage(
   const properties = serializeProperties(page.properties);
   const lastEditedBy =
     "last_edited_by" in page && page.last_edited_by && "name" in page.last_edited_by
-      ? page.last_edited_by.name
+      ? (page.last_edited_by.name as string | null)
       : null;
 
   // 親情報を取得
@@ -214,20 +241,7 @@ async function savePage(
 /**
  * データベース情報を保存
  */
-function saveDatabase(
-  db: AdasDatabase,
-  dbInfo: {
-    id: string;
-    title: { plain_text: string }[];
-    url: string;
-    icon:
-      | { type: "emoji"; emoji: string }
-      | { type: "external"; external: { url: string } }
-      | { type: "file"; file: { url: string } }
-      | null;
-    properties: Record<string, unknown>;
-  },
-) {
+function saveDatabase(db: AdasDatabase, dbInfo: DatabaseInfo) {
   const now = new Date().toISOString();
   const title = dbInfo.title.map((t) => t.plain_text).join("");
   let icon: string | null = null;

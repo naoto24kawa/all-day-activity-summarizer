@@ -11,6 +11,7 @@ export type {
   ClaudeCodePath,
   ClaudeCodeQueueJob,
   ClaudeCodeSession,
+  DeadLetterQueueJob,
   EvaluatorLog,
   ExtractionLog,
   Feedback,
@@ -26,6 +27,7 @@ export type {
   NewClaudeCodePath,
   NewClaudeCodeQueueJob,
   NewClaudeCodeSession,
+  NewDeadLetterQueueJob,
   NewEvaluatorLog,
   NewExtractionLog,
   NewFeedback,
@@ -1662,6 +1664,27 @@ export function createDatabase(dbPath: string) {
 
   // Migration: add local_path column to project_repositories
   addColumnIfNotExists(sqlite, "project_repositories", "local_path", "TEXT");
+
+  // Migration: create dead_letter_queue table (DLQ - 最終失敗ジョブの統一管理)
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS dead_letter_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      original_queue TEXT NOT NULL CHECK(original_queue IN ('ai_job', 'slack', 'github', 'claude_code', 'notion', 'calendar', 'summary')),
+      original_id INTEGER NOT NULL,
+      job_type TEXT NOT NULL,
+      params TEXT,
+      error_message TEXT NOT NULL,
+      retry_count INTEGER NOT NULL,
+      failed_at TEXT NOT NULL,
+      retried_at TEXT,
+      status TEXT NOT NULL DEFAULT 'dead' CHECK(status IN ('dead', 'retried', 'ignored')),
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dlq_status ON dead_letter_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_dlq_original_queue ON dead_letter_queue(original_queue);
+    CREATE INDEX IF NOT EXISTS idx_dlq_failed_at ON dead_letter_queue(failed_at);
+  `);
 
   return db;
 }

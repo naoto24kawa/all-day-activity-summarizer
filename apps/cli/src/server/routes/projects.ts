@@ -13,7 +13,7 @@ import type {
   UpdateProjectRequest,
 } from "@repo/types";
 import consola from "consola";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { loadConfig } from "../../config.js";
 import { getTodayDateString } from "../../utils/date.js";

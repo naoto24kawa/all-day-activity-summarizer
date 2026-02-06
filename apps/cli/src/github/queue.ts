@@ -5,6 +5,7 @@
 import type { AdasDatabase, GitHubQueueJob } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq, inArray, lt, lte, or } from "drizzle-orm";
+import { moveToDLQ } from "../dlq/index.js";
 
 export type GitHubJobType = "fetch_issues" | "fetch_prs" | "fetch_review_requests";
 
@@ -160,6 +161,9 @@ export function markGitHubJobFailed(db: AdasDatabase, jobId: number, errorMessag
       })
       .where(eq(schema.githubQueue.id, jobId))
       .run();
+
+    // DLQ に移動
+    moveToDLQ(db, "github", jobId, job.jobType, null, errorMessage, newRetryCount);
   }
 }
 

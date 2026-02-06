@@ -1,6 +1,7 @@
 import type { AdasDatabase, SummaryQueueJob } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { moveToDLQ } from "../dlq/index.js";
 
 export type JobType = "times" | "daily";
 
@@ -162,6 +163,14 @@ export function markFailed(db: AdasDatabase, jobId: number, errorMessage: string
       })
       .where(eq(schema.summaryQueue.id, jobId))
       .run();
+
+    // DLQ に移動
+    const params = JSON.stringify({
+      date: job.date,
+      startHour: job.startHour,
+      endHour: job.endHour,
+    });
+    moveToDLQ(db, "summary", jobId, job.jobType, params, errorMessage, newRetryCount);
   }
 }
 
