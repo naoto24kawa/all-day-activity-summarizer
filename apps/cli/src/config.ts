@@ -457,6 +457,11 @@ function applyEnvOverrides(config: AdasConfig): AdasConfig {
     config.slack.xoxdToken = process.env.SLACK_XOXD_TOKEN;
   }
 
+  // Notion token: 環境変数 > config.json
+  if (process.env.NOTION_TOKEN) {
+    config.notion.token = process.env.NOTION_TOKEN;
+  }
+
   return config;
 }
 

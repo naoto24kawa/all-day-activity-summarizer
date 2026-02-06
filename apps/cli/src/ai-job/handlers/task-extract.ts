@@ -25,6 +25,8 @@ interface ExtractedTaskDependency {
 interface ExtractedTask {
   title: string;
   description?: string;
+  isForMe?: boolean;
+  isForMeReason?: string;
   priority?: "high" | "medium" | "low";
   confidence?: number;
   dueDate?: string;
@@ -34,6 +36,14 @@ interface ExtractedTask {
     reason: string;
   };
   dependencies?: ExtractedTaskDependency[];
+}
+
+interface UserContext {
+  displayName: string | null;
+  slackUserId: string | null;
+  githubUsername: string | null;
+  responsibilities: string[];
+  activeProjectNames: string[];
 }
 
 interface ExtractResult {
@@ -98,7 +108,7 @@ export async function handleTaskExtractSlack(
     };
   }
 
-  const { fewShotExamples, vocabularySection, processedTasksSection, systemPrompt } =
+  const { fewShotExamples, vocabularySection, processedTasksSection, systemPrompt, userContext } =
     prepareExtraction(db);
 
   const createdTasks: (typeof schema.tasks.$inferSelect)[] = [];
@@ -110,6 +120,7 @@ export async function handleTaskExtractSlack(
       fewShotExamples,
       vocabularySection,
       processedTasksSection,
+      userContext,
     );
 
     try {
@@ -124,6 +135,14 @@ export async function handleTaskExtractSlack(
 
       if (parsed.tasks.length > 0) {
         for (const extractedTask of parsed.tasks) {
+          // isForMe: false のタスクはスキップ (ユーザー向けでないタスク)
+          if (extractedTask.isForMe === false) {
+            console.log(
+              `[task-extract] Skipped (not for me): "${extractedTask.title}" - ${extractedTask.isForMeReason ?? "no reason"}`,
+            );
+            continue;
+          }
+
           const task = db
             .insert(schema.tasks)
             .values({
@@ -350,7 +369,7 @@ export async function handleTaskExtractGitHubComment(
     };
   }
 
-  const { fewShotExamples, vocabularySection, processedTasksSection, systemPrompt } =
+  const { fewShotExamples, vocabularySection, processedTasksSection, systemPrompt, userContext } =
     prepareExtraction(db);
 
   const createdTasks: (typeof schema.tasks.$inferSelect)[] = [];
@@ -363,6 +382,7 @@ export async function handleTaskExtractGitHubComment(
       fewShotExamples,
       vocabularySection,
       processedTasksSection,
+      userContext,
     );
 
     try {
@@ -377,6 +397,14 @@ export async function handleTaskExtractGitHubComment(
 
       if (parsed.tasks.length > 0) {
         for (const extractedTask of parsed.tasks) {
+          // isForMe: false のタスクはスキップ
+          if (extractedTask.isForMe === false) {
+            console.log(
+              `[task-extract] Skipped (not for me): "${extractedTask.title}" - ${extractedTask.isForMeReason ?? "no reason"}`,
+            );
+            continue;
+          }
+
           const task = db
             .insert(schema.tasks)
             .values({
@@ -552,8 +580,53 @@ function prepareExtraction(db: AdasDatabase) {
   const vocabularySection = buildVocabularySection(db);
   const processedTasksSection = buildProcessedTasksSection(db);
   const systemPrompt = readFileSync(getPromptFilePath("task-extract"), "utf-8");
+  const userContext = getUserContext(db);
 
-  return { fewShotExamples, vocabularySection, processedTasksSection, systemPrompt };
+  return { fewShotExamples, vocabularySection, processedTasksSection, systemPrompt, userContext };
+}
+
+function getUserContext(db: AdasDatabase): UserContext | null {
+  const profile = db.select().from(schema.userProfile).where(eq(schema.userProfile.id, 1)).get();
+
+  if (!profile) {
+    return null;
+  }
+
+  // 参加プロジェクトの名前を取得
+  let activeProjectNames: string[] = [];
+  if (profile.activeProjectIds) {
+    try {
+      const projectIds = JSON.parse(profile.activeProjectIds) as number[];
+      if (projectIds.length > 0) {
+        const projects = db
+          .select({ name: schema.projects.name })
+          .from(schema.projects)
+          .where(inArray(schema.projects.id, projectIds))
+          .all();
+        activeProjectNames = projects.map((p) => p.name);
+      }
+    } catch {
+      // ignore parse error
+    }
+  }
+
+  // 責任範囲をパース
+  let responsibilities: string[] = [];
+  if (profile.responsibilities) {
+    try {
+      responsibilities = JSON.parse(profile.responsibilities) as string[];
+    } catch {
+      // ignore parse error
+    }
+  }
+
+  return {
+    displayName: profile.displayName,
+    slackUserId: profile.slackUserId,
+    githubUsername: profile.githubUsername,
+    responsibilities,
+    activeProjectNames,
+  };
 }
 
 function buildFewShotExamples(db: AdasDatabase): string {
@@ -716,6 +789,7 @@ function buildSlackPrompt(
   fewShotExamples: string,
   vocabularySection: string,
   processedTasksSection: string,
+  userContext: UserContext | null,
 ): string {
   const context = [];
   if (message.userName) {
@@ -725,8 +799,28 @@ function buildSlackPrompt(
     context.push(`チャンネル: ${message.channelName}`);
   }
 
+  // ユーザー情報セクションを構築
+  let userSection = "";
+  if (userContext) {
+    userSection = "\n## ユーザー情報 (タスクの対象者)\n";
+    if (userContext.displayName) {
+      userSection += `- 名前: ${userContext.displayName}\n`;
+    }
+    if (userContext.slackUserId) {
+      userSection += `- Slack ID: <@${userContext.slackUserId}>\n`;
+    }
+    if (userContext.responsibilities.length > 0) {
+      userSection += `- 役割・責任: ${userContext.responsibilities.join(", ")}\n`;
+    }
+    if (userContext.activeProjectNames.length > 0) {
+      userSection += `- 参加プロジェクト: ${userContext.activeProjectNames.join(", ")}\n`;
+    }
+    userSection +=
+      "\n**このユーザーが対応すべきタスクのみ抽出してください。他の人への依頼は isForMe: false としてください。**\n";
+  }
+
   return `以下のSlackメッセージからタスクを抽出してください。
-${fewShotExamples}${vocabularySection}${processedTasksSection}
+${userSection}${fewShotExamples}${vocabularySection}${processedTasksSection}
 
 ## メッセージ
 ${context.length > 0 ? `${context.join(" / ")}\n` : ""}
@@ -744,6 +838,7 @@ function buildGitHubCommentPrompt(
   fewShotExamples: string,
   vocabularySection: string,
   processedTasksSection: string,
+  userContext: UserContext | null,
 ): string {
   const context = [];
   if (comment.authorLogin) {
@@ -752,9 +847,29 @@ function buildGitHubCommentPrompt(
   context.push(`タイプ: ${comment.commentType}`);
   context.push(`リポジトリ: ${comment.repoName}#${comment.itemNumber}`);
 
+  // ユーザー情報セクションを構築
+  let userSection = "";
+  if (userContext) {
+    userSection = "\n## ユーザー情報 (タスクの対象者)\n";
+    if (userContext.displayName) {
+      userSection += `- 名前: ${userContext.displayName}\n`;
+    }
+    if (userContext.githubUsername) {
+      userSection += `- GitHub ユーザー名: @${userContext.githubUsername}\n`;
+    }
+    if (userContext.responsibilities.length > 0) {
+      userSection += `- 役割・責任: ${userContext.responsibilities.join(", ")}\n`;
+    }
+    if (userContext.activeProjectNames.length > 0) {
+      userSection += `- 参加プロジェクト: ${userContext.activeProjectNames.join(", ")}\n`;
+    }
+    userSection +=
+      "\n**このユーザーが対応すべきタスクのみ抽出してください。他の人への依頼は isForMe: false としてください。**\n";
+  }
+
   return `以下のGitHubコメントからタスクを抽出してください。
 レビュー指摘や質問、依頼事項があればタスク化してください。
-${fewShotExamples}${vocabularySection}${processedTasksSection}
+${userSection}${fewShotExamples}${vocabularySection}${processedTasksSection}
 
 ## コメント
 ${context.join(" / ")}
