@@ -261,7 +261,13 @@ export function TasksPanel({ className }: TasksPanelProps) {
     autoDetect,
   } = useProjects(false);
   const { permission, requestPermission } = useNotifications();
-  const [extracting, setExtracting] = useState(false);
+
+  // タスク抽出ジョブ追跡
+  const { trackJobs: trackExtractJobs, isProcessing: extracting } = useJobProgress({
+    onAllCompleted: () => {
+      refetch();
+    },
+  });
 
   // プロンプト改善
   const { stats: promptStats, refetch: refetchPromptStats } = usePromptImprovementStats();
@@ -488,19 +494,16 @@ export function TasksPanel({ className }: TasksPanelProps) {
 
   // 非同期版: ジョブをキューに登録 (結果はSSE通知で受け取る)
   const handleExtractAll = async () => {
-    setExtracting(true);
-    try {
-      // 全ての抽出ジョブを並列でキューに登録
-      await Promise.all([
-        extractTasksAsync({ date }),
-        extractGitHubTasksAsync({ date }),
-        extractGitHubCommentTasksAsync({ date }),
-        extractMemoTasksAsync({ date }),
-      ]);
-      // ジョブ登録完了 - 実際の結果はSSE通知で受け取る
-    } finally {
-      setExtracting(false);
-    }
+    // 全ての抽出ジョブを並列でキューに登録
+    const results = await Promise.all([
+      extractTasksAsync({ date }),
+      extractGitHubTasksAsync({ date }),
+      extractGitHubCommentTasksAsync({ date }),
+      extractMemoTasksAsync({ date }),
+    ]);
+    // ジョブIDを追跡 - SSEで完了通知を受け取るまでローディング維持
+    const jobIds = results.map((r) => r.jobId);
+    trackExtractJobs(jobIds);
   };
 
   // 完了チェックジョブの追跡

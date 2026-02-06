@@ -19,6 +19,8 @@ export const notionItems = sqliteTable("notion_items", {
   url: text("url").notNull(),
   icon: text("icon"), // emoji または URL
   properties: text("properties"), // JSON: プロパティ値
+  content: text("content"), // ページ本文 (Markdown)
+  contentSyncedAt: text("content_synced_at"), // 本文の最終同期日時
   lastEditedTime: text("last_edited_time").notNull(), // ISO8601
   lastEditedBy: text("last_edited_by"),
   isRead: integer("is_read", { mode: "boolean" }).notNull().default(false),

@@ -76,13 +76,7 @@ export function NotionFeed({ className }: NotionFeedProps) {
 
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
-      <CardHeader className="shrink-0 pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Database className="h-4 w-4 text-muted-foreground" />
-          Databases
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col pt-0">
+      <CardContent className="flex min-h-0 flex-1 flex-col pt-4">
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Notion activity.</p>
         ) : (
@@ -149,14 +143,8 @@ function DatabaseGroupedItemList({
     return result;
   }, [items, databaseMap]);
 
-  // 開閉状態を管理
-  const [openGroups, setOpenGroups] = useState<Set<string | null>>(() => {
-    const initial = new Set<string | null>();
-    for (const g of groups) {
-      initial.add(g.databaseId);
-    }
-    return initial;
-  });
+  // 開閉状態を管理 (初期状態は全て閉じている)
+  const [openGroups, setOpenGroups] = useState<Set<string | null>>(() => new Set<string | null>());
 
   const toggleGroup = (databaseId: string | null) => {
     setOpenGroups((prev) => {
@@ -246,6 +234,8 @@ function NotionItemCard({
   item: NotionItem;
   onMarkAsRead: (id: number) => void;
 }) {
+  const [isContentOpen, setIsContentOpen] = useState(false);
+
   // プロパティをパース
   const properties = useMemo(() => {
     if (!item.properties) return null;
@@ -311,6 +301,24 @@ function NotionItemCard({
           {item.parentType}
         </Badge>
       </div>
+      {/* 本文表示 */}
+      {item.content && (
+        <Collapsible open={isContentOpen} onOpenChange={setIsContentOpen} className="mt-2">
+          <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            {isContentOpen ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+            本文を表示
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mt-2 rounded bg-muted/50 p-2 text-xs whitespace-pre-wrap">
+              {item.content}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
     </div>
   );
 }

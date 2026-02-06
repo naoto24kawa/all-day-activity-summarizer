@@ -17,6 +17,8 @@ export interface NotionItem {
   url: string;
   icon: string | null; // emoji または URL
   properties: string | null; // JSON: プロパティ値
+  content: string | null; // ページ本文 (Markdown)
+  contentSyncedAt: string | null; // 本文の最終同期日時
   lastEditedTime: string; // ISO8601
   lastEditedBy: string | null; // ユーザー名
   isRead: boolean;

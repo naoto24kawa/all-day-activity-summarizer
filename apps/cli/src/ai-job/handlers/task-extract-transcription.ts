@@ -25,6 +25,12 @@ interface ExtractResult {
   tasks: ExtractedTask[];
 }
 
+interface UserProfileContext {
+  specialties?: string[];
+  knownTechnologies?: string[];
+  learningGoals?: string[];
+}
+
 type AggregationType = "time_window" | "speaker";
 
 interface TranscriptionWindow {
@@ -86,14 +92,23 @@ export async function handleTaskExtractTranscription(
     };
   }
 
+  // プロフィール情報を取得
+  const profileContext = getUserProfileContext(db);
+
   const vocabularySection = buildVocabularySection(db);
+  const profileSection = buildProfileSection(profileContext);
   const processedTasksSection = buildProcessedTasksSection(db);
   const systemPrompt = readFileSync(getPromptFilePath("task-extract"), "utf-8");
 
   const createdTasks: (typeof schema.tasks.$inferSelect)[] = [];
 
   for (const window of windows) {
-    const userPrompt = buildTranscriptionPrompt(window, vocabularySection, processedTasksSection);
+    const userPrompt = buildTranscriptionPrompt(
+      window,
+      vocabularySection,
+      profileSection,
+      processedTasksSection,
+    );
 
     try {
       const response = await runClaude(userPrompt, {
@@ -235,6 +250,7 @@ function getSegmentText(segment: typeof schema.transcriptionSegments.$inferSelec
 function buildTranscriptionPrompt(
   window: TranscriptionWindow,
   vocabularySection: string,
+  profileSection: string,
   processedTasksSection: string,
 ): string {
   const timeRange = `${formatTime(window.startTime)} - ${formatTime(window.endTime)}`;
@@ -242,10 +258,53 @@ function buildTranscriptionPrompt(
   return `以下の音声書き起こしからタスクを抽出してください。
 「TODO」「やること」「あとで」「対応が必要」などの言及があればタスク化してください。
 単なる会話や独り言はタスクとして抽出しないでください。
-${vocabularySection}${processedTasksSection}
+${vocabularySection}${profileSection}${processedTasksSection}
 
 ## 音声 (${timeRange})
 ${window.combinedText}`;
+}
+
+/**
+ * ユーザープロフィール情報を取得
+ */
+function getUserProfileContext(db: AdasDatabase): UserProfileContext | null {
+  const profile = db.select().from(schema.userProfile).where(eq(schema.userProfile.id, 1)).get();
+
+  if (!profile) {
+    return null;
+  }
+
+  return {
+    specialties: profile.specialties ? JSON.parse(profile.specialties) : undefined,
+    knownTechnologies: profile.knownTechnologies
+      ? JSON.parse(profile.knownTechnologies)
+      : undefined,
+    learningGoals: profile.learningGoals ? JSON.parse(profile.learningGoals) : undefined,
+  };
+}
+
+/**
+ * プロフィールセクションを構築
+ */
+function buildProfileSection(profile: UserProfileContext | null): string {
+  if (!profile) {
+    return "";
+  }
+
+  const lines: string[] = [];
+
+  if (profile.learningGoals && profile.learningGoals.length > 0) {
+    lines.push(`\n## 学習目標 (優先度を上げる)`);
+    lines.push(`以下に関連するタスクは優先度を高めに設定してください:`);
+    lines.push(profile.learningGoals.join(", "));
+  }
+
+  if (profile.specialties && profile.specialties.length > 0) {
+    lines.push(`\n## 専門分野`);
+    lines.push(profile.specialties.join(", "));
+  }
+
+  return lines.length > 0 ? lines.join("\n") : "";
 }
 
 function formatTime(isoString: string): string {

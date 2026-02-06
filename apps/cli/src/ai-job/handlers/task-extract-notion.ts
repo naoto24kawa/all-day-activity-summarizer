@@ -35,6 +35,12 @@ interface NotionProperties {
   [key: string]: unknown;
 }
 
+interface UserProfileContext {
+  specialties?: string[];
+  knownTechnologies?: string[];
+  learningGoals?: string[];
+}
+
 /**
  * Notion アイテムからタスク抽出
  */
@@ -77,14 +83,23 @@ export async function handleTaskExtractNotion(
     };
   }
 
+  // プロフィール情報を取得
+  const profileContext = getUserProfileContext(db);
+
   const vocabularySection = buildVocabularySection(db);
+  const profileSection = buildProfileSection(profileContext);
   const processedTasksSection = buildProcessedTasksSection(db);
   const systemPrompt = readFileSync(getPromptFilePath("task-extract"), "utf-8");
 
   const createdTasks: (typeof schema.tasks.$inferSelect)[] = [];
 
   for (const item of targetItems) {
-    const userPrompt = buildNotionPrompt(item, vocabularySection, processedTasksSection);
+    const userPrompt = buildNotionPrompt(
+      item,
+      vocabularySection,
+      profileSection,
+      processedTasksSection,
+    );
 
     try {
       const response = await runClaude(userPrompt, {
@@ -145,6 +160,7 @@ export async function handleTaskExtractNotion(
 function buildNotionPrompt(
   item: typeof schema.notionItems.$inferSelect,
   vocabularySection: string,
+  profileSection: string,
   processedTasksSection: string,
 ): string {
   const properties = item.properties ? JSON.parse(item.properties) : {};
@@ -155,13 +171,56 @@ function buildNotionPrompt(
   return `以下の Notion アイテムからタスクを抽出してください。
 タスク化すべき内容があればタスクとして抽出してください。
 単なる情報やメモはタスクとして抽出しないでください。
-${vocabularySection}${processedTasksSection}
+${vocabularySection}${profileSection}${processedTasksSection}
 
 ## Notion アイテム
 タイトル: ${item.title}
 URL: ${item.url}
 
 ${propsText ? `## プロパティ\n${propsText}` : ""}`;
+}
+
+/**
+ * ユーザープロフィール情報を取得
+ */
+function getUserProfileContext(db: AdasDatabase): UserProfileContext | null {
+  const profile = db.select().from(schema.userProfile).where(eq(schema.userProfile.id, 1)).get();
+
+  if (!profile) {
+    return null;
+  }
+
+  return {
+    specialties: profile.specialties ? JSON.parse(profile.specialties) : undefined,
+    knownTechnologies: profile.knownTechnologies
+      ? JSON.parse(profile.knownTechnologies)
+      : undefined,
+    learningGoals: profile.learningGoals ? JSON.parse(profile.learningGoals) : undefined,
+  };
+}
+
+/**
+ * プロフィールセクションを構築
+ */
+function buildProfileSection(profile: UserProfileContext | null): string {
+  if (!profile) {
+    return "";
+  }
+
+  const lines: string[] = [];
+
+  if (profile.learningGoals && profile.learningGoals.length > 0) {
+    lines.push(`\n## 学習目標 (優先度を上げる)`);
+    lines.push(`以下に関連するタスクは優先度を高めに設定してください:`);
+    lines.push(profile.learningGoals.join(", "));
+  }
+
+  if (profile.specialties && profile.specialties.length > 0) {
+    lines.push(`\n## 専門分野`);
+    lines.push(profile.specialties.join(", "));
+  }
+
+  return lines.length > 0 ? lines.join("\n") : "";
 }
 
 function parseNotionProperties(propertiesJson: string | null): NotionProperties {

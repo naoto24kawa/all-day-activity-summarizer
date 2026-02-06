@@ -27,6 +27,12 @@ interface ExtractResult {
   tasks: ExtractedTask[];
 }
 
+interface UserProfileContext {
+  specialties?: string[];
+  knownTechnologies?: string[];
+  learningGoals?: string[];
+}
+
 /**
  * Claude Code セッションからタスク抽出
  */
@@ -54,7 +60,11 @@ export async function handleTaskExtractClaudeCode(
     };
   }
 
+  // プロフィール情報を取得
+  const profileContext = getUserProfileContext(db);
+
   const vocabularySection = buildVocabularySection(db);
+  const profileSection = buildProfileSection(profileContext);
   const processedTasksSection = buildProcessedTasksSection(db);
   const systemPrompt = readFileSync(getPromptFilePath("task-extract-claude-code"), "utf-8");
 
@@ -90,6 +100,7 @@ export async function handleTaskExtractClaudeCode(
       session.projectName ?? session.projectPath,
       truncatedText,
       vocabularySection,
+      profileSection,
       processedTasksSection,
     );
 
@@ -159,16 +170,65 @@ function buildClaudeCodePrompt(
   projectName: string,
   conversationText: string,
   vocabularySection: string,
+  profileSection: string,
   processedTasksSection: string,
 ): string {
   return `以下の Claude Code セッションの会話ログからタスクを抽出してください。
-${vocabularySection}${processedTasksSection}
+${vocabularySection}${profileSection}${processedTasksSection}
 
 ## プロジェクト
 ${projectName}
 
 ## 会話ログ
 ${conversationText}`;
+}
+
+/**
+ * ユーザープロフィール情報を取得
+ */
+function getUserProfileContext(db: AdasDatabase): UserProfileContext | null {
+  const profile = db.select().from(schema.userProfile).where(eq(schema.userProfile.id, 1)).get();
+
+  if (!profile) {
+    return null;
+  }
+
+  return {
+    specialties: profile.specialties ? JSON.parse(profile.specialties) : undefined,
+    knownTechnologies: profile.knownTechnologies
+      ? JSON.parse(profile.knownTechnologies)
+      : undefined,
+    learningGoals: profile.learningGoals ? JSON.parse(profile.learningGoals) : undefined,
+  };
+}
+
+/**
+ * プロフィールセクションを構築
+ */
+function buildProfileSection(profile: UserProfileContext | null): string {
+  if (!profile) {
+    return "";
+  }
+
+  const lines: string[] = [];
+
+  if (profile.learningGoals && profile.learningGoals.length > 0) {
+    lines.push(`\n## 学習目標 (優先度を上げる)`);
+    lines.push(`以下に関連するタスクは優先度を高めに設定してください:`);
+    lines.push(profile.learningGoals.join(", "));
+  }
+
+  if (profile.specialties && profile.specialties.length > 0) {
+    lines.push(`\n## 専門分野`);
+    lines.push(profile.specialties.join(", "));
+  }
+
+  if (profile.knownTechnologies && profile.knownTechnologies.length > 0) {
+    lines.push(`\n## 既知の技術`);
+    lines.push(profile.knownTechnologies.join(", "));
+  }
+
+  return lines.length > 0 ? lines.join("\n") : "";
 }
 
 function buildProcessedTasksSection(db: AdasDatabase): string {

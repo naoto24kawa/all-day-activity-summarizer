@@ -39,21 +39,22 @@ export async function interpretSegments(
     consola.debug("[interpret] Failed to load feedback examples:", err);
   }
 
-  // 既存の vocabulary 用語リストを取得 (重複除外用)
+  // 既存の用語を取得 (vocabulary + 全 suggestions)
+  // - vocabulary: 登録済み用語
+  // - suggestions (全ステータス): pending, accepted, rejected すべて除外
+  //   → rejected を除外しないと、却下済み用語が再度提案される
   const existingVocabulary = db
     .select({ term: schema.vocabulary.term })
     .from(schema.vocabulary)
     .all();
-  const existingTerms = existingVocabulary.map((v) => v.term);
-
-  // pending 状態の vocabulary_suggestions も除外対象に含める
-  const pendingSuggestions = db
+  const allSuggestions = db
     .select({ term: schema.vocabularySuggestions.term })
     .from(schema.vocabularySuggestions)
-    .where(eq(schema.vocabularySuggestions.status, "pending"))
     .all();
-  const pendingTerms = pendingSuggestions.map((s) => s.term);
-  const allExistingTerms = [...new Set([...existingTerms, ...pendingTerms])];
+  const allExistingTerms = [
+    ...existingVocabulary.map((v) => v.term),
+    ...allSuggestions.map((s) => s.term),
+  ];
 
   const queue = [...segments];
 
@@ -204,7 +205,7 @@ async function processExtractedTerms(
           date,
           vocabularySuggestionId: suggestion.id,
           sourceType: "vocabulary",
-          title: `用語登録: ${term.term}`,
+          title: term.term,
           description: buildTermDescription(term),
           priority: null,
           confidence: term.confidence,

@@ -5,7 +5,6 @@
  */
 
 import { CheckCheck, RefreshCw } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useNotionFeedContext } from "./notion-feed-context";
 
@@ -14,9 +13,6 @@ export function NotionFeedControls() {
 
   return (
     <div className="flex items-center justify-end gap-2">
-      {/* Unread badge */}
-      {counts.total > 0 && <Badge variant="destructive">{counts.total} unread</Badge>}
-
       {/* Mark all read */}
       {counts.total > 0 && (
         <Button
