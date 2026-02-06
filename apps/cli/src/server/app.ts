@@ -11,6 +11,7 @@ import { createClaudeChatRouter } from "./routes/claude-chat.js";
 import { createClaudeCodePathsRouter } from "./routes/claude-code-paths.js";
 import { createClaudeCodeSessionsRouter } from "./routes/claude-code-sessions.js";
 import { createConfigRouter } from "./routes/config.js";
+import { createDLQRouter } from "./routes/dlq.js";
 import { createEvaluatorLogsRouter } from "./routes/evaluator-logs.js";
 import { createFeedbacksRouter, createSegmentFeedbackRouter } from "./routes/feedbacks.js";
 import { createFeedbacksV2Router } from "./routes/feedbacks-v2.js";
@@ -78,6 +79,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
   app.route("/api/projects", createProjectsRouter(db));
   app.route("/api/config", createConfigRouter());
   app.route("/api/ai-jobs", createAIJobsRouter(db));
+  app.route("/api/dlq", createDLQRouter(db));
   app.route("/api/rate-limit", createRateLimitRouter(db));
   app.route("/api/claude-chat", createClaudeChatRouter(db));
 

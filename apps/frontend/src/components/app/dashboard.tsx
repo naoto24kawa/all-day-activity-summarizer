@@ -13,6 +13,7 @@ import { AISettingsPanel } from "./ai-settings-panel";
 import { ClaudeChatPanel } from "./claude-chat-panel";
 import { ClaudeCodeFeed } from "./claude-code-feed";
 import { ClaudeCodeRecentPanel } from "./claude-code-recent-panel";
+import { DLQPanel } from "./dlq-panel";
 import { GitHubFeed } from "./github-feed";
 import { GitHubPriorityPanel } from "./github-priority-panel";
 import { HeaderControls } from "./header-controls";
@@ -363,6 +364,9 @@ export function Dashboard() {
                     <AiProcessingLogPanel />
                     <ServerLogsPanel />
                   </div>
+                </TabsContent>
+                <TabsContent value="dlq" className="min-h-0 flex-1 overflow-auto">
+                  <DLQPanel className="h-full" />
                 </TabsContent>
                 <TabsContent value="profile" className="min-h-0 flex-1 overflow-auto">
                   <ProfilePanel className="h-full" />

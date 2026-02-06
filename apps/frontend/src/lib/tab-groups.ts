@@ -6,6 +6,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  AlertTriangle,
   BookOpen,
   Bot,
   CheckSquare,
@@ -35,6 +36,7 @@ export type TabId =
   | "projects"
   | "whisper"
   | "logs"
+  | "dlq"
   | "profile"
   | "ai-settings"
   | "settings";
@@ -91,6 +93,7 @@ export const TAB_GROUPS: TabGroupConfig[] = [
     icon: Settings,
     tabs: [
       { id: "logs", label: "Logs", icon: FileText },
+      { id: "dlq", label: "DLQ", icon: AlertTriangle },
       { id: "profile", label: "Profile", icon: User },
       { id: "ai-settings", label: "AI Settings", icon: Bot },
       { id: "settings", label: "Settings", icon: Settings },
