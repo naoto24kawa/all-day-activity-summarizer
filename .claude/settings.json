@@ -39,8 +39,6 @@
   },
   "enabledPlugins": {
     "review@naoto24kawa-claude-plugins": true,
-    "claude@naoto24kawa-claude-plugins": true,
-    "notion@naoto24kawa-claude-plugins": false,
-    "github@naoto24kawa-claude-plugins": true
+    "claude@naoto24kawa-claude-plugins": true
   }
 }

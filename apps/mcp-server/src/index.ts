@@ -21,6 +21,7 @@ const sessions = new Map<
 
 Bun.serve({
   port: PORT,
+  idleTimeout: 0, // MCP ツール呼び出しが長時間になるためタイムアウト無効
   fetch: async (req) => {
     const url = new URL(req.url);
 
