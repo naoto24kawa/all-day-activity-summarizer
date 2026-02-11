@@ -1773,6 +1773,7 @@ export interface BadgesData {
   learnings: { dueForReview: number };
   slack: { priorityCount: number };
   github: { unread: number };
+  notion: { unread: number };
 }
 
 /** SSE RPC emit リクエスト */

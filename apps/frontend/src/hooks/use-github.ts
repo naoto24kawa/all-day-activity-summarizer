@@ -14,14 +14,18 @@ import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
 export function useGitHubItems() {
   const [items, setItems] = useState<GitHubItem[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchItems = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const data = await fetchAdasApi<GitHubItem[]>("/api/github-items");
-      setItems(data);
+      const res = await fetchAdasApi<{ data: GitHubItem[]; totalCount: number }>(
+        "/api/github-items",
+      );
+      setItems(res.data);
+      setTotalCount(res.totalCount);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch GitHub items");
@@ -32,8 +36,6 @@ export function useGitHubItems() {
 
   useEffect(() => {
     fetchItems();
-    const interval = setInterval(() => fetchItems(true), 30_000);
-    return () => clearInterval(interval);
   }, [fetchItems]);
 
   const markAsRead = useCallback(
@@ -56,19 +58,23 @@ export function useGitHubItems() {
     [fetchItems],
   );
 
-  return { items, error, loading, refetch: fetchItems, markAsRead, markAllAsRead };
+  return { items, totalCount, error, loading, refetch: fetchItems, markAsRead, markAllAsRead };
 }
 
 export function useGitHubComments() {
   const [comments, setComments] = useState<GitHubComment[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchComments = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const data = await fetchAdasApi<GitHubComment[]>("/api/github-comments");
-      setComments(data);
+      const res = await fetchAdasApi<{ data: GitHubComment[]; totalCount: number }>(
+        "/api/github-comments",
+      );
+      setComments(res.data);
+      setTotalCount(res.totalCount);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch GitHub comments");
@@ -79,8 +85,6 @@ export function useGitHubComments() {
 
   useEffect(() => {
     fetchComments();
-    const interval = setInterval(() => fetchComments(true), 30_000);
-    return () => clearInterval(interval);
   }, [fetchComments]);
 
   const markAsRead = useCallback(
@@ -99,7 +103,15 @@ export function useGitHubComments() {
     [fetchComments],
   );
 
-  return { comments, error, loading, refetch: fetchComments, markAsRead, markAllAsRead };
+  return {
+    comments,
+    totalCount,
+    error,
+    loading,
+    refetch: fetchComments,
+    markAsRead,
+    markAllAsRead,
+  };
 }
 
 export function useGitHubUnreadCounts(date?: string) {
@@ -128,8 +140,6 @@ export function useGitHubUnreadCounts(date?: string) {
 
   useEffect(() => {
     fetchCounts();
-    const interval = setInterval(fetchCounts, 30_000);
-    return () => clearInterval(interval);
   }, [fetchCounts]);
 
   return { counts, error, refetch: fetchCounts };
@@ -161,8 +171,6 @@ export function useGitHubCommentsUnreadCounts(date?: string) {
 
   useEffect(() => {
     fetchCounts();
-    const interval = setInterval(fetchCounts, 30_000);
-    return () => clearInterval(interval);
   }, [fetchCounts]);
 
   return { counts, error, refetch: fetchCounts };

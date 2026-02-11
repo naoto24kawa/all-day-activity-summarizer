@@ -28,7 +28,7 @@ interface NotionFeedProps {
 
 export function NotionFeed({ className }: NotionFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
-  const { items, loading, error, databaseMap } = useNotionFeedContext();
+  const { items, totalCount, loading, error, databaseMap } = useNotionFeedContext();
 
   if (loading) {
     return (
@@ -76,6 +76,13 @@ export function NotionFeed({ className }: NotionFeedProps) {
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardContent className="flex min-h-0 flex-1 flex-col pt-4">
+        {totalCount > 0 && (
+          <p className="mb-2 text-xs text-muted-foreground">
+            {items.length < totalCount
+              ? `${items.length} / ${totalCount} 件を表示`
+              : `全 ${totalCount} 件`}
+          </p>
+        )}
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Notion activity.</p>
         ) : (

@@ -5,7 +5,7 @@
 import type { AdasDatabase } from "@repo/db";
 import { type NewNotionItem, notionDatabases, notionItems } from "@repo/db/schema";
 import type { NotionParentType, NotionUnreadCounts } from "@repo/types";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 
 export function createNotionItemsRouter(db: AdasDatabase) {
@@ -40,15 +40,20 @@ export function createNotionItemsRouter(db: AdasDatabase) {
       conditions.push(eq(notionItems.databaseId, databaseId));
     }
 
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
     const items = db
       .select()
       .from(notionItems)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(whereClause)
       .orderBy(desc(notionItems.lastEditedTime))
       .limit(limit)
       .all();
 
-    return c.json(items);
+    // totalCount を取得
+    const totalResult = db.select({ count: count() }).from(notionItems).where(whereClause).get();
+
+    return c.json({ data: items, totalCount: totalResult?.count ?? 0 });
   });
 
   /**

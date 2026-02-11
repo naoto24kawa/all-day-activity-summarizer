@@ -140,11 +140,20 @@ export class SSENotifier {
       .get();
     const githubUnread = githubResult?.count ?? 0;
 
+    // Notion: 未読アイテムのカウント
+    const notionResult = db
+      .select({ count: count() })
+      .from(schema.notionItems)
+      .where(eq(schema.notionItems.isRead, false))
+      .get();
+    const notionUnread = notionResult?.count ?? 0;
+
     return {
       tasks: { pending: tasksPending, acceptedByPriority },
       learnings: { dueForReview: learningsDue },
       slack: { priorityCount: slackPriorityCount },
       github: { unread: githubUnread },
+      notion: { unread: notionUnread },
     };
   }
 }

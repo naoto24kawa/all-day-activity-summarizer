@@ -16,6 +16,7 @@ export interface SlackUnreadCounts {
 
 export function useSlackMessages() {
   const [messages, setMessages] = useState<SlackMessage[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [markingAllAsRead, setMarkingAllAsRead] = useState(false);
@@ -23,8 +24,11 @@ export function useSlackMessages() {
   const fetchMessages = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const data = await fetchAdasApi<SlackMessage[]>("/api/slack-messages");
-      setMessages(data);
+      const res = await fetchAdasApi<{ data: SlackMessage[]; totalCount: number }>(
+        "/api/slack-messages",
+      );
+      setMessages(res.data);
+      setTotalCount(res.totalCount);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch Slack messages");
@@ -35,8 +39,6 @@ export function useSlackMessages() {
 
   useEffect(() => {
     fetchMessages();
-    const interval = setInterval(() => fetchMessages(true), 30_000);
-    return () => clearInterval(interval);
   }, [fetchMessages]);
 
   const markAsRead = useCallback(
@@ -86,6 +88,7 @@ export function useSlackMessages() {
 
   return {
     messages,
+    totalCount,
     error,
     loading,
     markingAllAsRead,
@@ -124,8 +127,6 @@ export function useSlackUnreadCounts(date?: string) {
 
   useEffect(() => {
     fetchCounts();
-    const interval = setInterval(fetchCounts, 30_000);
-    return () => clearInterval(interval);
   }, [fetchCounts]);
 
   return { counts, error, refetch: fetchCounts };
@@ -158,8 +159,6 @@ export function useSlackPriorityCounts(unreadOnly = true) {
 
   useEffect(() => {
     fetchCounts();
-    const interval = setInterval(fetchCounts, 30_000);
-    return () => clearInterval(interval);
   }, [fetchCounts]);
 
   return { counts, error, refetch: fetchCounts };

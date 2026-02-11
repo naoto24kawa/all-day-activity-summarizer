@@ -8,14 +8,18 @@ import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
 export function useNotionItems() {
   const [items, setItems] = useState<NotionItem[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchItems = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const data = await fetchAdasApi<NotionItem[]>("/api/notion-items");
-      setItems(data);
+      const res = await fetchAdasApi<{ data: NotionItem[]; totalCount: number }>(
+        "/api/notion-items",
+      );
+      setItems(res.data);
+      setTotalCount(res.totalCount);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch Notion items");
@@ -26,8 +30,6 @@ export function useNotionItems() {
 
   useEffect(() => {
     fetchItems();
-    const interval = setInterval(() => fetchItems(true), 30_000);
-    return () => clearInterval(interval);
   }, [fetchItems]);
 
   const markAsRead = useCallback(
@@ -46,7 +48,7 @@ export function useNotionItems() {
     [fetchItems],
   );
 
-  return { items, error, loading, refetch: fetchItems, markAsRead, markAllAsRead };
+  return { items, totalCount, error, loading, refetch: fetchItems, markAsRead, markAllAsRead };
 }
 
 export function useNotionUnreadCounts(date?: string) {
@@ -74,8 +76,6 @@ export function useNotionUnreadCounts(date?: string) {
 
   useEffect(() => {
     fetchCounts();
-    const interval = setInterval(fetchCounts, 30_000);
-    return () => clearInterval(interval);
   }, [fetchCounts]);
 
   return { counts, error, refetch: fetchCounts };

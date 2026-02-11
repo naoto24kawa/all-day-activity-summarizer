@@ -90,6 +90,7 @@ export interface IntegrationsConfig {
     channels: string[];
     watchKeywords: string[];
     keywordPriority: "high" | "medium" | "low";
+    excludeChannels: string[];
   };
   github: IntegrationStatus & {
     username?: string;
@@ -154,6 +155,7 @@ interface UpdateIntegrationsResponse {
     slack: IntegrationStatus & {
       watchKeywords?: string[];
       keywordPriority?: "high" | "medium" | "low";
+      excludeChannels?: string[];
     };
     github: IntegrationStatus;
     calendar?: IntegrationStatus;
@@ -352,7 +354,11 @@ export function useConfig() {
   );
 
   const updateSlackKeywords = useCallback(
-    async (config: { watchKeywords?: string[]; keywordPriority?: "high" | "medium" | "low" }) => {
+    async (config: {
+      watchKeywords?: string[];
+      keywordPriority?: "high" | "medium" | "low";
+      excludeChannels?: string[];
+    }) => {
       try {
         setUpdating(true);
         setError(null);
@@ -374,6 +380,9 @@ export function useConfig() {
               }),
               ...(data.integrations.slack.keywordPriority !== undefined && {
                 keywordPriority: data.integrations.slack.keywordPriority,
+              }),
+              ...(data.integrations.slack.excludeChannels !== undefined && {
+                excludeChannels: data.integrations.slack.excludeChannels,
               }),
             },
           };

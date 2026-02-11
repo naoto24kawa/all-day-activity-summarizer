@@ -49,6 +49,7 @@ export function SlackFeedInner({ className }: SlackFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
   const {
     messages,
+    totalCount,
     loading,
     error,
     projects,
@@ -99,6 +100,13 @@ export function SlackFeedInner({ className }: SlackFeedProps) {
   return (
     <Card className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className ?? ""}`}>
       <CardContent className="flex min-h-0 flex-1 flex-col pt-4">
+        {totalCount > 0 && (
+          <p className="mb-2 text-xs text-muted-foreground">
+            {messages.length < totalCount
+              ? `${messages.length} / ${totalCount} 件を表示`
+              : `全 ${totalCount} 件`}
+          </p>
+        )}
         {messages.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Slack messages for this date.</p>
         ) : (

@@ -4,7 +4,7 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { fetchAllSessions } from "../../claude-code/fetcher.js";
 import type { AdasConfig } from "../../config.js";
@@ -60,7 +60,15 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
 
     const sessions = query.all();
 
-    return c.json(sessions);
+    // totalCount を取得
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const totalResult = db
+      .select({ count: count() })
+      .from(schema.claudeCodeSessions)
+      .where(whereClause)
+      .get();
+
+    return c.json({ data: sessions, totalCount: totalResult?.count ?? 0 });
   });
 
   /**

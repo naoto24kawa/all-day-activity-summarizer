@@ -14,6 +14,7 @@ interface NotionFeedContextValue {
   // データ
   date: string;
   items: NotionItem[];
+  totalCount: number;
   unreadItems: NotionItem[];
   loading: boolean;
   error: string | null;
@@ -34,7 +35,8 @@ const NotionFeedContext = createContext<NotionFeedContextValue | null>(null);
 
 export function NotionFeedProvider({ children }: { children: ReactNode }) {
   const date = getTodayDateString();
-  const { items, loading, error, refetch, markAsRead, markAllAsRead } = useNotionItems();
+  const { items, totalCount, loading, error, refetch, markAsRead, markAllAsRead } =
+    useNotionItems();
   const { counts, refetch: refetchUnreadCounts } = useNotionUnreadCounts(date);
   const { databases } = useNotionDatabases();
   const { projects: allProjects } = useProjects(false);
@@ -81,6 +83,7 @@ export function NotionFeedProvider({ children }: { children: ReactNode }) {
   const value: NotionFeedContextValue = {
     date,
     items,
+    totalCount,
     unreadItems,
     loading,
     error,

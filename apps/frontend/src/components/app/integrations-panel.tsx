@@ -47,6 +47,7 @@ export function IntegrationsPanel() {
     updateAiProcessingLogExtractConfig,
   } = useConfig();
   const [newKeyword, setNewKeyword] = useState("");
+  const [newExcludePattern, setNewExcludePattern] = useState("");
 
   if (loading) {
     return (
@@ -237,6 +238,66 @@ export function IntegrationsPanel() {
                     <SelectItem value="low">Low</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="mt-2">
+                <Label className="text-sm text-muted-foreground">無視するチャンネル</Label>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {(integrations.slack.excludeChannels ?? []).map((pattern) => (
+                    <Badge
+                      key={pattern}
+                      variant="secondary"
+                      className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground"
+                      onClick={() => {
+                        const updated = (integrations.slack.excludeChannels ?? []).filter(
+                          (p) => p !== pattern,
+                        );
+                        updateSlackKeywords({ excludeChannels: updated });
+                      }}
+                    >
+                      {pattern} ×
+                    </Badge>
+                  ))}
+                  <div className="flex gap-1">
+                    <Input
+                      placeholder="rss-*, *-bot..."
+                      value={newExcludePattern}
+                      onChange={(e) => setNewExcludePattern(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && newExcludePattern.trim()) {
+                          const current = integrations.slack.excludeChannels ?? [];
+                          if (!current.includes(newExcludePattern.trim())) {
+                            updateSlackKeywords({
+                              excludeChannels: [...current, newExcludePattern.trim()],
+                            });
+                          }
+                          setNewExcludePattern("");
+                        }
+                      }}
+                      className="h-6 w-28 text-xs"
+                      disabled={updating}
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2"
+                      onClick={() => {
+                        const current = integrations.slack.excludeChannels ?? [];
+                        if (
+                          newExcludePattern.trim() &&
+                          !current.includes(newExcludePattern.trim())
+                        ) {
+                          updateSlackKeywords({
+                            excludeChannels: [...current, newExcludePattern.trim()],
+                          });
+                          setNewExcludePattern("");
+                        }
+                      }}
+                      disabled={updating || !newExcludePattern.trim()}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

@@ -49,6 +49,7 @@ interface IntegrationsUpdateBody {
   slackKeywords?: {
     watchKeywords?: string[];
     keywordPriority?: "high" | "medium" | "low";
+    excludeChannels?: string[];
   };
 }
 
@@ -290,6 +291,11 @@ function updateSlackKeywordsConfig(
     }
   }
 
+  if (slackKeywords.excludeChannels !== undefined) {
+    config.slack.excludeChannels = slackKeywords.excludeChannels;
+    updated = true;
+  }
+
   return updated;
 }
 
@@ -319,6 +325,7 @@ export function createConfigRouter() {
         channels: config.slack.channels,
         watchKeywords: config.slack.watchKeywords,
         keywordPriority: config.slack.keywordPriority,
+        excludeChannels: config.slack.excludeChannels ?? [],
       },
       github: {
         enabled: config.github.enabled,
@@ -443,6 +450,7 @@ export function createConfigRouter() {
           enabled: config.slack.enabled,
           watchKeywords: config.slack.watchKeywords,
           keywordPriority: config.slack.keywordPriority,
+          excludeChannels: config.slack.excludeChannels ?? [],
         },
         github: { enabled: config.github.enabled },
         calendar: { enabled: config.calendar.enabled },

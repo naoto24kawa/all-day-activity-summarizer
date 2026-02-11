@@ -5,7 +5,7 @@
 import type { AdasDatabase, NewSlackMessage } from "@repo/db";
 import { schema } from "@repo/db";
 import type { SlackMessagePriority, SlackPriorityCounts } from "@repo/types";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { enqueueJob } from "../../ai-job/queue.js";
 import { insertMessageIfNotExists } from "../../slack/fetcher.js";
@@ -100,11 +100,19 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
 
     const messages = query.all();
 
+    // totalCount を取得
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const totalResult = db
+      .select({ count: count() })
+      .from(schema.slackMessages)
+      .where(whereClause)
+      .get();
+
     // effectiveProjectId を計算して付加
     const channelProjectMap = getChannelProjectMap(db);
     const messagesWithEffective = addEffectiveProjectId(messages, channelProjectMap);
 
-    return c.json(messagesWithEffective);
+    return c.json({ data: messagesWithEffective, totalCount: totalResult?.count ?? 0 });
   });
 
   /**

@@ -21,6 +21,7 @@ export interface ClaudeCodeStats {
 
 export function useClaudeCodeSessions() {
   const [sessions, setSessions] = useState<ClaudeCodeSession[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -28,8 +29,11 @@ export function useClaudeCodeSessions() {
   const fetchSessions = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const data = await fetchAdasApi<ClaudeCodeSession[]>("/api/claude-code-sessions");
-      setSessions(data);
+      const res = await fetchAdasApi<{ data: ClaudeCodeSession[]; totalCount: number }>(
+        "/api/claude-code-sessions",
+      );
+      setSessions(res.data);
+      setTotalCount(res.totalCount);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch Claude Code sessions");
@@ -40,8 +44,6 @@ export function useClaudeCodeSessions() {
 
   useEffect(() => {
     fetchSessions();
-    const interval = setInterval(() => fetchSessions(true), 30_000);
-    return () => clearInterval(interval);
   }, [fetchSessions]);
 
   const syncSessions = useCallback(async () => {
@@ -70,6 +72,7 @@ export function useClaudeCodeSessions() {
 
   return {
     sessions,
+    totalCount,
     error,
     loading,
     syncing,
@@ -102,8 +105,6 @@ export function useClaudeCodeStats(date?: string) {
 
   useEffect(() => {
     fetchStats();
-    const interval = setInterval(fetchStats, 30_000);
-    return () => clearInterval(interval);
   }, [fetchStats]);
 
   return { stats, error, refetch: fetchStats };

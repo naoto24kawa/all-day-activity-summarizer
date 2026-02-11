@@ -20,6 +20,7 @@ interface SlackFeedContextValue {
   // データ
   date: string;
   messages: SlackMessage[];
+  totalCount: number;
   loading: boolean;
   error: string | null;
   counts: { total: number; mention: number; channel: number; dm: number; keyword: number };
@@ -64,6 +65,7 @@ export function SlackFeedProvider({ children }: { children: ReactNode }) {
   const date = getTodayDateString();
   const {
     messages,
+    totalCount,
     loading,
     error,
     markingAllAsRead,
@@ -140,6 +142,7 @@ export function SlackFeedProvider({ children }: { children: ReactNode }) {
   const value: SlackFeedContextValue = {
     date,
     messages,
+    totalCount,
     loading,
     error,
     counts,

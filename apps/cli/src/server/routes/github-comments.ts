@@ -4,7 +4,7 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
 export function createGitHubCommentsRouter(db: AdasDatabase) {
@@ -72,7 +72,15 @@ export function createGitHubCommentsRouter(db: AdasDatabase) {
 
     const comments = query.all();
 
-    return c.json(comments);
+    // totalCount を取得
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const totalResult = db
+      .select({ count: count() })
+      .from(schema.githubComments)
+      .where(whereClause)
+      .get();
+
+    return c.json({ data: comments, totalCount: totalResult?.count ?? 0 });
   });
 
   /**

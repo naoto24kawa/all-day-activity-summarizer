@@ -25,8 +25,6 @@ export function useTranscriptions(date: string) {
 
   useEffect(() => {
     fetchTranscriptions();
-    const interval = setInterval(() => fetchTranscriptions(true), 30_000);
-    return () => clearInterval(interval);
   }, [fetchTranscriptions]);
 
   return { segments, error, loading, refetch: fetchTranscriptions };

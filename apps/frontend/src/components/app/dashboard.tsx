@@ -132,6 +132,7 @@ const BADGE_VARIANTS: Record<string, "destructive" | "secondary" | "default" | "
   learnings: "secondary",
   slack: "default",
   github: "outline",
+  notion: "secondary",
 };
 
 export function Dashboard() {

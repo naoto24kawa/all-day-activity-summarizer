@@ -42,7 +42,7 @@ const DEFAULT_SESSION_LIMIT = 3;
 export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
   const date = getTodayDateString();
   const { integrations, loading: configLoading } = useConfig();
-  const { sessions, loading, error, syncSessions } = useClaudeCodeSessions();
+  const { sessions, totalCount, loading, error, syncSessions } = useClaudeCodeSessions();
   const { stats } = useClaudeCodeStats(date);
   const { projects } = useProjects();
   const { updatePathProject, getPathProjectId } = useClaudeCodePaths();
@@ -157,9 +157,16 @@ export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
 
   return (
     <Card className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className ?? ""}`}>
-      {stats.totalSessions > 0 && (
+      {(stats.totalSessions > 0 || totalCount > 0) && (
         <CardHeader className="shrink-0 py-3">
-          <Badge variant="secondary">{stats.totalSessions} sessions</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary">{stats.totalSessions} sessions</Badge>
+            {sessions.length < totalCount && (
+              <span className="text-xs text-muted-foreground">
+                ({sessions.length}/{totalCount} 件を表示)
+              </span>
+            )}
+          </div>
         </CardHeader>
       )}
       <CardContent className="min-h-0 flex-1 overflow-auto">

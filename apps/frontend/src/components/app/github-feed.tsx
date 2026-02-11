@@ -45,9 +45,17 @@ interface GitHubFeedProps {
 
 export function GitHubFeed({ className }: GitHubFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
-  const { items, loading, error, refetch, markAsRead } = useGitHubItems();
+  const {
+    items,
+    totalCount: itemsTotalCount,
+    loading,
+    error,
+    refetch,
+    markAsRead,
+  } = useGitHubItems();
   const {
     comments,
+    totalCount: commentsTotalCount,
     loading: commentsLoading,
     refetch: refetchComments,
     markAsRead: markCommentAsRead,
@@ -189,6 +197,23 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardContent className="flex min-h-0 flex-1 flex-col pt-4">
+        {(itemsTotalCount > 0 || commentsTotalCount > 0) && (
+          <p className="mb-2 text-xs text-muted-foreground">
+            Items:{" "}
+            {items.length < itemsTotalCount
+              ? `${items.length}/${itemsTotalCount}`
+              : itemsTotalCount}
+            {commentsTotalCount > 0 && (
+              <>
+                {" "}
+                / Comments:{" "}
+                {comments.length < commentsTotalCount
+                  ? `${comments.length}/${commentsTotalCount}`
+                  : commentsTotalCount}
+              </>
+            )}
+          </p>
+        )}
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">No GitHub activity for this date.</p>
         ) : (

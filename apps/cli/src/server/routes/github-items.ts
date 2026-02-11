@@ -4,7 +4,7 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { getSSENotifier } from "../../utils/sse-notifier.js";
 
@@ -64,7 +64,15 @@ export function createGitHubItemsRouter(db: AdasDatabase) {
 
     const items = query.all();
 
-    return c.json(items);
+    // totalCount を取得
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const totalResult = db
+      .select({ count: count() })
+      .from(schema.githubItems)
+      .where(whereClause)
+      .get();
+
+    return c.json({ data: items, totalCount: totalResult?.count ?? 0 });
   });
 
   /**
