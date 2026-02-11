@@ -16,7 +16,6 @@ import {
   Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -149,14 +148,6 @@ export function ClaudeCodeRecentPanel({ className }: ClaudeCodeRecentPanelProps)
         <CardTitle className="flex items-center gap-2 text-base">
           <Sparkles className="h-4 w-4 text-purple-500" />
           Recent Sessions
-          {recentSessions.length > 0 && (
-            <Badge
-              variant="secondary"
-              className="ml-1 bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"
-            >
-              {recentSessions.length}
-            </Badge>
-          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col pt-0">
@@ -206,11 +197,6 @@ function RecentSessionItem({
   onClick: () => void;
 }) {
   const startTime = session.startTime ? new Date(session.startTime) : null;
-  const endTime = session.endTime ? new Date(session.endTime) : null;
-
-  // Calculate duration
-  const duration =
-    startTime && endTime ? Math.round((endTime.getTime() - startTime.getTime()) / 60000) : null;
 
   const projectName = session.projectName || session.projectPath.split("/").pop() || "Unknown";
 
@@ -230,11 +216,6 @@ function RecentSessionItem({
             <Clock className="h-3 w-3" />
             {formatTimeShortJST(startTime)}
           </span>
-        )}
-        {duration !== null && (
-          <Badge variant="outline" className="h-4 px-1 text-xs">
-            {duration}min
-          </Badge>
         )}
       </div>
       {session.summary ? (

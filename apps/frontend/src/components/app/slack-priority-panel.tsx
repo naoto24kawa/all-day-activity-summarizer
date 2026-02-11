@@ -45,7 +45,7 @@ export function SlackPriorityPanel({ className }: SlackPriorityPanelProps) {
   const allPriorityMessages = useMemo(() => {
     const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
     return messages
-      .filter((m) => m.priority !== null && !m.isRead)
+      .filter((m) => m.priority !== null && m.priority !== "low" && !m.isRead)
       .sort((a, b) => {
         const orderA = priorityOrder[a.priority ?? ""] ?? 3;
         const orderB = priorityOrder[b.priority ?? ""] ?? 3;

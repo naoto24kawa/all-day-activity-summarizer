@@ -82,6 +82,50 @@ export async function handleSlackPriority(
     };
   }
 
+  // mention/dm は自動的に high に設定
+  if (message.messageType === "mention" || message.messageType === "dm") {
+    const priority = "high";
+    db.update(schema.slackMessages)
+      .set({ priority })
+      .where(eq(schema.slackMessages.id, messageId))
+      .run();
+
+    // 高優先度通知
+    await notifyHighPriority(db, config, message, {
+      priority,
+      reason: `${message.messageType === "mention" ? "メンション" : "DM"}のため高優先度に設定`,
+    });
+
+    return {
+      success: true,
+      resultSummary: `${message.messageType} のため高優先度に設定`,
+      data: { priority },
+    };
+  }
+
+  // keyword メッセージは設定の優先度を自動適用 (AI 判定をスキップ)
+  if (message.messageType === "keyword") {
+    const priority = config.slack.keywordPriority ?? "medium";
+    db.update(schema.slackMessages)
+      .set({ priority })
+      .where(eq(schema.slackMessages.id, messageId))
+      .run();
+
+    // 高優先度の場合は通知
+    if (priority === "high") {
+      await notifyHighPriority(db, config, message, {
+        priority,
+        reason: "キーワードマッチのため設定優先度を適用",
+      });
+    }
+
+    return {
+      success: true,
+      resultSummary: `keyword のため設定優先度を適用: ${priority}`,
+      data: { priority },
+    };
+  }
+
   // テキストが空の場合はデフォルト優先度を設定
   if (!message.text || message.text.trim() === "") {
     const defaultPriority = "low";

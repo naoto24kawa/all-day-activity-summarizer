@@ -45,7 +45,7 @@ export interface TabConfig {
   id: TabId;
   label: string;
   icon: LucideIcon;
-  badgeKey?: "tasks" | "learnings" | "slack" | "github" | "notion";
+  badgeKey?: "tasks" | "learnings" | "slack" | "github";
 }
 
 export interface TabGroupConfig {
@@ -71,8 +71,8 @@ export const TAB_GROUPS: TabGroupConfig[] = [
     icon: MessageSquare,
     tabs: [
       { id: "slack", label: "Slack", icon: MessageSquare },
-      { id: "github", label: "GitHub", icon: Github, badgeKey: "github" },
-      { id: "notion", label: "Notion", icon: NotebookPen, badgeKey: "notion" },
+      { id: "github", label: "GitHub", icon: Github },
+      { id: "notion", label: "Notion", icon: NotebookPen },
       { id: "claude", label: "Claude", icon: Terminal },
       { id: "audio", label: "Audio", icon: Mic },
     ],

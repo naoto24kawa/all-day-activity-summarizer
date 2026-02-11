@@ -48,6 +48,7 @@ interface IntegrationsUpdateBody {
   };
   slackKeywords?: {
     watchKeywords?: string[];
+    keywordPriority?: "high" | "medium" | "low";
   };
 }
 
@@ -281,6 +282,14 @@ function updateSlackKeywordsConfig(
     updated = true;
   }
 
+  if (slackKeywords.keywordPriority !== undefined) {
+    const valid = ["high", "medium", "low"] as const;
+    if (valid.includes(slackKeywords.keywordPriority)) {
+      config.slack.keywordPriority = slackKeywords.keywordPriority;
+      updated = true;
+    }
+  }
+
   return updated;
 }
 
@@ -309,6 +318,7 @@ export function createConfigRouter() {
         fetchIntervalMinutes: config.slack.fetchIntervalMinutes,
         channels: config.slack.channels,
         watchKeywords: config.slack.watchKeywords,
+        keywordPriority: config.slack.keywordPriority,
       },
       github: {
         enabled: config.github.enabled,
@@ -429,7 +439,11 @@ export function createConfigRouter() {
       requiresRestart: updated,
       integrations: {
         whisper: { enabled: config.whisper.enabled },
-        slack: { enabled: config.slack.enabled, watchKeywords: config.slack.watchKeywords },
+        slack: {
+          enabled: config.slack.enabled,
+          watchKeywords: config.slack.watchKeywords,
+          keywordPriority: config.slack.keywordPriority,
+        },
         github: { enabled: config.github.enabled },
         calendar: { enabled: config.calendar.enabled },
         notion: { enabled: config.notion.enabled },

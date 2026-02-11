@@ -89,6 +89,7 @@ export interface IntegrationsConfig {
     fetchIntervalMinutes: number;
     channels: string[];
     watchKeywords: string[];
+    keywordPriority: "high" | "medium" | "low";
   };
   github: IntegrationStatus & {
     username?: string;
@@ -150,7 +151,10 @@ interface UpdateIntegrationsResponse {
   requiresRestart: boolean;
   integrations: {
     whisper: IntegrationStatus;
-    slack: IntegrationStatus & { watchKeywords?: string[] };
+    slack: IntegrationStatus & {
+      watchKeywords?: string[];
+      keywordPriority?: "high" | "medium" | "low";
+    };
     github: IntegrationStatus;
     calendar?: IntegrationStatus;
     claudeCode: IntegrationStatus;
@@ -347,34 +351,45 @@ export function useConfig() {
     [],
   );
 
-  const updateSlackKeywords = useCallback(async (watchKeywords: string[]) => {
-    try {
-      setUpdating(true);
-      setError(null);
-      const body = { slackKeywords: { watchKeywords } };
-      const data = await patchAdasApi<UpdateIntegrationsResponse>("/api/config/integrations", body);
+  const updateSlackKeywords = useCallback(
+    async (config: { watchKeywords?: string[]; keywordPriority?: "high" | "medium" | "low" }) => {
+      try {
+        setUpdating(true);
+        setError(null);
+        const body = { slackKeywords: config };
+        const data = await patchAdasApi<UpdateIntegrationsResponse>(
+          "/api/config/integrations",
+          body,
+        );
 
-      // ローカル状態を更新
-      setIntegrations((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          slack: {
-            ...prev.slack,
-            watchKeywords: data.integrations.slack.watchKeywords ?? [],
-          },
-        };
-      });
+        // ローカル状態を更新
+        setIntegrations((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            slack: {
+              ...prev.slack,
+              ...(data.integrations.slack.watchKeywords !== undefined && {
+                watchKeywords: data.integrations.slack.watchKeywords,
+              }),
+              ...(data.integrations.slack.keywordPriority !== undefined && {
+                keywordPriority: data.integrations.slack.keywordPriority,
+              }),
+            },
+          };
+        });
 
-      return data;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "設定の更新に失敗しました";
-      setError(message);
-      throw err;
-    } finally {
-      setUpdating(false);
-    }
-  }, []);
+        return data;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "設定の更新に失敗しました";
+        setError(message);
+        throw err;
+      } finally {
+        setUpdating(false);
+      }
+    },
+    [],
+  );
 
   const updateAiProcessingLogExtractConfig = useCallback(
     async (config: { enabled?: boolean; intervalMinutes?: number }) => {

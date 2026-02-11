@@ -24,6 +24,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -167,7 +174,7 @@ export function IntegrationsPanel() {
                     className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground"
                     onClick={() => {
                       const updated = integrations.slack.watchKeywords.filter((k) => k !== keyword);
-                      updateSlackKeywords(updated);
+                      updateSlackKeywords({ watchKeywords: updated });
                     }}
                   >
                     {keyword} ×
@@ -181,10 +188,9 @@ export function IntegrationsPanel() {
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && newKeyword.trim()) {
                         if (!integrations.slack.watchKeywords.includes(newKeyword.trim())) {
-                          updateSlackKeywords([
-                            ...integrations.slack.watchKeywords,
-                            newKeyword.trim(),
-                          ]);
+                          updateSlackKeywords({
+                            watchKeywords: [...integrations.slack.watchKeywords, newKeyword.trim()],
+                          });
                         }
                         setNewKeyword("");
                       }
@@ -201,10 +207,9 @@ export function IntegrationsPanel() {
                         newKeyword.trim() &&
                         !integrations.slack.watchKeywords.includes(newKeyword.trim())
                       ) {
-                        updateSlackKeywords([
-                          ...integrations.slack.watchKeywords,
-                          newKeyword.trim(),
-                        ]);
+                        updateSlackKeywords({
+                          watchKeywords: [...integrations.slack.watchKeywords, newKeyword.trim()],
+                        });
                         setNewKeyword("");
                       }
                     }}
@@ -213,6 +218,25 @@ export function IntegrationsPanel() {
                     <Plus className="h-3 w-3" />
                   </Button>
                 </div>
+              </div>
+              <div className="mt-2">
+                <Label className="text-sm text-muted-foreground">キーワード優先度</Label>
+                <Select
+                  value={integrations.slack.keywordPriority ?? "medium"}
+                  onValueChange={(value: "high" | "medium" | "low") => {
+                    updateSlackKeywords({ keywordPriority: value });
+                  }}
+                  disabled={updating}
+                >
+                  <SelectTrigger className="mt-1 h-8 w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           )}

@@ -93,6 +93,7 @@ export interface AdasConfig {
     excludeChannels: string[]; // Channel IDs to exclude (e.g., RSS feed channels)
     mentionGroups: string[]; // Group names to monitor (e.g., "team_製品開発本部_ジョブアンテナ")
     watchKeywords: string[]; // Keywords to monitor (e.g., "ジョブアンテナ", "障害")
+    keywordPriority: "high" | "medium" | "low";
     priorityNotification: {
       enabled: boolean; // 優先度通知を有効にする
       terminalNotify: boolean; // ターミナルに通知を表示
@@ -241,6 +242,7 @@ const defaultConfig: AdasConfig = {
     excludeChannels: [],
     mentionGroups: [],
     watchKeywords: [],
+    keywordPriority: "medium",
     priorityNotification: {
       enabled: true,
       terminalNotify: true,

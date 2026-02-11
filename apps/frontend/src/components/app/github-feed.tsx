@@ -7,7 +7,6 @@
 
 import type { GitHubComment, GitHubItem, Project } from "@repo/types";
 import {
-  Check,
   ChevronDown,
   ChevronRight,
   CircleDot,
@@ -35,20 +34,18 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfig } from "@/hooks/use-config";
-import { useGitHubComments, useGitHubItems, useGitHubUnreadCounts } from "@/hooks/use-github";
+import { useGitHubComments, useGitHubItems } from "@/hooks/use-github";
 import { useProjects } from "@/hooks/use-projects";
 import { postAdasApi } from "@/lib/adas-api";
-import { formatGitHubDateJST, getTodayDateString } from "@/lib/date";
+import { formatGitHubDateJST } from "@/lib/date";
 
 interface GitHubFeedProps {
   className?: string;
 }
 
 export function GitHubFeed({ className }: GitHubFeedProps) {
-  const date = getTodayDateString();
   const { integrations, loading: configLoading } = useConfig();
   const { items, loading, error, refetch, markAsRead } = useGitHubItems();
-  const { counts } = useGitHubUnreadCounts(date);
   const {
     comments,
     loading: commentsLoading,
@@ -106,13 +103,6 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
     }
     return map;
   }, [comments]);
-
-  // Item ごとのコメント未読数を計算
-  const getItemCommentUnreadCount = (item: GitHubItem): number => {
-    const key = `${item.repoOwner}/${item.repoName}#${item.number}`;
-    const itemComments = commentsByItem.get(key) ?? [];
-    return itemComments.filter((c) => !c.isRead).length;
-  };
 
   const syncProjects = async () => {
     setSyncing(true);
@@ -196,16 +186,6 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
   const pullRequests = items.filter((i) => i.itemType === "pull_request" && !i.isReviewRequested);
   const reviewRequests = items.filter((i) => i.itemType === "pull_request" && i.isReviewRequested);
 
-  // タブごとのバッジ (Item 未読 + コメント未読)
-  const issuesBadge =
-    counts.issue + issues.reduce((acc, item) => acc + getItemCommentUnreadCount(item), 0);
-  const prsBadge =
-    counts.pullRequest +
-    pullRequests.reduce((acc, item) => acc + getItemCommentUnreadCount(item), 0);
-  const reviewsBadge =
-    counts.reviewRequest +
-    reviewRequests.reduce((acc, item) => acc + getItemCommentUnreadCount(item), 0);
-
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardContent className="flex min-h-0 flex-1 flex-col pt-4">
@@ -215,9 +195,9 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
           <div className="flex min-h-0 flex-1 flex-col">
             <SegmentedTabs
               tabs={[
-                { id: "issues", label: "Issues", icon: CircleDot, badge: issuesBadge },
-                { id: "prs", label: "PRs", icon: GitPullRequest, badge: prsBadge },
-                { id: "reviews", label: "Reviews", icon: Eye, badge: reviewsBadge },
+                { id: "issues", label: "Issues", icon: CircleDot },
+                { id: "prs", label: "PRs", icon: GitPullRequest },
+                { id: "reviews", label: "Reviews", icon: Eye },
               ]}
               value={activeTab}
               onValueChange={setActiveTab}
@@ -418,14 +398,7 @@ function RepoCollapsible({
           )}
           <FolderGit2 className="h-4 w-4 text-muted-foreground" />
           <span className="truncate text-sm font-medium">{group.repoKey}</span>
-          <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-            {group.items.length}
-          </Badge>
-          {group.unreadCount > 0 && (
-            <Badge variant="destructive" className="h-5 px-1.5 text-xs">
-              {group.unreadCount} unread
-            </Badge>
-          )}
+          <span className="ml-1 text-xs text-muted-foreground">({group.items.length})</span>
         </CollapsibleTrigger>
         {/* プロジェクト Select */}
         <Select
@@ -481,7 +454,6 @@ function GitHubItemCard({
   onMarkCommentAsRead: (id: number) => void;
 }) {
   const [showComments, setShowComments] = useState(false);
-  const unreadCommentCount = comments.filter((c) => !c.isRead).length;
 
   const getStateIcon = () => {
     if (item.state === "merged") {
@@ -499,9 +471,7 @@ function GitHubItemCard({
   const labels = item.labels ? (JSON.parse(item.labels) as string[]) : [];
 
   return (
-    <div
-      className={`rounded-md border p-3 ${item.isRead && unreadCommentCount === 0 ? "opacity-60" : "border-primary/30 bg-primary/5"}`}
-    >
+    <div className="rounded-md border p-3">
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {getStateIcon()}
@@ -518,17 +488,6 @@ function GitHubItemCard({
               <a href={item.url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="h-3 w-3" />
               </a>
-            </Button>
-          )}
-          {!item.isRead && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => onMarkAsRead(item.id)}
-              title="Mark as read"
-            >
-              <Check className="h-3 w-3" />
             </Button>
           )}
         </div>
@@ -581,11 +540,6 @@ function GitHubItemCard({
           >
             <MessageSquare className="h-3 w-3" />
             {comments.length} comment{comments.length !== 1 ? "s" : ""}
-            {unreadCommentCount > 0 && (
-              <Badge variant="destructive" className="ml-1 h-4 px-1 text-xs">
-                {unreadCommentCount} new
-              </Badge>
-            )}
             <ChevronDown
               className={`h-3 w-3 transition-transform ${showComments ? "rotate-180" : ""}`}
             />
@@ -622,9 +576,7 @@ function GitHubCommentCard({
   };
 
   return (
-    <div
-      className={`rounded-md border p-2 text-xs ${comment.isRead ? "opacity-60" : "border-primary/30 bg-primary/5"}`}
-    >
+    <div className="rounded-md border p-2 text-xs">
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="text-xs">
@@ -645,17 +597,6 @@ function GitHubCommentCard({
               <a href={comment.url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="h-3 w-3" />
               </a>
-            </Button>
-          )}
-          {!comment.isRead && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-5 w-5"
-              onClick={() => onMarkAsRead(comment.id)}
-              title="Mark as read"
-            >
-              <Check className="h-3 w-3" />
             </Button>
           )}
         </div>

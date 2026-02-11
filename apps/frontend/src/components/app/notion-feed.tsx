@@ -6,7 +6,6 @@
 
 import type { NotionDatabase, NotionItem } from "@repo/types";
 import {
-  Check,
   ChevronDown,
   ChevronRight,
   Database,
@@ -29,7 +28,7 @@ interface NotionFeedProps {
 
 export function NotionFeed({ className }: NotionFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
-  const { items, loading, error, databaseMap, markAsRead } = useNotionFeedContext();
+  const { items, loading, error, databaseMap } = useNotionFeedContext();
 
   if (loading) {
     return (
@@ -80,11 +79,7 @@ export function NotionFeed({ className }: NotionFeedProps) {
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Notion activity.</p>
         ) : (
-          <DatabaseGroupedItemList
-            items={items}
-            databaseMap={databaseMap}
-            onMarkAsRead={markAsRead}
-          />
+          <DatabaseGroupedItemList items={items} databaseMap={databaseMap} />
         )}
       </CardContent>
     </Card>
@@ -97,17 +92,14 @@ interface DatabaseGroup {
   databaseTitle: string;
   databaseIcon: string | null;
   items: NotionItem[];
-  unreadCount: number;
 }
 
 function DatabaseGroupedItemList({
   items,
   databaseMap,
-  onMarkAsRead,
 }: {
   items: NotionItem[];
   databaseMap: Map<string, NotionDatabase>;
-  onMarkAsRead: (id: number) => void;
 }) {
   // データベース別にグループ化
   const groups = useMemo((): DatabaseGroup[] => {
@@ -129,7 +121,6 @@ function DatabaseGroupedItemList({
         databaseTitle: dbInfo?.title ?? (databaseId ? "Unknown Database" : "Pages"),
         databaseIcon: dbInfo?.icon ?? null,
         items: groupItems,
-        unreadCount: groupItems.filter((i) => !i.isRead).length,
       });
     }
 
@@ -171,7 +162,6 @@ function DatabaseGroupedItemList({
             group={group}
             isOpen={openGroups.has(group.databaseId)}
             onToggle={() => toggleGroup(group.databaseId)}
-            onMarkAsRead={onMarkAsRead}
           />
         ))}
       </div>
@@ -183,12 +173,10 @@ function DatabaseCollapsible({
   group,
   isOpen,
   onToggle,
-  onMarkAsRead,
 }: {
   group: DatabaseGroup;
   isOpen: boolean;
   onToggle: () => void;
-  onMarkAsRead: (id: number) => void;
 }) {
   return (
     <Collapsible open={isOpen} onOpenChange={onToggle}>
@@ -206,20 +194,12 @@ function DatabaseCollapsible({
           )}
           {group.databaseIcon && <span className="text-sm">{group.databaseIcon}</span>}
           <span className="truncate text-sm font-medium">{group.databaseTitle}</span>
-          <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-            {group.items.length}
-          </Badge>
-          {group.unreadCount > 0 && (
-            <Badge variant="destructive" className="h-5 px-1.5 text-xs">
-              {group.unreadCount} unread
-            </Badge>
-          )}
         </CollapsibleTrigger>
       </div>
       <CollapsibleContent>
         <div className="mt-2 space-y-3 pl-6">
           {group.items.map((item) => (
-            <NotionItemCard key={item.id} item={item} onMarkAsRead={onMarkAsRead} />
+            <NotionItemCard key={item.id} item={item} />
           ))}
         </div>
       </CollapsibleContent>
@@ -227,13 +207,7 @@ function DatabaseCollapsible({
   );
 }
 
-function NotionItemCard({
-  item,
-  onMarkAsRead,
-}: {
-  item: NotionItem;
-  onMarkAsRead: (id: number) => void;
-}) {
+function NotionItemCard({ item }: { item: NotionItem }) {
   const [isContentOpen, setIsContentOpen] = useState(false);
 
   // プロパティをパース
@@ -258,9 +232,7 @@ function NotionItemCard({
   });
 
   return (
-    <div
-      className={`rounded-md border p-3 ${item.isRead ? "opacity-60" : "border-primary/30 bg-primary/5"}`}
-    >
+    <div className="rounded-md border p-3">
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {item.icon && <span className="text-base">{item.icon}</span>}
@@ -275,17 +247,6 @@ function NotionItemCard({
               <a href={item.url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="h-3 w-3" />
               </a>
-            </Button>
-          )}
-          {!item.isRead && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => onMarkAsRead(item.id)}
-              title="Mark as read"
-            >
-              <Check className="h-3 w-3" />
             </Button>
           )}
         </div>
