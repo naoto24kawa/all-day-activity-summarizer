@@ -1686,5 +1686,73 @@ export function createDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_dlq_failed_at ON dead_letter_queue(failed_at);
   `);
 
+  // Migration: add content/content_synced_at columns to notion_items
+  addColumnIfNotExists(sqlite, "notion_items", "content", "TEXT");
+  addColumnIfNotExists(sqlite, "notion_items", "content_synced_at", "TEXT");
+
+  // Migration: update notion_queue to add fetch_page_content job type and page_id column
+  addColumnIfNotExists(sqlite, "notion_queue", "page_id", "TEXT");
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='notion_queue'",
+      )
+      .get();
+    if (row && !row.sql.includes("'fetch_page_content'")) {
+      sqlite.exec(`
+        ALTER TABLE notion_queue RENAME TO notion_queue_old;
+        CREATE TABLE notion_queue (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_type TEXT NOT NULL CHECK(job_type IN ('fetch_recent_pages', 'fetch_database_items', 'fetch_page_content')),
+          database_id TEXT,
+          page_id TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+          retry_count INTEGER NOT NULL DEFAULT 0,
+          max_retries INTEGER NOT NULL DEFAULT 3,
+          error_message TEXT,
+          locked_at TEXT,
+          run_after TEXT NOT NULL,
+          cursor TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO notion_queue (id, job_type, database_id, page_id, status, retry_count, max_retries, error_message, locked_at, run_after, cursor, created_at, updated_at)
+          SELECT id, job_type, database_id, page_id, status, retry_count, max_retries, error_message, locked_at, run_after, cursor, created_at, updated_at FROM notion_queue_old;
+        DROP TABLE notion_queue_old;
+        CREATE INDEX IF NOT EXISTS idx_notion_queue_status ON notion_queue(status);
+        CREATE INDEX IF NOT EXISTS idx_notion_queue_run_after ON notion_queue(run_after);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
+  // Migration: update extraction_logs CHECK constraint to include 'notion', 'server-log', 'ai-processing-log'
+  try {
+    const row = sqlite
+      .query<{ sql: string }, []>(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='extraction_logs'",
+      )
+      .get();
+    if (row && !row.sql.includes("'notion'")) {
+      sqlite.exec(`
+        ALTER TABLE extraction_logs RENAME TO extraction_logs_old;
+        CREATE TABLE extraction_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          extraction_type TEXT NOT NULL CHECK(extraction_type IN ('task', 'learning', 'vocabulary', 'project')),
+          source_type TEXT NOT NULL CHECK(source_type IN ('slack', 'github', 'github-comment', 'memo', 'claude-code', 'transcription', 'git-scan', 'server-log', 'ai-processing-log', 'notion')),
+          source_id TEXT NOT NULL,
+          extracted_count INTEGER NOT NULL DEFAULT 0,
+          extracted_at TEXT NOT NULL
+        );
+        INSERT INTO extraction_logs SELECT * FROM extraction_logs_old;
+        DROP TABLE extraction_logs_old;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_extraction_logs_unique ON extraction_logs(extraction_type, source_type, source_id);
+      `);
+    }
+  } catch {
+    // Migration already applied or fresh DB
+  }
+
   return db;
 }

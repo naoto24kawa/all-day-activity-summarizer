@@ -5,7 +5,7 @@
  */
 
 import type { AdasDatabase } from "@repo/db";
-import type { DLQOriginalQueue, DLQRetryResponse, DLQStatus } from "@repo/types";
+import type { AIJobType, DLQOriginalQueue, DLQRetryResponse, DLQStatus } from "@repo/types";
 import { Hono } from "hono";
 import { enqueueJob } from "../../ai-job/queue.js";
 import { enqueueCalendarJob } from "../../calendar/queue.js";
@@ -84,7 +84,10 @@ export function createDLQRouter(db: AdasDatabase) {
     try {
       switch (dlqJob.originalQueue) {
         case "ai_job": {
-          newJobId = enqueueJob(db, dlqJob.jobType, dlqJob.params ?? undefined);
+          const aiParams = dlqJob.params
+            ? (JSON.parse(dlqJob.params) as Record<string, unknown>)
+            : undefined;
+          newJobId = enqueueJob(db, dlqJob.jobType as AIJobType, aiParams);
           break;
         }
         case "slack": {

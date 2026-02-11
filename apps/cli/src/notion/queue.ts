@@ -10,10 +10,12 @@ import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { moveToDLQ } from "../dlq/index.js";
 
 interface EnqueueOptions {
-  jobType: "fetch_recent_pages" | "fetch_database_items";
+  jobType: "fetch_recent_pages" | "fetch_database_items" | "fetch_page_content";
   databaseId?: string;
+  pageId?: string;
   cursor?: string;
   runAfter?: Date;
+  skipDuplicateCheck?: boolean;
 }
 
 /**
@@ -21,23 +23,39 @@ interface EnqueueOptions {
  * 同じジョブタイプ+databaseId の pending/processing ジョブがある場合はスキップ
  */
 export function enqueueNotionJob(db: AdasDatabase, options: EnqueueOptions) {
-  const { jobType, databaseId, cursor, runAfter } = options;
+  const { jobType, databaseId, pageId, cursor, runAfter, skipDuplicateCheck } = options;
 
-  // 既存の pending/processing ジョブをチェック
-  const existing = db
-    .select({ id: notionQueue.id })
-    .from(notionQueue)
-    .where(
-      and(
-        eq(notionQueue.jobType, jobType),
-        databaseId ? eq(notionQueue.databaseId, databaseId) : isNull(notionQueue.databaseId),
-        or(eq(notionQueue.status, "pending"), eq(notionQueue.status, "processing")),
-      ),
-    )
-    .get();
-
-  if (existing) {
-    return null;
+  if (!skipDuplicateCheck) {
+    // 既存の pending/processing ジョブをチェック
+    if (jobType === "fetch_page_content" && pageId) {
+      // fetch_page_content は pageId で重複チェック
+      const existing = db
+        .select({ id: notionQueue.id })
+        .from(notionQueue)
+        .where(
+          and(
+            eq(notionQueue.jobType, jobType),
+            eq(notionQueue.pageId, pageId),
+            or(eq(notionQueue.status, "pending"), eq(notionQueue.status, "processing")),
+          ),
+        )
+        .get();
+      if (existing) return null;
+    } else {
+      // fetch_recent_pages / fetch_database_items は jobType + databaseId で重複チェック
+      const existing = db
+        .select({ id: notionQueue.id })
+        .from(notionQueue)
+        .where(
+          and(
+            eq(notionQueue.jobType, jobType),
+            databaseId ? eq(notionQueue.databaseId, databaseId) : isNull(notionQueue.databaseId),
+            or(eq(notionQueue.status, "pending"), eq(notionQueue.status, "processing")),
+          ),
+        )
+        .get();
+      if (existing) return null;
+    }
   }
 
   const now = new Date().toISOString();
@@ -46,6 +64,7 @@ export function enqueueNotionJob(db: AdasDatabase, options: EnqueueOptions) {
     .values({
       jobType,
       databaseId: databaseId ?? null,
+      pageId: pageId ?? null,
       status: "pending",
       retryCount: 0,
       maxRetries: 3,

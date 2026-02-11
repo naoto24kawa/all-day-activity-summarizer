@@ -71,22 +71,18 @@ export function useProjectActivities({
 
       // 並列でデータを取得
       const [slackRes, claudeRes, notionRes, learningsRes, tasksRes] = await Promise.allSettled([
-        fetchAdasApi<{ data: SlackMessage[]; totalCount: number }>(
-          `/api/slack-messages?projectId=${projectId}&limit=${limit}`,
-        ),
-        fetchAdasApi<{ data: ClaudeCodeSession[]; totalCount: number }>(
+        fetchAdasApi<SlackMessage[]>(`/api/slack-messages?projectId=${projectId}&limit=${limit}`),
+        fetchAdasApi<ClaudeCodeSession[]>(
           `/api/claude-code-sessions?projectId=${projectId}&limit=${limit}`,
         ),
-        fetchAdasApi<{ data: NotionItem[]; totalCount: number }>(
-          `/api/notion-items?projectId=${projectId}&limit=${limit}`,
-        ),
+        fetchAdasApi<NotionItem[]>(`/api/notion-items?projectId=${projectId}&limit=${limit}`),
         fetchAdasApi<Learning[]>(`/api/learnings?projectId=${projectId}&limit=${limit}`),
         fetchAdasApi<Task[]>(`/api/tasks?projectId=${projectId}&limit=${limit}`),
       ]);
 
       // Slack メッセージ
-      if (slackRes.status === "fulfilled" && slackRes.value?.data) {
-        const messages = slackRes.value.data;
+      if (slackRes.status === "fulfilled" && Array.isArray(slackRes.value)) {
+        const messages = slackRes.value;
         newCounts.slack = messages.length;
         for (const msg of messages) {
           allActivities.push({
@@ -102,8 +98,8 @@ export function useProjectActivities({
       }
 
       // Claude Code セッション
-      if (claudeRes.status === "fulfilled" && claudeRes.value?.data) {
-        const sessions = claudeRes.value.data;
+      if (claudeRes.status === "fulfilled" && Array.isArray(claudeRes.value)) {
+        const sessions = claudeRes.value;
         newCounts.claude = sessions.length;
         for (const session of sessions) {
           allActivities.push({
@@ -118,8 +114,8 @@ export function useProjectActivities({
       }
 
       // Notion Items
-      if (notionRes.status === "fulfilled" && notionRes.value?.data) {
-        const items = notionRes.value.data;
+      if (notionRes.status === "fulfilled" && Array.isArray(notionRes.value)) {
+        const items = notionRes.value;
         newCounts.notion = items.length;
         for (const item of items) {
           allActivities.push({

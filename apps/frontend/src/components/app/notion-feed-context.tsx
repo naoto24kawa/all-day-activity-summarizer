@@ -6,7 +6,13 @@
 
 import type { NotionDatabase, NotionItem, Project } from "@repo/types";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo } from "react";
-import { useNotionDatabases, useNotionItems, useNotionUnreadCounts } from "@/hooks/use-notion";
+import {
+  type NotionDatabaseSummary,
+  useNotionDatabases,
+  useNotionItems,
+  useNotionSummary,
+  useNotionUnreadCounts,
+} from "@/hooks/use-notion";
 import { useProjects } from "@/hooks/use-projects";
 import { getTodayDateString } from "@/lib/date";
 
@@ -14,13 +20,15 @@ interface NotionFeedContextValue {
   // データ
   date: string;
   items: NotionItem[];
-  totalCount: number;
   unreadItems: NotionItem[];
   loading: boolean;
   error: string | null;
   counts: { total: number; database: number; page: number };
   databases: NotionDatabase[];
   databaseMap: Map<string, NotionDatabase>;
+  databaseSummaries: NotionDatabaseSummary[];
+  summaryLoading: boolean;
+  summaryError: string | null;
   projects: Project[];
   activeProjects: Project[];
 
@@ -35,8 +43,13 @@ const NotionFeedContext = createContext<NotionFeedContextValue | null>(null);
 
 export function NotionFeedProvider({ children }: { children: ReactNode }) {
   const date = getTodayDateString();
-  const { items, totalCount, loading, error, refetch, markAsRead, markAllAsRead } =
-    useNotionItems();
+  const { items, loading, error, refetch, markAsRead, markAllAsRead } = useNotionItems();
+  const {
+    databases: databaseSummaries,
+    loading: summaryLoading,
+    error: summaryError,
+    refetch: refetchSummary,
+  } = useNotionSummary();
   const { counts, refetch: refetchUnreadCounts } = useNotionUnreadCounts(date);
   const { databases } = useNotionDatabases();
   const { projects: allProjects } = useProjects(false);
@@ -68,10 +81,11 @@ export function NotionFeedProvider({ children }: { children: ReactNode }) {
   // 両方のパネルから呼べるように refetch を拡張
   const handleRefetch = useCallback(() => {
     refetch();
+    refetchSummary();
     refetchUnreadCounts();
     // NotionRecentPanel にも更新を通知
     window.dispatchEvent(new CustomEvent("notion-refresh"));
-  }, [refetch, refetchUnreadCounts]);
+  }, [refetch, refetchSummary, refetchUnreadCounts]);
 
   // feeds-refresh (統一更新) と notion-refresh (個別) をリッスン
   useEffect(() => {
@@ -83,13 +97,15 @@ export function NotionFeedProvider({ children }: { children: ReactNode }) {
   const value: NotionFeedContextValue = {
     date,
     items,
-    totalCount,
     unreadItems,
     loading,
     error,
     counts,
     databases,
     databaseMap,
+    databaseSummaries,
+    summaryLoading,
+    summaryError,
     projects: allProjects,
     activeProjects,
     refetch: handleRefetch,

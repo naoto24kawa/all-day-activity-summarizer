@@ -9,8 +9,10 @@ import type { AIJob } from "@repo/types";
 import consola from "consola";
 import { extractTasksFromAiProcessingLogs } from "../ai-processing-log/task-extractor.js";
 import type { AdasConfig } from "../config.js";
+import { getTodayDateString } from "../utils/date.js";
 import { cleanupOldUsage } from "../utils/rate-limiter.js";
 import { getSSENotifier } from "../utils/sse-notifier.js";
+import { enqueueTaskExtractIfEnabled } from "./auto-task-extract.js";
 import { registerAllHandlers } from "./handlers/index.js";
 import { cleanupOldJobs, getJob } from "./queue.js";
 import { processJob } from "./worker.js";
@@ -155,6 +157,24 @@ export function startAIJobScheduler(db: AdasDatabase, config: AdasConfig): () =>
     );
   }
 
+  // Transcription の定期タスク抽出タイマー
+  let transcriptionExtractInterval: ReturnType<typeof setInterval> | null = null;
+  if (
+    config.taskAutoExtract.enabled &&
+    config.taskAutoExtract.sources.transcription &&
+    config.taskAutoExtract.transcriptionIntervalMinutes > 0
+  ) {
+    const intervalMs = config.taskAutoExtract.transcriptionIntervalMinutes * 60 * 1000;
+    transcriptionExtractInterval = setInterval(() => {
+      enqueueTaskExtractIfEnabled(db, config, "transcription", {
+        date: getTodayDateString(),
+      });
+    }, intervalMs);
+    consola.info(
+      `[ai-job] Transcription task auto-extract enabled (every ${config.taskAutoExtract.transcriptionIntervalMinutes} min)`,
+    );
+  }
+
   // 初回クリーンアップを実行
   try {
     const deletedJobs = cleanupOldJobs(db);
@@ -180,6 +200,9 @@ export function startAIJobScheduler(db: AdasDatabase, config: AdasConfig): () =>
     clearInterval(cleanupInterval);
     if (aiLogExtractInterval) {
       clearInterval(aiLogExtractInterval);
+    }
+    if (transcriptionExtractInterval) {
+      clearInterval(transcriptionExtractInterval);
     }
     consola.info("[ai-job] AI Job scheduler stopped");
   };

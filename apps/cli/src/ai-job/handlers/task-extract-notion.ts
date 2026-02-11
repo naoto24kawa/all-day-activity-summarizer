@@ -168,6 +168,11 @@ function buildNotionPrompt(
     .map(([key, value]) => `- ${key}: ${JSON.stringify(value)}`)
     .join("\n");
 
+  // コンテンツ (最大2000文字)
+  const contentSection = item.content
+    ? `\n## ページ本文\n${item.content.length > 2000 ? `${item.content.slice(0, 2000)}...(truncated)` : item.content}`
+    : "";
+
   return `以下の Notion アイテムからタスクを抽出してください。
 タスク化すべき内容があればタスクとして抽出してください。
 単なる情報やメモはタスクとして抽出しないでください。
@@ -177,7 +182,7 @@ ${vocabularySection}${profileSection}${processedTasksSection}
 タイトル: ${item.title}
 URL: ${item.url}
 
-${propsText ? `## プロパティ\n${propsText}` : ""}`;
+${propsText ? `## プロパティ\n${propsText}` : ""}${contentSection}`;
 }
 
 /**

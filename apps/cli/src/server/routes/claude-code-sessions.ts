@@ -4,7 +4,7 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, asc, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { fetchAllSessions } from "../../claude-code/fetcher.js";
 import type { AdasConfig } from "../../config.js";
@@ -17,23 +17,27 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
    * GET /api/claude-code-sessions
    *
    * Query params:
-   * - project: string (optional, filters by project path/name)
+   * - project: string (optional, LIKE filters by project path/name)
+   * - projectPath: string (optional, exact match on projectPath)
    * - projectId: number (optional, filters by ADAS project)
    * - noProject: true (optional, filters sessions without ADAS project)
-   * - limit: number (optional, defaults to 100)
+   * - limit: number (optional, defaults to 1000)
    */
   router.get("/", (c) => {
     const project = c.req.query("project");
+    const projectPath = c.req.query("projectPath");
     const projectIdStr = c.req.query("projectId");
     const noProject = c.req.query("noProject") === "true";
     const limitStr = c.req.query("limit");
 
-    const limit = limitStr ? Number.parseInt(limitStr, 10) : 100;
+    const limit = limitStr ? Number.parseInt(limitStr, 10) : 1000;
 
     // Build conditions
     const conditions = [];
 
-    if (project) {
+    if (projectPath) {
+      conditions.push(eq(schema.claudeCodeSessions.projectPath, projectPath));
+    } else if (project) {
       conditions.push(
         sql`(${schema.claudeCodeSessions.projectPath} LIKE ${`%${project}%`} OR ${schema.claudeCodeSessions.projectName} LIKE ${`%${project}%`})`,
       );
@@ -60,15 +64,7 @@ export function createClaudeCodeSessionsRouter(db: AdasDatabase, config?: AdasCo
 
     const sessions = query.all();
 
-    // totalCount を取得
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-    const totalResult = db
-      .select({ count: count() })
-      .from(schema.claudeCodeSessions)
-      .where(whereClause)
-      .get();
-
-    return c.json({ data: sessions, totalCount: totalResult?.count ?? 0 });
+    return c.json(sessions);
   });
 
   /**

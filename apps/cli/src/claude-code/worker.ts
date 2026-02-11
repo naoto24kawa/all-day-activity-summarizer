@@ -6,7 +6,9 @@
 
 import type { AdasDatabase } from "@repo/db";
 import consola from "consola";
+import { enqueueTaskExtractIfEnabled } from "../ai-job/auto-task-extract.js";
 import type { AdasConfig } from "../config.js";
+import { getTodayDateString } from "../utils/date.js";
 import { processClaudeCodeJob } from "./fetcher.js";
 import {
   cleanupOldClaudeCodeJobs,
@@ -48,6 +50,9 @@ export function startClaudeCodeWorker(db: AdasDatabase, config: AdasConfig): () 
             try {
               await processClaudeCodeJob(db, job, filterProjects, config);
               markClaudeCodeJobCompleted(db, job.id);
+              enqueueTaskExtractIfEnabled(db, config, "claudeCode", {
+                date: getTodayDateString(),
+              });
               consola.debug(`[ClaudeCode] Job ${job.id} (${job.jobType}) completed`);
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);

@@ -5,7 +5,7 @@
 import type { AdasDatabase } from "@repo/db";
 import { type NewNotionItem, notionDatabases, notionItems } from "@repo/db/schema";
 import type { NotionParentType, NotionUnreadCounts } from "@repo/types";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 
 export function createNotionItemsRouter(db: AdasDatabase) {
@@ -20,7 +20,8 @@ export function createNotionItemsRouter(db: AdasDatabase) {
     const unread = c.req.query("unread");
     const projectId = c.req.query("projectId");
     const databaseId = c.req.query("databaseId");
-    const limit = Number(c.req.query("limit") ?? "100");
+    const noDatabaseId = c.req.query("noDatabaseId") === "true";
+    const limit = Number(c.req.query("limit") ?? "1000");
 
     const conditions = [];
 
@@ -38,6 +39,8 @@ export function createNotionItemsRouter(db: AdasDatabase) {
 
     if (databaseId) {
       conditions.push(eq(notionItems.databaseId, databaseId));
+    } else if (noDatabaseId) {
+      conditions.push(sql`${notionItems.databaseId} IS NULL`);
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -50,10 +53,49 @@ export function createNotionItemsRouter(db: AdasDatabase) {
       .limit(limit)
       .all();
 
-    // totalCount を取得
-    const totalResult = db.select({ count: count() }).from(notionItems).where(whereClause).get();
+    return c.json(items);
+  });
 
-    return c.json({ data: items, totalCount: totalResult?.count ?? 0 });
+  /**
+   * GET /api/notion-items/summary
+   * データベース別のサマリーを取得
+   */
+  app.get("/summary", (c) => {
+    const groups = db
+      .select({
+        databaseId: notionItems.databaseId,
+        itemCount: sql<number>`COUNT(*)`.as("itemCount"),
+        unreadCount: sql<number>`SUM(CASE WHEN ${notionItems.isRead} = 0 THEN 1 ELSE 0 END)`.as(
+          "unreadCount",
+        ),
+        latestEditedTime: sql<string | null>`MAX(${notionItems.lastEditedTime})`.as(
+          "latestEditedTime",
+        ),
+      })
+      .from(notionItems)
+      .groupBy(notionItems.databaseId)
+      .all();
+
+    // notion_databases テーブルから DB 情報を取得
+    const allDatabases = db.select().from(notionDatabases).all();
+    const dbMap = new Map<string, { title: string; icon: string | null }>();
+    for (const d of allDatabases) {
+      dbMap.set(d.databaseId, { title: d.title, icon: d.icon });
+    }
+
+    const databases = groups.map((g) => {
+      const dbInfo = g.databaseId ? dbMap.get(g.databaseId) : null;
+      return {
+        databaseId: g.databaseId,
+        databaseTitle: dbInfo?.title ?? (g.databaseId ? "Unknown Database" : "Pages"),
+        databaseIcon: dbInfo?.icon ?? null,
+        itemCount: g.itemCount,
+        unreadCount: g.unreadCount,
+        latestEditedTime: g.latestEditedTime,
+      };
+    });
+
+    return c.json({ databases });
   });
 
   /**

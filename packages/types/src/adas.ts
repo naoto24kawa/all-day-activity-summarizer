@@ -579,7 +579,8 @@ export type VocabularySuggestionSourceType =
   | "slack"
   | "github"
   | "claude-code"
-  | "memo";
+  | "memo"
+  | "notion";
 
 /** 用語提案ステータス */
 export type VocabularySuggestionStatus = "pending" | "accepted" | "rejected";

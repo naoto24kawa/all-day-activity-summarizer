@@ -146,6 +146,19 @@ export interface AdasConfig {
       timeout: number;
     };
   };
+  taskAutoExtract: {
+    enabled: boolean;
+    sources: {
+      slack: boolean;
+      github: boolean;
+      githubComment: boolean;
+      memo: boolean;
+      transcription: boolean;
+      claudeCode: boolean;
+      notion: boolean;
+    };
+    transcriptionIntervalMinutes: number;
+  };
   taskElaboration: {
     defaultLevel: "light" | "standard" | "detailed";
   };
@@ -328,6 +341,19 @@ const defaultConfig: AdasConfig = {
       timeout: 300000,
     },
   },
+  taskAutoExtract: {
+    enabled: true,
+    sources: {
+      slack: true,
+      github: true,
+      githubComment: true,
+      memo: true,
+      transcription: true,
+      claudeCode: true,
+      notion: true,
+    },
+    transcriptionIntervalMinutes: 30,
+  },
   taskElaboration: {
     defaultLevel: "standard",
   },
@@ -427,6 +453,14 @@ export function loadConfig(): AdasConfig {
       ...defaultConfig.summarizer,
       ...userConfig.summarizer,
       lmstudio: { ...defaultConfig.summarizer.lmstudio, ...userConfig.summarizer?.lmstudio },
+    },
+    taskAutoExtract: {
+      ...defaultConfig.taskAutoExtract,
+      ...userConfig.taskAutoExtract,
+      sources: {
+        ...defaultConfig.taskAutoExtract.sources,
+        ...userConfig.taskAutoExtract?.sources,
+      },
     },
     taskElaboration: { ...defaultConfig.taskElaboration, ...userConfig.taskElaboration },
     rateLimit: {

@@ -3,23 +3,19 @@
  */
 
 import type { NotionDatabase, NotionItem, NotionUnreadCounts } from "@repo/types";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
 export function useNotionItems() {
   const [items, setItems] = useState<NotionItem[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchItems = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const res = await fetchAdasApi<{ data: NotionItem[]; totalCount: number }>(
-        "/api/notion-items",
-      );
-      setItems(res.data);
-      setTotalCount(res.totalCount);
+      const data = await fetchAdasApi<NotionItem[]>("/api/notion-items");
+      setItems(data);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch Notion items");
@@ -48,7 +44,88 @@ export function useNotionItems() {
     [fetchItems],
   );
 
-  return { items, totalCount, error, loading, refetch: fetchItems, markAsRead, markAllAsRead };
+  return { items, error, loading, refetch: fetchItems, markAsRead, markAllAsRead };
+}
+
+/** データベース別サマリー */
+export interface NotionDatabaseSummary {
+  databaseId: string | null;
+  databaseTitle: string;
+  databaseIcon: string | null;
+  itemCount: number;
+  unreadCount: number;
+  latestEditedTime: string | null;
+}
+
+export function useNotionSummary() {
+  const [databases, setDatabases] = useState<NotionDatabaseSummary[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchSummary = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      const data = await fetchAdasApi<{ databases: NotionDatabaseSummary[] }>(
+        "/api/notion-items/summary",
+      );
+      setDatabases(data.databases);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch Notion summary");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
+
+  return { databases, error, loading, refetch: fetchSummary };
+}
+
+/** 特定データベースのアイテムを取得 (展開時) */
+export function useNotionDatabaseItems(databaseId: string | null) {
+  const [items, setItems] = useState<NotionItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cacheRef = useRef<Map<string, NotionItem[]>>(new Map());
+
+  const fetchDatabaseItems = useCallback(async (dbId: string) => {
+    const cacheKey = dbId || "__pages__";
+    const cached = cacheRef.current.get(cacheKey);
+    if (cached) {
+      setItems(cached);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const param = dbId ? `databaseId=${encodeURIComponent(dbId)}` : "noDatabaseId=true";
+      const data = await fetchAdasApi<NotionItem[]>(`/api/notion-items?${param}`);
+      cacheRef.current.set(cacheKey, data);
+      setItems(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch database items");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (databaseId !== null) {
+      fetchDatabaseItems(databaseId);
+    } else {
+      setItems([]);
+    }
+  }, [databaseId, fetchDatabaseItems]);
+
+  const clearCache = useCallback(() => {
+    cacheRef.current.clear();
+  }, []);
+
+  return { items, loading, error, clearCache };
 }
 
 export function useNotionUnreadCounts(date?: string) {

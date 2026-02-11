@@ -4,7 +4,7 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, count, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { getSSENotifier } from "../../utils/sse-notifier.js";
 
@@ -19,16 +19,20 @@ export function createGitHubItemsRouter(db: AdasDatabase) {
    * - state: open | closed | merged (optional, filters by state)
    * - unread: true | false (optional, filters by read status)
    * - reviewRequested: true | false (optional, filters by review request)
-   * - limit: number (optional, defaults to 100)
+   * - repoOwner: string (optional, filters by repo owner)
+   * - repoName: string (optional, filters by repo name)
+   * - limit: number (optional, defaults to 1000)
    */
   router.get("/", (c) => {
     const type = c.req.query("type") as "issue" | "pull_request" | undefined;
     const state = c.req.query("state");
     const unreadStr = c.req.query("unread");
     const reviewRequestedStr = c.req.query("reviewRequested");
+    const repoOwner = c.req.query("repoOwner");
+    const repoName = c.req.query("repoName");
     const limitStr = c.req.query("limit");
 
-    const limit = limitStr ? Number.parseInt(limitStr, 10) : 100;
+    const limit = limitStr ? Number.parseInt(limitStr, 10) : 1000;
 
     // Build conditions
     const conditions = [];
@@ -51,6 +55,14 @@ export function createGitHubItemsRouter(db: AdasDatabase) {
       conditions.push(eq(schema.githubItems.isReviewRequested, true));
     }
 
+    if (repoOwner) {
+      conditions.push(eq(schema.githubItems.repoOwner, repoOwner));
+    }
+
+    if (repoName) {
+      conditions.push(eq(schema.githubItems.repoName, repoName));
+    }
+
     // Execute query
     let query = db
       .select()
@@ -64,15 +76,42 @@ export function createGitHubItemsRouter(db: AdasDatabase) {
 
     const items = query.all();
 
-    // totalCount を取得
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-    const totalResult = db
-      .select({ count: count() })
-      .from(schema.githubItems)
-      .where(whereClause)
-      .get();
+    return c.json(items);
+  });
 
-    return c.json({ data: items, totalCount: totalResult?.count ?? 0 });
+  /**
+   * GET /api/github-items/summary
+   *
+   * Returns repository-level summary with counts
+   */
+  router.get("/summary", (c) => {
+    const repositories = db
+      .select({
+        repoOwner: schema.githubItems.repoOwner,
+        repoName: schema.githubItems.repoName,
+        issueCount:
+          sql<number>`SUM(CASE WHEN ${schema.githubItems.itemType} = 'issue' THEN 1 ELSE 0 END)`.as(
+            "issueCount",
+          ),
+        pullRequestCount:
+          sql<number>`SUM(CASE WHEN ${schema.githubItems.itemType} = 'pull_request' THEN 1 ELSE 0 END)`.as(
+            "pullRequestCount",
+          ),
+        reviewRequestCount:
+          sql<number>`SUM(CASE WHEN ${schema.githubItems.isReviewRequested} = 1 THEN 1 ELSE 0 END)`.as(
+            "reviewRequestCount",
+          ),
+        unreadCount:
+          sql<number>`SUM(CASE WHEN ${schema.githubItems.isRead} = 0 THEN 1 ELSE 0 END)`.as(
+            "unreadCount",
+          ),
+        projectId: sql<number | null>`MAX(${schema.githubItems.projectId})`.as("projectId"),
+      })
+      .from(schema.githubItems)
+      .groupBy(schema.githubItems.repoOwner, schema.githubItems.repoName)
+      .all();
+
+    return c.json({ repositories });
   });
 
   /**

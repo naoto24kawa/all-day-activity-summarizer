@@ -3,7 +3,7 @@
  */
 
 import type { ClaudeCodeMessage, ClaudeCodeSession } from "@repo/types";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
 export interface ClaudeCodeStats {
@@ -21,7 +21,6 @@ export interface ClaudeCodeStats {
 
 export function useClaudeCodeSessions() {
   const [sessions, setSessions] = useState<ClaudeCodeSession[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -29,11 +28,8 @@ export function useClaudeCodeSessions() {
   const fetchSessions = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const res = await fetchAdasApi<{ data: ClaudeCodeSession[]; totalCount: number }>(
-        "/api/claude-code-sessions",
-      );
-      setSessions(res.data);
-      setTotalCount(res.totalCount);
+      const data = await fetchAdasApi<ClaudeCodeSession[]>("/api/claude-code-sessions");
+      setSessions(data);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch Claude Code sessions");
@@ -72,7 +68,6 @@ export function useClaudeCodeSessions() {
 
   return {
     sessions,
-    totalCount,
     error,
     loading,
     syncing,
@@ -108,6 +103,50 @@ export function useClaudeCodeStats(date?: string) {
   }, [fetchStats]);
 
   return { stats, error, refetch: fetchStats };
+}
+
+/** 特定プロジェクトのセッションを取得 (展開時) */
+export function useClaudeCodeProjectSessions(projectPath: string | null) {
+  const [sessions, setSessions] = useState<ClaudeCodeSession[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cacheRef = useRef<Map<string, ClaudeCodeSession[]>>(new Map());
+
+  const fetchProjectSessions = useCallback(async (path: string) => {
+    const cached = cacheRef.current.get(path);
+    if (cached) {
+      setSessions(cached);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await fetchAdasApi<ClaudeCodeSession[]>(
+        `/api/claude-code-sessions?projectPath=${encodeURIComponent(path)}`,
+      );
+      cacheRef.current.set(path, data);
+      setSessions(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch project sessions");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (projectPath) {
+      fetchProjectSessions(projectPath);
+    } else {
+      setSessions([]);
+    }
+  }, [projectPath, fetchProjectSessions]);
+
+  const clearCache = useCallback(() => {
+    cacheRef.current.clear();
+  }, []);
+
+  return { sessions, loading, error, clearCache };
 }
 
 export function useClaudeCodeMessages(sessionId: string | null) {

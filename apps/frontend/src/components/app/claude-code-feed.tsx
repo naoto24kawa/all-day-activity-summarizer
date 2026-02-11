@@ -2,11 +2,12 @@
  * Claude Code Feed Component
  *
  * Displays Claude Code sessions grouped by project
+ * Stats for initial display, sessions fetched on expand
  */
 
 import type { ClaudeCodeMessage, ClaudeCodeSession } from "@repo/types";
 import { ChevronDown, Code, FolderGit2, MessageSquare, Settings, Wrench } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -23,7 +24,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useClaudeCodePaths } from "@/hooks/use-claude-code-paths";
 import {
+  type ClaudeCodeStats,
   useClaudeCodeMessages,
+  useClaudeCodeProjectSessions,
   useClaudeCodeSessions,
   useClaudeCodeStats,
 } from "@/hooks/use-claude-code-sessions";
@@ -42,13 +45,12 @@ const DEFAULT_SESSION_LIMIT = 3;
 export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
   const date = getTodayDateString();
   const { integrations, loading: configLoading } = useConfig();
-  const { sessions, totalCount, loading, error, syncSessions } = useClaudeCodeSessions();
-  const { stats } = useClaudeCodeStats(date);
+  const { syncing, syncSessions } = useClaudeCodeSessions();
+  const { stats, refetch: refetchStats } = useClaudeCodeStats(date);
   const { projects } = useProjects();
   const { updatePathProject, getPathProjectId } = useClaudeCodePaths();
   const [selectedSession, setSelectedSession] = useState<ClaudeCodeSession | null>(null);
   const [showAllProjects, setShowAllProjects] = useState(false);
-  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const [openProjects, setOpenProjects] = useState<Set<string>>(new Set());
   const activeProjects = projects.filter((p) => p.isActive);
 
@@ -65,23 +67,11 @@ export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
     });
   };
 
-  // セッション表示を展開する
-  const toggleSessionExpand = (projectPath: string) => {
-    setExpandedSessions((prev) => {
-      const next = new Set(prev);
-      if (next.has(projectPath)) {
-        next.delete(projectPath);
-      } else {
-        next.add(projectPath);
-      }
-      return next;
-    });
-  };
-
-  // feeds-refresh (統一更新) と claude-refresh (個別) をリッスン
+  // feeds-refresh / claude-refresh をリッスン
   const handleRefresh = useCallback(() => {
     syncSessions();
-  }, [syncSessions]);
+    refetchStats();
+  }, [syncSessions, refetchStats]);
 
   useEffect(() => {
     window.addEventListener("feeds-refresh", handleRefresh);
@@ -91,32 +81,6 @@ export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
       window.removeEventListener("claude-refresh", handleRefresh);
     };
   }, [handleRefresh]);
-
-  // Group sessions by project (moved before conditional returns for hooks rules)
-  const sessionsByProject = useMemo(() => {
-    const grouped = new Map<string, ClaudeCodeSession[]>();
-
-    for (const session of sessions) {
-      const key = session.projectPath;
-      const existing = grouped.get(key);
-      if (existing) {
-        existing.push(session);
-      } else {
-        grouped.set(key, [session]);
-      }
-    }
-
-    // Sort sessions within each project by startTime (newest first)
-    for (const [, projectSessions] of grouped) {
-      projectSessions.sort((a, b) => {
-        if (!a.startTime) return 1;
-        if (!b.startTime) return -1;
-        return b.startTime.localeCompare(a.startTime);
-      });
-    }
-
-    return grouped;
-  }, [sessions]);
 
   // 連携が無効な場合
   if (!configLoading && integrations && !integrations.claudeCode.enabled) {
@@ -133,7 +97,7 @@ export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
     );
   }
 
-  if (loading) {
+  if (syncing && stats.totalSessions === 0) {
     return (
       <Card>
         <CardContent className="space-y-3 pt-6">
@@ -145,75 +109,58 @@ export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
     );
   }
 
-  if (error) {
-    return (
-      <Card>
-        <CardContent className="pt-6">
-          <p className="text-sm text-muted-foreground">{error}</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
     <Card className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className ?? ""}`}>
-      {(stats.totalSessions > 0 || totalCount > 0) && (
+      {stats.totalSessions > 0 && (
         <CardHeader className="shrink-0 py-3">
           <div className="flex items-center gap-2">
             <Badge variant="secondary">{stats.totalSessions} sessions</Badge>
-            {sessions.length < totalCount && (
-              <span className="text-xs text-muted-foreground">
-                ({sessions.length}/{totalCount} 件を表示)
-              </span>
-            )}
           </div>
         </CardHeader>
       )}
       <CardContent className="min-h-0 flex-1 overflow-auto">
-        {sessions.length === 0 ? (
+        {stats.projects.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Claude Code sessions for this date.</p>
         ) : (
           <div className="space-y-2">
             {(() => {
-              const allEntries = Array.from(sessionsByProject.entries());
-              const displayEntries = showAllProjects
-                ? allEntries
-                : allEntries.slice(0, DEFAULT_PROJECT_LIMIT);
-              const hasMoreProjects = allEntries.length > DEFAULT_PROJECT_LIMIT;
+              const displayProjects = showAllProjects
+                ? stats.projects
+                : stats.projects.slice(0, DEFAULT_PROJECT_LIMIT);
+              const hasMoreProjects = stats.projects.length > DEFAULT_PROJECT_LIMIT;
 
               return (
                 <>
-                  {displayEntries.map(([projectPath, projectSessions]) => {
-                    const pathProjectId = getPathProjectId(projectPath);
+                  {displayProjects.map((project) => {
+                    const pathProjectId = getPathProjectId(project.projectPath);
                     const handlePathProjectChange = (value: string) => {
                       const newProjectId = value === "none" ? null : Number(value);
                       const projectName =
-                        projectSessions[0]?.projectName ?? projectPath.split("/").pop();
-                      updatePathProject(projectPath, newProjectId, projectName ?? undefined);
+                        project.projectName ?? project.projectPath.split("/").pop();
+                      updatePathProject(
+                        project.projectPath,
+                        newProjectId,
+                        projectName ?? undefined,
+                      );
                     };
 
-                    const isSessionExpanded = expandedSessions.has(projectPath);
-                    const displaySessions = isSessionExpanded
-                      ? projectSessions
-                      : projectSessions.slice(0, DEFAULT_SESSION_LIMIT);
-                    const hasMoreSessions = projectSessions.length > DEFAULT_SESSION_LIMIT;
-                    const isProjectOpen = openProjects.has(projectPath);
+                    const isProjectOpen = openProjects.has(project.projectPath);
 
                     return (
                       <Collapsible
-                        key={projectPath}
+                        key={project.projectPath}
                         open={isProjectOpen}
-                        onOpenChange={() => toggleProjectOpen(projectPath)}
+                        onOpenChange={() => toggleProjectOpen(project.projectPath)}
                       >
                         <div className="flex items-center gap-2 rounded-md border p-3 hover:bg-muted/50">
                           <CollapsibleTrigger className="flex flex-1 items-center justify-between">
                             <div className="flex items-center gap-2">
                               <FolderGit2 className="h-4 w-4 text-muted-foreground" />
                               <span className="font-medium">
-                                {projectSessions[0]?.projectName || projectPath.split("/").pop()}
+                                {project.projectName || project.projectPath.split("/").pop()}
                               </span>
                               <Badge variant="secondary" className="text-xs">
-                                {projectSessions.length} sessions
+                                {project.sessionCount} sessions
                               </Badge>
                             </div>
                             <ChevronDown
@@ -234,9 +181,9 @@ export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="none">なし</SelectItem>
-                                {activeProjects.map((project) => (
-                                  <SelectItem key={project.id} value={project.id.toString()}>
-                                    {project.name}
+                                {activeProjects.map((p) => (
+                                  <SelectItem key={p.id} value={p.id.toString()}>
+                                    {p.name}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -244,27 +191,11 @@ export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
                           )}
                         </div>
                         <CollapsibleContent className="mt-2 space-y-3 pl-4">
-                          {displaySessions.map((session) => (
-                            <SessionItem
-                              key={session.sessionId}
-                              session={session}
-                              onClick={() => setSelectedSession(session)}
+                          {isProjectOpen && (
+                            <ProjectSessions
+                              projectPath={project.projectPath}
+                              onSelectSession={setSelectedSession}
                             />
-                          ))}
-                          {hasMoreSessions && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-full text-muted-foreground"
-                              onClick={() => toggleSessionExpand(projectPath)}
-                            >
-                              <ChevronDown
-                                className={`mr-1 h-4 w-4 transition-transform ${isSessionExpanded ? "rotate-180" : ""}`}
-                              />
-                              {isSessionExpanded
-                                ? "閉じる"
-                                : `他 ${projectSessions.length - DEFAULT_SESSION_LIMIT} セッションを表示`}
-                            </Button>
                           )}
                         </CollapsibleContent>
                       </Collapsible>
@@ -283,7 +214,7 @@ export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
                         />
                         {showAllProjects
                           ? "閉じる"
-                          : `他 ${allEntries.length - DEFAULT_PROJECT_LIMIT} プロジェクトを表示`}
+                          : `他 ${stats.projects.length - DEFAULT_PROJECT_LIMIT} プロジェクトを表示`}
                       </Button>
                     </div>
                   )}
@@ -303,13 +234,66 @@ export function ClaudeCodeFeed({ className }: ClaudeCodeFeedProps) {
   );
 }
 
+/** プロジェクト展開時のセッション一覧 (展開時に取得) */
+function ProjectSessions({
+  projectPath,
+  onSelectSession,
+}: {
+  projectPath: string;
+  onSelectSession: (session: ClaudeCodeSession) => void;
+}) {
+  const { sessions, loading } = useClaudeCodeProjectSessions(projectPath);
+  const [expanded, setExpanded] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {["s1", "s2", "s3"].map((id) => (
+          <Skeleton key={id} className="h-12 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  if (sessions.length === 0) {
+    return <p className="py-2 text-center text-sm text-muted-foreground">No sessions.</p>;
+  }
+
+  const displaySessions = expanded ? sessions : sessions.slice(0, DEFAULT_SESSION_LIMIT);
+  const hasMore = sessions.length > DEFAULT_SESSION_LIMIT;
+
+  return (
+    <>
+      {displaySessions.map((session) => (
+        <SessionItem
+          key={session.sessionId}
+          session={session}
+          onClick={() => onSelectSession(session)}
+        />
+      ))}
+      {hasMore && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full text-muted-foreground"
+          onClick={() => setExpanded(!expanded)}
+        >
+          <ChevronDown
+            className={`mr-1 h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`}
+          />
+          {expanded ? "閉じる" : `他 ${sessions.length - DEFAULT_SESSION_LIMIT} セッションを表示`}
+        </Button>
+      )}
+    </>
+  );
+}
+
 interface SessionItemProps {
   session: ClaudeCodeSession;
   onClick: () => void;
 }
 
 function SessionItem({ session, onClick }: SessionItemProps) {
-  // Format time
   const startTime = session.startTime ? new Date(session.startTime) : null;
   const endTime = session.endTime ? new Date(session.endTime) : null;
 
@@ -318,7 +302,6 @@ function SessionItem({ session, onClick }: SessionItemProps) {
     return formatTimeShortJST(date);
   };
 
-  // Calculate duration
   const duration =
     startTime && endTime ? Math.round((endTime.getTime() - startTime.getTime()) / 60000) : null;
 

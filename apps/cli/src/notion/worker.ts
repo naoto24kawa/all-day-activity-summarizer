@@ -6,12 +6,15 @@
 
 import type { AdasDatabase } from "@repo/db";
 import consola from "consola";
+import { enqueueTaskExtractIfEnabled } from "../ai-job/auto-task-extract.js";
 import type { AdasConfig } from "../config.js";
+import { getTodayDateString } from "../utils/date.js";
 import type { NotionClient } from "./client.js";
 import { processNotionJob } from "./fetcher.js";
 import {
   cleanupOldNotionJobs,
   dequeueNotionJobs,
+  enqueueNotionJob,
   markNotionJobCompleted,
   markNotionJobFailed,
   recoverStaleNotionJobs,
@@ -52,9 +55,27 @@ export function startNotionWorker(
             try {
               const result = await processNotionJob(db, client, job);
               markNotionJobCompleted(db, job.id, result.nextCursor);
+              if (job.jobType === "fetch_page_content") {
+                enqueueTaskExtractIfEnabled(db, config, "notion", {
+                  date: getTodayDateString(),
+                });
+              }
               consola.debug(
                 `[Notion] Job ${job.id} (${job.jobType}) completed: ${result.saved} saved`,
               );
+
+              // ページネーション継続: nextCursor がある場合はフォローアップジョブを作成
+              if (result.nextCursor) {
+                enqueueNotionJob(db, {
+                  jobType: job.jobType as "fetch_recent_pages" | "fetch_database_items",
+                  databaseId: job.databaseId ?? undefined,
+                  cursor: result.nextCursor,
+                  skipDuplicateCheck: true,
+                });
+                consola.debug(
+                  `[Notion] Enqueued follow-up job for ${job.jobType} (cursor: ${result.nextCursor.slice(0, 8)}...)`,
+                );
+              }
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);
               consola.error(`[Notion] Job ${job.id} failed:`, message);

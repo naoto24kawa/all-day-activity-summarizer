@@ -9,23 +9,19 @@ import type {
   GitHubUnreadCounts,
   Project,
 } from "@repo/types";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
 export function useGitHubItems() {
   const [items, setItems] = useState<GitHubItem[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchItems = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const res = await fetchAdasApi<{ data: GitHubItem[]; totalCount: number }>(
-        "/api/github-items",
-      );
-      setItems(res.data);
-      setTotalCount(res.totalCount);
+      const data = await fetchAdasApi<GitHubItem[]>("/api/github-items");
+      setItems(data);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch GitHub items");
@@ -58,23 +54,19 @@ export function useGitHubItems() {
     [fetchItems],
   );
 
-  return { items, totalCount, error, loading, refetch: fetchItems, markAsRead, markAllAsRead };
+  return { items, error, loading, refetch: fetchItems, markAsRead, markAllAsRead };
 }
 
 export function useGitHubComments() {
   const [comments, setComments] = useState<GitHubComment[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchComments = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const res = await fetchAdasApi<{ data: GitHubComment[]; totalCount: number }>(
-        "/api/github-comments",
-      );
-      setComments(res.data);
-      setTotalCount(res.totalCount);
+      const data = await fetchAdasApi<GitHubComment[]>("/api/github-comments");
+      setComments(data);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch GitHub comments");
@@ -105,13 +97,116 @@ export function useGitHubComments() {
 
   return {
     comments,
-    totalCount,
     error,
     loading,
     refetch: fetchComments,
     markAsRead,
     markAllAsRead,
   };
+}
+
+/** リポジトリ別サマリー */
+export interface GitHubRepoSummary {
+  repoOwner: string;
+  repoName: string;
+  issueCount: number;
+  pullRequestCount: number;
+  reviewRequestCount: number;
+  unreadCount: number;
+  projectId: number | null;
+}
+
+export interface GitHubCommentRepoSummary {
+  repoOwner: string;
+  repoName: string;
+  commentCount: number;
+  unreadCount: number;
+}
+
+export function useGitHubSummary() {
+  const [repositories, setRepositories] = useState<GitHubRepoSummary[]>([]);
+  const [commentRepositories, setCommentRepositories] = useState<GitHubCommentRepoSummary[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchSummary = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      const [itemsData, commentsData] = await Promise.all([
+        fetchAdasApi<{ repositories: GitHubRepoSummary[] }>("/api/github-items/summary"),
+        fetchAdasApi<{ repositories: GitHubCommentRepoSummary[] }>("/api/github-comments/summary"),
+      ]);
+      setRepositories(itemsData.repositories);
+      setCommentRepositories(commentsData.repositories);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch GitHub summary");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
+
+  return { repositories, commentRepositories, error, loading, refetch: fetchSummary };
+}
+
+/** 特定リポジトリのアイテム+コメントを取得 (展開時) */
+export function useGitHubRepoData(owner: string | null, repo: string | null) {
+  const [items, setItems] = useState<GitHubItem[]>([]);
+  const [comments, setComments] = useState<GitHubComment[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cacheRef = useRef<Map<string, { items: GitHubItem[]; comments: GitHubComment[] }>>(
+    new Map(),
+  );
+
+  const fetchRepoData = useCallback(async (o: string, r: string) => {
+    const key = `${o}/${r}`;
+    const cached = cacheRef.current.get(key);
+    if (cached) {
+      setItems(cached.items);
+      setComments(cached.comments);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const [itemsData, commentsData] = await Promise.all([
+        fetchAdasApi<GitHubItem[]>(
+          `/api/github-items?repoOwner=${encodeURIComponent(o)}&repoName=${encodeURIComponent(r)}`,
+        ),
+        fetchAdasApi<GitHubComment[]>(
+          `/api/github-comments?repoOwner=${encodeURIComponent(o)}&repoName=${encodeURIComponent(r)}`,
+        ),
+      ]);
+      cacheRef.current.set(key, { items: itemsData, comments: commentsData });
+      setItems(itemsData);
+      setComments(commentsData);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch repo data");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (owner && repo) {
+      fetchRepoData(owner, repo);
+    } else {
+      setItems([]);
+      setComments([]);
+    }
+  }, [owner, repo, fetchRepoData]);
+
+  const clearCache = useCallback(() => {
+    cacheRef.current.clear();
+  }, []);
+
+  return { items, comments, loading, error, clearCache };
 }
 
 export function useGitHubUnreadCounts(date?: string) {

@@ -3,7 +3,7 @@
  */
 
 import type { SlackMessage, SlackMessagePriority, SlackPriorityCounts } from "@repo/types";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ADAS_API_URL, fetchAdasApi, postAdasApi } from "@/lib/adas-api";
 
 export interface SlackUnreadCounts {
@@ -16,7 +16,6 @@ export interface SlackUnreadCounts {
 
 export function useSlackMessages() {
   const [messages, setMessages] = useState<SlackMessage[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [markingAllAsRead, setMarkingAllAsRead] = useState(false);
@@ -24,11 +23,8 @@ export function useSlackMessages() {
   const fetchMessages = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const res = await fetchAdasApi<{ data: SlackMessage[]; totalCount: number }>(
-        "/api/slack-messages",
-      );
-      setMessages(res.data);
-      setTotalCount(res.totalCount);
+      const data = await fetchAdasApi<SlackMessage[]>("/api/slack-messages");
+      setMessages(data);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch Slack messages");
@@ -88,7 +84,6 @@ export function useSlackMessages() {
 
   return {
     messages,
-    totalCount,
     error,
     loading,
     markingAllAsRead,
@@ -98,6 +93,88 @@ export function useSlackMessages() {
     updateMessage,
     updatePriority,
   };
+}
+
+/** チャンネル別サマリー */
+export interface SlackChannelSummary {
+  channelId: string;
+  channelName: string | null;
+  messageCount: number;
+  unreadCount: number;
+  latestMessageTs: string | null;
+  projectId: number | null;
+}
+
+export function useSlackSummary() {
+  const [channels, setChannels] = useState<SlackChannelSummary[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchSummary = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      const data = await fetchAdasApi<{ channels: SlackChannelSummary[] }>(
+        "/api/slack-messages/summary",
+      );
+      setChannels(data.channels);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch Slack summary");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
+
+  return { channels, error, loading, refetch: fetchSummary };
+}
+
+/** 特定チャンネルのメッセージを取得 (展開時) */
+export function useSlackChannelMessages(channelId: string | null) {
+  const [messages, setMessages] = useState<SlackMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cacheRef = useRef<Map<string, SlackMessage[]>>(new Map());
+
+  const fetchChannelMessages = useCallback(async (chId: string) => {
+    // キャッシュがあればそれを返す
+    const cached = cacheRef.current.get(chId);
+    if (cached) {
+      setMessages(cached);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await fetchAdasApi<SlackMessage[]>(
+        `/api/slack-messages?channelId=${encodeURIComponent(chId)}`,
+      );
+      cacheRef.current.set(chId, data);
+      setMessages(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch channel messages");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (channelId) {
+      fetchChannelMessages(channelId);
+    } else {
+      setMessages([]);
+    }
+  }, [channelId, fetchChannelMessages]);
+
+  const clearCache = useCallback(() => {
+    cacheRef.current.clear();
+  }, []);
+
+  return { messages, loading, error, clearCache };
 }
 
 export function useSlackUnreadCounts(date?: string) {

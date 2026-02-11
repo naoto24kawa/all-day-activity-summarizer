@@ -4,13 +4,15 @@
  * SlackFeed と SlackFeedControls で状態を共有するための Context
  */
 
-import type { Project, SlackMessage, SlackMessagePriority, SlackUserSummary } from "@repo/types";
+import type { Project, SlackMessagePriority, SlackUserSummary } from "@repo/types";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import { useProjects } from "@/hooks/use-projects";
 import { useSlackChannels } from "@/hooks/use-slack-channels";
 import {
+  type SlackChannelSummary,
   useSlackMessages,
   useSlackPriorityCounts,
+  useSlackSummary,
   useSlackUnreadCounts,
 } from "@/hooks/use-slack-messages";
 import { useSlackUsers } from "@/hooks/use-slack-users";
@@ -19,10 +21,9 @@ import { getTodayDateString } from "@/lib/date";
 interface SlackFeedContextValue {
   // データ
   date: string;
-  messages: SlackMessage[];
-  totalCount: number;
-  loading: boolean;
-  error: string | null;
+  channelSummaries: SlackChannelSummary[];
+  summaryLoading: boolean;
+  summaryError: string | null;
   counts: { total: number; mention: number; channel: number; dm: number; keyword: number };
   priorityCounts: { total: number; high: number; medium: number; low: number };
   projects: Project[];
@@ -32,7 +33,6 @@ interface SlackFeedContextValue {
   // フィルター
   priorityFilter: SlackMessagePriority | "all";
   setPriorityFilter: (filter: SlackMessagePriority | "all") => void;
-  filteredMessages: SlackMessage[];
 
   // Users Popover
   usersPopoverOpen: boolean;
@@ -46,7 +46,7 @@ interface SlackFeedContextValue {
   handleSaveUserName: (userId: string) => Promise<void>;
   handleResetUserName: (userId: string) => Promise<void>;
 
-  // アクション
+  // アクション (既存 useSlackMessages を保持: markAsRead 等)
   markingAllAsRead: boolean;
   refetch: () => void;
   markAsRead: (id: number) => void;
@@ -63,13 +63,17 @@ const SlackFeedContext = createContext<SlackFeedContextValue | null>(null);
 
 export function SlackFeedProvider({ children }: { children: ReactNode }) {
   const date = getTodayDateString();
+  // summary API (チャンネル一覧 + 件数)
   const {
-    messages,
-    totalCount,
-    loading,
-    error,
+    channels: channelSummaries,
+    loading: summaryLoading,
+    error: summaryError,
+    refetch: refetchSummary,
+  } = useSlackSummary();
+  // 既存フック (markAsRead 等のアクション用)
+  const {
     markingAllAsRead,
-    refetch,
+    refetch: refetchMessages,
     markAsRead,
     markAllAsRead,
     updateMessage,
@@ -120,31 +124,30 @@ export function SlackFeedProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // 統一 refetch
+  const refetch = () => {
+    refetchSummary();
+    refetchMessages();
+    refetchUnreadCounts();
+    refetchPriorityCounts();
+  };
+
   // feeds-refresh (統一更新) と slack-refresh (個別) をリッスン
   useEffect(() => {
-    const handleRefresh = () => {
-      refetch();
-      refetchUnreadCounts();
-      refetchPriorityCounts();
-    };
+    const handleRefresh = () => refetch();
     window.addEventListener("feeds-refresh", handleRefresh);
     window.addEventListener("slack-refresh", handleRefresh);
     return () => {
       window.removeEventListener("feeds-refresh", handleRefresh);
       window.removeEventListener("slack-refresh", handleRefresh);
     };
-  }, [refetch, refetchUnreadCounts, refetchPriorityCounts]);
-
-  // フィルタリング
-  const filteredMessages =
-    priorityFilter === "all" ? messages : messages.filter((m) => m.priority === priorityFilter);
+  }, [refetchSummary, refetchMessages, refetchUnreadCounts, refetchPriorityCounts]);
 
   const value: SlackFeedContextValue = {
     date,
-    messages,
-    totalCount,
-    loading,
-    error,
+    channelSummaries,
+    summaryLoading,
+    summaryError,
     counts,
     priorityCounts,
     projects,
@@ -152,7 +155,6 @@ export function SlackFeedProvider({ children }: { children: ReactNode }) {
     usersLoading,
     priorityFilter,
     setPriorityFilter,
-    filteredMessages,
     usersPopoverOpen,
     setUsersPopoverOpen,
     editingUserId,

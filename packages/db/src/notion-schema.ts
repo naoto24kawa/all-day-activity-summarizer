@@ -69,9 +69,10 @@ export type NewNotionDatabase = typeof notionDatabases.$inferInsert;
 export const notionQueue = sqliteTable("notion_queue", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   jobType: text("job_type", {
-    enum: ["fetch_recent_pages", "fetch_database_items"],
+    enum: ["fetch_recent_pages", "fetch_database_items", "fetch_page_content"],
   }).notNull(),
   databaseId: text("database_id"), // fetch_database_items 時のみ
+  pageId: text("page_id"), // fetch_page_content 時のみ
   status: text("status", { enum: ["pending", "processing", "completed", "failed"] })
     .notNull()
     .default("pending"),

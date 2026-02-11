@@ -6,7 +6,9 @@
 
 import type { AdasDatabase } from "@repo/db";
 import consola from "consola";
+import { enqueueTaskExtractIfEnabled } from "../ai-job/auto-task-extract.js";
 import type { AdasConfig } from "../config.js";
+import { getTodayDateString } from "../utils/date.js";
 import { processGitHubJob } from "./fetcher.js";
 import {
   cleanupOldGitHubJobs,
@@ -47,6 +49,12 @@ export function startGitHubWorker(db: AdasDatabase, config: AdasConfig): () => v
             try {
               await processGitHubJob(db, job);
               markGitHubJobCompleted(db, job.id);
+              enqueueTaskExtractIfEnabled(db, config, "github", {
+                date: getTodayDateString(),
+              });
+              enqueueTaskExtractIfEnabled(db, config, "githubComment", {
+                date: getTodayDateString(),
+              });
               consola.debug(`[GitHub] Job ${job.id} (${job.jobType}) completed`);
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);

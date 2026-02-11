@@ -2,9 +2,10 @@
  * Notion Feed Component
  *
  * Notion データベースアイテムとページを表示
+ * Summary + expand-on-demand pattern: DB一覧を初期表示、展開時にアイテム取得
  */
 
-import type { NotionDatabase, NotionItem } from "@repo/types";
+import type { NotionItem } from "@repo/types";
 import {
   ChevronDown,
   ChevronRight,
@@ -20,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfig } from "@/hooks/use-config";
+import { type NotionDatabaseSummary, useNotionDatabaseItems } from "@/hooks/use-notion";
 import { useNotionFeedContext } from "./notion-feed-context";
 
 interface NotionFeedProps {
@@ -28,9 +30,9 @@ interface NotionFeedProps {
 
 export function NotionFeed({ className }: NotionFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
-  const { items, totalCount, loading, error, databaseMap } = useNotionFeedContext();
+  const { databaseSummaries, summaryLoading, summaryError } = useNotionFeedContext();
 
-  if (loading) {
+  if (summaryLoading) {
     return (
       <Card className={className}>
         <CardContent className="space-y-3 pt-6">
@@ -42,18 +44,23 @@ export function NotionFeed({ className }: NotionFeedProps) {
     );
   }
 
-  if (error) {
+  if (summaryError) {
     return (
       <Card className={className}>
         <CardContent className="pt-6">
-          <p className="text-sm text-muted-foreground">{error}</p>
+          <p className="text-sm text-muted-foreground">{summaryError}</p>
         </CardContent>
       </Card>
     );
   }
 
   // 連携が無効な場合
-  if (!configLoading && integrations && !integrations.notion?.enabled && items.length === 0) {
+  if (
+    !configLoading &&
+    integrations &&
+    !integrations.notion?.enabled &&
+    databaseSummaries.length === 0
+  ) {
     return (
       <Card className={className}>
         <CardHeader className="pb-3">
@@ -76,73 +83,27 @@ export function NotionFeed({ className }: NotionFeedProps) {
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardContent className="flex min-h-0 flex-1 flex-col pt-4">
-        {totalCount > 0 && (
-          <p className="mb-2 text-xs text-muted-foreground">
-            {items.length < totalCount
-              ? `${items.length} / ${totalCount} 件を表示`
-              : `全 ${totalCount} 件`}
-          </p>
-        )}
-        {items.length === 0 ? (
+        {databaseSummaries.length === 0 ? (
           <p className="text-sm text-muted-foreground">No Notion activity.</p>
         ) : (
-          <DatabaseGroupedItemList items={items} databaseMap={databaseMap} />
+          <DatabaseSummaryList databases={databaseSummaries} />
         )}
       </CardContent>
     </Card>
   );
 }
 
-/** データベース別グループ */
-interface DatabaseGroup {
-  databaseId: string | null;
-  databaseTitle: string;
-  databaseIcon: string | null;
-  items: NotionItem[];
-}
-
-function DatabaseGroupedItemList({
-  items,
-  databaseMap,
-}: {
-  items: NotionItem[];
-  databaseMap: Map<string, NotionDatabase>;
-}) {
-  // データベース別にグループ化
-  const groups = useMemo((): DatabaseGroup[] => {
-    const groupMap = new Map<string | null, NotionItem[]>();
-
-    for (const item of items) {
-      const key = item.databaseId;
-      const existing = groupMap.get(key) ?? [];
-      existing.push(item);
-      groupMap.set(key, existing);
-    }
-
-    const result: DatabaseGroup[] = [];
-
-    for (const [databaseId, groupItems] of groupMap.entries()) {
-      const dbInfo = databaseId ? databaseMap.get(databaseId) : null;
-      result.push({
-        databaseId,
-        databaseTitle: dbInfo?.title ?? (databaseId ? "Unknown Database" : "Pages"),
-        databaseIcon: dbInfo?.icon ?? null,
-        items: groupItems,
-      });
-    }
-
-    // データベース名でソート (Pages は最後)
-    result.sort((a, b) => {
+/** データベース一覧 (summary ベース) */
+function DatabaseSummaryList({ databases }: { databases: NotionDatabaseSummary[] }) {
+  const sorted = useMemo(() => {
+    return [...databases].sort((a, b) => {
       if (a.databaseId === null) return 1;
       if (b.databaseId === null) return -1;
       return a.databaseTitle.localeCompare(b.databaseTitle);
     });
+  }, [databases]);
 
-    return result;
-  }, [items, databaseMap]);
-
-  // 開閉状態を管理 (初期状態は全て閉じている)
-  const [openGroups, setOpenGroups] = useState<Set<string | null>>(() => new Set<string | null>());
+  const [openGroups, setOpenGroups] = useState<Set<string | null>>(new Set());
 
   const toggleGroup = (databaseId: string | null) => {
     setOpenGroups((prev) => {
@@ -156,19 +117,15 @@ function DatabaseGroupedItemList({
     });
   };
 
-  if (items.length === 0) {
-    return <p className="py-4 text-center text-sm text-muted-foreground">No items.</p>;
-  }
-
   return (
     <div className="h-full overflow-y-auto">
       <div className="space-y-2">
-        {groups.map((group) => (
+        {sorted.map((db) => (
           <DatabaseCollapsible
-            key={group.databaseId ?? "pages"}
-            group={group}
-            isOpen={openGroups.has(group.databaseId)}
-            onToggle={() => toggleGroup(group.databaseId)}
+            key={db.databaseId ?? "pages"}
+            database={db}
+            isOpen={openGroups.has(db.databaseId)}
+            onToggle={() => toggleGroup(db.databaseId)}
           />
         ))}
       </div>
@@ -176,12 +133,13 @@ function DatabaseGroupedItemList({
   );
 }
 
+/** データベース行 (折りたたみ) - 展開時にアイテム取得 */
 function DatabaseCollapsible({
-  group,
+  database,
   isOpen,
   onToggle,
 }: {
-  group: DatabaseGroup;
+  database: NotionDatabaseSummary;
   isOpen: boolean;
   onToggle: () => void;
 }) {
@@ -194,23 +152,55 @@ function DatabaseCollapsible({
           ) : (
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           )}
-          {group.databaseId ? (
+          {database.databaseId ? (
             <Database className="h-4 w-4 text-muted-foreground" />
           ) : (
             <FileText className="h-4 w-4 text-muted-foreground" />
           )}
-          {group.databaseIcon && <span className="text-sm">{group.databaseIcon}</span>}
-          <span className="truncate text-sm font-medium">{group.databaseTitle}</span>
+          {database.databaseIcon && <span className="text-sm">{database.databaseIcon}</span>}
+          <span className="truncate text-sm font-medium">{database.databaseTitle}</span>
+          <span className="text-xs text-muted-foreground">({database.itemCount})</span>
+          {database.unreadCount > 0 && (
+            <Badge variant="default" className="text-xs">
+              {database.unreadCount}
+            </Badge>
+          )}
         </CollapsibleTrigger>
       </div>
       <CollapsibleContent>
         <div className="mt-2 space-y-3 pl-6">
-          {group.items.map((item) => (
-            <NotionItemCard key={item.id} item={item} />
-          ))}
+          {isOpen && <DatabaseItems databaseId={database.databaseId} />}
         </div>
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+/** データベース展開時のアイテム一覧 (展開時に取得) */
+function DatabaseItems({ databaseId }: { databaseId: string | null }) {
+  // null = Pages (DB未所属) → 空文字を渡すとhookが noDatabaseId=true で取得
+  const { items, loading } = useNotionDatabaseItems(databaseId ?? "");
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {["s1", "s2", "s3"].map((id) => (
+          <Skeleton key={id} className="h-12 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return <p className="py-2 text-center text-sm text-muted-foreground">No items.</p>;
+  }
+
+  return (
+    <>
+      {items.map((item) => (
+        <NotionItemCard key={item.id} item={item} />
+      ))}
+    </>
   );
 }
 

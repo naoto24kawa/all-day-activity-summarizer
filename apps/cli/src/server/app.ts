@@ -53,7 +53,7 @@ export function createApp(db: AdasDatabase, options?: CreateAppOptions) {
 
   app.route("/api/transcriptions", createTranscriptionsRouter(db));
   app.route("/api/summaries", createSummariesRouter(db));
-  app.route("/api/memos", createMemosRouter(db));
+  app.route("/api/memos", createMemosRouter(db, options?.config));
   app.route("/api/evaluator-logs", createEvaluatorLogsRouter(db));
   app.route("/api/ai-processing-logs", createAiProcessingLogsRouter(db));
   app.route("/api/feedbacks", createFeedbacksRouter(db));

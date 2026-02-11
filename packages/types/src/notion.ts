@@ -47,7 +47,10 @@ export interface NotionDatabase {
 }
 
 /** Notion キュージョブタイプ */
-export type NotionQueueJobType = "fetch_recent_pages" | "fetch_database_items";
+export type NotionQueueJobType =
+  | "fetch_recent_pages"
+  | "fetch_database_items"
+  | "fetch_page_content";
 
 /** Notion キュージョブステータス */
 export type NotionQueueJobStatus = "pending" | "processing" | "completed" | "failed";
@@ -57,6 +60,7 @@ export interface NotionQueueJob {
   id: number;
   jobType: NotionQueueJobType;
   databaseId: string | null; // fetch_database_items 時のみ
+  pageId: string | null; // fetch_page_content 時のみ
   status: NotionQueueJobStatus;
   retryCount: number;
   maxRetries: number;

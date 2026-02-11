@@ -40,6 +40,8 @@ export async function handleVocabularyExtract(
       return handleClaudeCodeVocabularyExtract(db, config, date, limit);
     case "memo":
       return handleMemoVocabularyExtract(db, config, date, limit);
+    case "notion":
+      return handleNotionVocabularyExtract(db, config, date, limit);
     default:
       return {
         success: false,
@@ -307,6 +309,70 @@ async function handleMemoVocabularyExtract(
   // 処理済みとして記録
   for (const memo of memos) {
     recordExtractionLog(db, "vocabulary", "memo", String(memo.id), 0);
+  }
+
+  return {
+    success: true,
+    resultSummary:
+      result.extracted > 0
+        ? `${result.extracted}件の用語を抽出しました`
+        : "用語は抽出されませんでした",
+    data: result,
+  };
+}
+
+/**
+ * Notion アイテムからの用語抽出
+ */
+async function handleNotionVocabularyExtract(
+  db: AdasDatabase,
+  config: AdasConfig,
+  date: string,
+  limit: number,
+): Promise<JobResult> {
+  // 処理済みIDを取得
+  const processedIds = getProcessedSourceIds(db, "notion");
+
+  const items = db
+    .select()
+    .from(schema.notionItems)
+    .where(
+      processedIds.length > 0
+        ? and(eq(schema.notionItems.date, date), notInArray(schema.notionItems.id, processedIds))
+        : eq(schema.notionItems.date, date),
+    )
+    .orderBy(desc(schema.notionItems.id))
+    .limit(limit)
+    .all();
+
+  if (items.length === 0) {
+    return {
+      success: true,
+      resultSummary: "対象 Notion アイテムがありません (処理済み含む)",
+      data: { extracted: 0, skippedDuplicate: 0, tasksCreated: 0 },
+    };
+  }
+
+  const texts: string[] = [];
+  for (const item of items) {
+    texts.push(item.title);
+    if (item.content) texts.push(item.content.substring(0, 2000));
+  }
+
+  const combinedText = texts.join("\n\n");
+
+  const result = await extractAndSaveTerms(
+    db,
+    config,
+    combinedText,
+    "notion",
+    items[0]?.id ?? null,
+    date,
+  );
+
+  // 処理済みとして記録
+  for (const item of items) {
+    recordExtractionLog(db, "vocabulary", "notion", String(item.id), 0);
   }
 
   return {

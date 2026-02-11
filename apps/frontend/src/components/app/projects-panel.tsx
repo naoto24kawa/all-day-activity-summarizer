@@ -769,10 +769,11 @@ function RepoCombobox({ repos, loading, value, onSelect, disabled }: RepoCombobo
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[var(--radix-popover-trigger-width)] p-0"
+        className="w-[var(--radix-popover-trigger-width)] p-0 data-[state=closed]:pointer-events-none"
         align="start"
         collisionPadding={8}
         sideOffset={4}
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <div className="p-2">
           <Input

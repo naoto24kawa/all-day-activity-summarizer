@@ -2,7 +2,7 @@
  * GitHub Feed Component
  *
  * Displays GitHub issues, PRs, and review requests grouped by repository
- * Comments are shown under their respective Issue/PR
+ * Summary + expand-on-demand pattern: repo list initially, items on expand
  */
 
 import type { GitHubComment, GitHubItem, Project } from "@repo/types";
@@ -34,7 +34,14 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfig } from "@/hooks/use-config";
-import { useGitHubComments, useGitHubItems } from "@/hooks/use-github";
+import {
+  type GitHubCommentRepoSummary,
+  type GitHubRepoSummary,
+  useGitHubComments,
+  useGitHubItems,
+  useGitHubRepoData,
+  useGitHubSummary,
+} from "@/hooks/use-github";
 import { useProjects } from "@/hooks/use-projects";
 import { postAdasApi } from "@/lib/adas-api";
 import { formatGitHubDateJST } from "@/lib/date";
@@ -43,34 +50,43 @@ interface GitHubFeedProps {
   className?: string;
 }
 
+/** マージ済みリポジトリサマリー */
+interface MergedRepoSummary {
+  repoKey: string;
+  repoOwner: string;
+  repoName: string;
+  issueCount: number;
+  pullRequestCount: number;
+  reviewRequestCount: number;
+  unreadCount: number;
+  projectId: number | null;
+  commentCount: number;
+  commentUnreadCount: number;
+}
+
 export function GitHubFeed({ className }: GitHubFeedProps) {
   const { integrations, loading: configLoading } = useConfig();
+  // Summary for initial display
   const {
-    items,
-    totalCount: itemsTotalCount,
-    loading,
-    error,
-    refetch,
-    markAsRead,
-  } = useGitHubItems();
-  const {
-    comments,
-    totalCount: commentsTotalCount,
-    loading: commentsLoading,
-    refetch: refetchComments,
-    markAsRead: markCommentAsRead,
-  } = useGitHubComments();
+    repositories,
+    commentRepositories,
+    loading: summaryLoading,
+    error: summaryError,
+    refetch: refetchSummary,
+  } = useGitHubSummary();
+  // Existing hooks for actions only
+  const { markAsRead: markItemAsRead } = useGitHubItems();
+  const { markAsRead: markCommentAsRead } = useGitHubComments();
 
   // プロジェクト管理
   const { projects: allProjects, updateProject } = useProjects(false);
   const [syncing, setSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState("issues");
 
-  // feeds-refresh (統一更新) と github-refresh (個別) をリッスン
+  // feeds-refresh / github-refresh をリッスン
   const handleRefresh = useCallback(() => {
-    refetch();
-    refetchComments();
-  }, [refetch, refetchComments]);
+    refetchSummary();
+  }, [refetchSummary]);
 
   useEffect(() => {
     window.addEventListener("feeds-refresh", handleRefresh);
@@ -81,13 +97,13 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
     };
   }, [handleRefresh]);
 
-  // アクティブなプロジェクト一覧 (紐付け先選択用)
+  // アクティブなプロジェクト一覧
   const activeProjects = useMemo(
     () => allProjects.filter((p) => p.isActive && !p.excludedAt),
     [allProjects],
   );
 
-  // repoKey → projectId のマッピングを作成
+  // repoKey → projectId のマッピング
   const repoToProjectMap = useMemo(() => {
     const map = new Map<string, { projectId: number; projectName: string }>();
     for (const p of allProjects) {
@@ -99,24 +115,70 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
     return map;
   }, [allProjects]);
 
-  // コメントを Item に紐づけるためのマップを作成
-  // キー: `${repoOwner}/${repoName}#${itemNumber}`
-  const commentsByItem = useMemo(() => {
-    const map = new Map<string, GitHubComment[]>();
-    for (const comment of comments) {
-      const key = `${comment.repoOwner}/${comment.repoName}#${comment.itemNumber}`;
-      const existing = map.get(key) ?? [];
-      existing.push(comment);
-      map.set(key, existing);
+  // Items + Comments のリポジトリサマリーをマージ
+  const mergedRepos = useMemo((): MergedRepoSummary[] => {
+    const map = new Map<string, MergedRepoSummary>();
+
+    for (const repo of repositories) {
+      const key = `${repo.repoOwner}/${repo.repoName}`;
+      map.set(key, {
+        repoKey: key,
+        repoOwner: repo.repoOwner,
+        repoName: repo.repoName,
+        issueCount: repo.issueCount,
+        pullRequestCount: repo.pullRequestCount,
+        reviewRequestCount: repo.reviewRequestCount,
+        unreadCount: repo.unreadCount,
+        projectId: repo.projectId,
+        commentCount: 0,
+        commentUnreadCount: 0,
+      });
     }
-    return map;
-  }, [comments]);
+
+    for (const repo of commentRepositories) {
+      const key = `${repo.repoOwner}/${repo.repoName}`;
+      const existing = map.get(key);
+      if (existing) {
+        existing.commentCount = repo.commentCount;
+        existing.commentUnreadCount = repo.unreadCount;
+      } else {
+        map.set(key, {
+          repoKey: key,
+          repoOwner: repo.repoOwner,
+          repoName: repo.repoName,
+          issueCount: 0,
+          pullRequestCount: 0,
+          reviewRequestCount: 0,
+          unreadCount: 0,
+          projectId: null,
+          commentCount: repo.commentCount,
+          commentUnreadCount: repo.unreadCount,
+        });
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.repoKey.localeCompare(b.repoKey));
+  }, [repositories, commentRepositories]);
+
+  // タブでリポジトリをフィルター
+  const filteredRepos = useMemo(() => {
+    switch (activeTab) {
+      case "issues":
+        return mergedRepos.filter((r) => r.issueCount > 0);
+      case "prs":
+        return mergedRepos.filter((r) => r.pullRequestCount > 0);
+      case "reviews":
+        return mergedRepos.filter((r) => r.reviewRequestCount > 0);
+      default:
+        return mergedRepos;
+    }
+  }, [mergedRepos, activeTab]);
 
   const syncProjects = async () => {
     setSyncing(true);
     try {
       await postAdasApi<{ updated: number }>("/api/github-items/sync-projects", {});
-      refetch();
+      refetchSummary();
     } catch (err) {
       console.error("Failed to sync projects:", err);
     } finally {
@@ -133,23 +195,14 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
   ) => {
     const newProjectId = newProjectIdStr === "none" ? null : Number(newProjectIdStr);
 
-    // 現在のプロジェクトから GitHub 情報をクリア
     if (currentProjectId !== null) {
-      await updateProject(currentProjectId, {
-        githubOwner: null,
-        githubRepo: null,
-      });
+      await updateProject(currentProjectId, { githubOwner: null, githubRepo: null });
     }
 
-    // 新しいプロジェクトに GitHub 情報を設定
     if (newProjectId !== null) {
-      await updateProject(newProjectId, {
-        githubOwner: repoOwner,
-        githubRepo: repoName,
-      });
+      await updateProject(newProjectId, { githubOwner: repoOwner, githubRepo: repoName });
     }
 
-    // GitHub Items の projectId を同期
     await syncProjects();
   };
 
@@ -168,7 +221,7 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
     );
   }
 
-  if (loading || commentsLoading) {
+  if (summaryLoading) {
     return (
       <Card>
         <CardContent className="space-y-3 pt-6">
@@ -180,41 +233,20 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
     );
   }
 
-  if (error) {
+  if (summaryError) {
     return (
       <Card>
         <CardContent className="pt-6">
-          <p className="text-sm text-muted-foreground">{error}</p>
+          <p className="text-sm text-muted-foreground">{summaryError}</p>
         </CardContent>
       </Card>
     );
   }
 
-  const issues = items.filter((i) => i.itemType === "issue");
-  const pullRequests = items.filter((i) => i.itemType === "pull_request" && !i.isReviewRequested);
-  const reviewRequests = items.filter((i) => i.itemType === "pull_request" && i.isReviewRequested);
-
   return (
     <Card className={`flex min-h-0 flex-col overflow-hidden ${className ?? ""}`}>
       <CardContent className="flex min-h-0 flex-1 flex-col pt-4">
-        {(itemsTotalCount > 0 || commentsTotalCount > 0) && (
-          <p className="mb-2 text-xs text-muted-foreground">
-            Items:{" "}
-            {items.length < itemsTotalCount
-              ? `${items.length}/${itemsTotalCount}`
-              : itemsTotalCount}
-            {commentsTotalCount > 0 && (
-              <>
-                {" "}
-                / Comments:{" "}
-                {comments.length < commentsTotalCount
-                  ? `${comments.length}/${commentsTotalCount}`
-                  : commentsTotalCount}
-              </>
-            )}
-          </p>
-        )}
-        {items.length === 0 ? (
+        {mergedRepos.length === 0 ? (
           <p className="text-sm text-muted-foreground">No GitHub activity for this date.</p>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
@@ -229,36 +261,36 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
               className="mb-2 shrink-0"
             />
             <SegmentedTabContent value="issues" activeValue={activeTab}>
-              <RepoGroupedItemList
-                items={issues}
-                commentsByItem={commentsByItem}
+              <RepoSummaryList
+                repos={filteredRepos}
+                activeTab="issues"
                 repoToProjectMap={repoToProjectMap}
                 activeProjects={activeProjects}
-                onMarkAsRead={markAsRead}
+                onMarkAsRead={markItemAsRead}
                 onMarkCommentAsRead={markCommentAsRead}
                 onProjectChange={handleRepoProjectChange}
                 syncing={syncing}
               />
             </SegmentedTabContent>
             <SegmentedTabContent value="prs" activeValue={activeTab}>
-              <RepoGroupedItemList
-                items={pullRequests}
-                commentsByItem={commentsByItem}
+              <RepoSummaryList
+                repos={filteredRepos}
+                activeTab="prs"
                 repoToProjectMap={repoToProjectMap}
                 activeProjects={activeProjects}
-                onMarkAsRead={markAsRead}
+                onMarkAsRead={markItemAsRead}
                 onMarkCommentAsRead={markCommentAsRead}
                 onProjectChange={handleRepoProjectChange}
                 syncing={syncing}
               />
             </SegmentedTabContent>
             <SegmentedTabContent value="reviews" activeValue={activeTab}>
-              <RepoGroupedItemList
-                items={reviewRequests}
-                commentsByItem={commentsByItem}
+              <RepoSummaryList
+                repos={filteredRepos}
+                activeTab="reviews"
                 repoToProjectMap={repoToProjectMap}
                 activeProjects={activeProjects}
-                onMarkAsRead={markAsRead}
+                onMarkAsRead={markItemAsRead}
                 onMarkCommentAsRead={markCommentAsRead}
                 onProjectChange={handleRepoProjectChange}
                 syncing={syncing}
@@ -271,20 +303,10 @@ export function GitHubFeed({ className }: GitHubFeedProps) {
   );
 }
 
-/** リポジトリ別グループ */
-interface RepoGroup {
-  repoKey: string;
-  repoOwner: string;
-  repoName: string;
-  projectId: number | null;
-  projectName: string | null;
-  items: GitHubItem[];
-  unreadCount: number;
-}
-
-function RepoGroupedItemList({
-  items,
-  commentsByItem,
+/** リポジトリ一覧 (summary ベース) */
+function RepoSummaryList({
+  repos,
+  activeTab,
   repoToProjectMap,
   activeProjects,
   onMarkAsRead,
@@ -292,8 +314,8 @@ function RepoGroupedItemList({
   onProjectChange,
   syncing,
 }: {
-  items: GitHubItem[];
-  commentsByItem: Map<string, GitHubComment[]>;
+  repos: MergedRepoSummary[];
+  activeTab: string;
   repoToProjectMap: Map<string, { projectId: number; projectName: string }>;
   activeProjects: Project[];
   onMarkAsRead: (id: number) => void;
@@ -306,47 +328,7 @@ function RepoGroupedItemList({
   ) => void;
   syncing: boolean;
 }) {
-  // リポジトリ別にグループ化
-  const groups = useMemo((): RepoGroup[] => {
-    const groupMap = new Map<string, GitHubItem[]>();
-
-    for (const item of items) {
-      const key = `${item.repoOwner}/${item.repoName}`;
-      const existing = groupMap.get(key) ?? [];
-      existing.push(item);
-      groupMap.set(key, existing);
-    }
-
-    const result: RepoGroup[] = [];
-
-    for (const [repoKey, groupItems] of groupMap.entries()) {
-      const [repoOwner, repoName] = repoKey.split("/");
-      const projectInfo = repoToProjectMap.get(repoKey);
-      result.push({
-        repoKey,
-        repoOwner: repoOwner ?? "",
-        repoName: repoName ?? "",
-        projectId: projectInfo?.projectId ?? null,
-        projectName: projectInfo?.projectName ?? null,
-        items: groupItems,
-        unreadCount: groupItems.filter((i) => !i.isRead).length,
-      });
-    }
-
-    // リポジトリ名でソート
-    result.sort((a, b) => a.repoKey.localeCompare(b.repoKey));
-
-    return result;
-  }, [items, repoToProjectMap]);
-
-  // 開閉状態を管理
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
-    const initial = new Set<string>();
-    for (const g of groups) {
-      initial.add(g.repoKey);
-    }
-    return initial;
-  });
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
   const toggleGroup = (repoKey: string) => {
     setOpenGroups((prev) => {
@@ -360,47 +342,64 @@ function RepoGroupedItemList({
     });
   };
 
-  if (items.length === 0) {
+  if (repos.length === 0) {
     return <p className="py-4 text-center text-sm text-muted-foreground">No items.</p>;
   }
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="space-y-2">
-        {groups.map((group) => (
-          <RepoCollapsible
-            key={group.repoKey}
-            group={group}
-            commentsByItem={commentsByItem}
-            isOpen={openGroups.has(group.repoKey)}
-            onToggle={() => toggleGroup(group.repoKey)}
-            activeProjects={activeProjects}
-            onMarkAsRead={onMarkAsRead}
-            onMarkCommentAsRead={onMarkCommentAsRead}
-            onProjectChange={onProjectChange}
-            syncing={syncing}
-          />
-        ))}
+        {repos.map((repo) => {
+          const projectInfo = repoToProjectMap.get(repo.repoKey);
+          const itemCount =
+            activeTab === "issues"
+              ? repo.issueCount
+              : activeTab === "prs"
+                ? repo.pullRequestCount
+                : repo.reviewRequestCount;
+
+          return (
+            <RepoCollapsible
+              key={repo.repoKey}
+              repo={repo}
+              itemCount={itemCount}
+              projectId={projectInfo?.projectId ?? null}
+              isOpen={openGroups.has(repo.repoKey)}
+              onToggle={() => toggleGroup(repo.repoKey)}
+              activeTab={activeTab}
+              activeProjects={activeProjects}
+              onMarkAsRead={onMarkAsRead}
+              onMarkCommentAsRead={onMarkCommentAsRead}
+              onProjectChange={onProjectChange}
+              syncing={syncing}
+            />
+          );
+        })}
       </div>
     </div>
   );
 }
 
+/** リポジトリ行 (折りたたみ) - 展開時にアイテム取得 */
 function RepoCollapsible({
-  group,
-  commentsByItem,
+  repo,
+  itemCount,
+  projectId,
   isOpen,
   onToggle,
+  activeTab,
   activeProjects,
   onMarkAsRead,
   onMarkCommentAsRead,
   onProjectChange,
   syncing,
 }: {
-  group: RepoGroup;
-  commentsByItem: Map<string, GitHubComment[]>;
+  repo: MergedRepoSummary;
+  itemCount: number;
+  projectId: number | null;
   isOpen: boolean;
   onToggle: () => void;
+  activeTab: string;
   activeProjects: Project[];
   onMarkAsRead: (id: number) => void;
   onMarkCommentAsRead: (id: number) => void;
@@ -422,14 +421,19 @@ function RepoCollapsible({
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           )}
           <FolderGit2 className="h-4 w-4 text-muted-foreground" />
-          <span className="truncate text-sm font-medium">{group.repoKey}</span>
-          <span className="ml-1 text-xs text-muted-foreground">({group.items.length})</span>
+          <span className="truncate text-sm font-medium">{repo.repoKey}</span>
+          <span className="ml-1 text-xs text-muted-foreground">({itemCount})</span>
+          {repo.unreadCount > 0 && (
+            <Badge variant="default" className="text-xs">
+              {repo.unreadCount}
+            </Badge>
+          )}
         </CollapsibleTrigger>
         {/* プロジェクト Select */}
         <Select
-          value={group.projectId?.toString() ?? "none"}
+          value={projectId?.toString() ?? "none"}
           onValueChange={(value) =>
-            onProjectChange(group.repoOwner, group.repoName, group.projectId, value)
+            onProjectChange(repo.repoOwner, repo.repoName, projectId, value)
           }
           disabled={syncing}
         >
@@ -448,22 +452,93 @@ function RepoCollapsible({
       </div>
       <CollapsibleContent>
         <div className="mt-2 space-y-3 pl-6">
-          {group.items.map((item) => {
-            const key = `${item.repoOwner}/${item.repoName}#${item.number}`;
-            const itemComments = commentsByItem.get(key) ?? [];
-            return (
-              <GitHubItemCard
-                key={item.id}
-                item={item}
-                comments={itemComments}
-                onMarkAsRead={onMarkAsRead}
-                onMarkCommentAsRead={onMarkCommentAsRead}
-              />
-            );
-          })}
+          {isOpen && (
+            <RepoExpandedContent
+              repoOwner={repo.repoOwner}
+              repoName={repo.repoName}
+              activeTab={activeTab}
+              onMarkAsRead={onMarkAsRead}
+              onMarkCommentAsRead={onMarkCommentAsRead}
+            />
+          )}
         </div>
       </CollapsibleContent>
     </Collapsible>
+  );
+}
+
+/** リポジトリ展開時のアイテム一覧 (展開時に取得) */
+function RepoExpandedContent({
+  repoOwner,
+  repoName,
+  activeTab,
+  onMarkAsRead,
+  onMarkCommentAsRead,
+}: {
+  repoOwner: string;
+  repoName: string;
+  activeTab: string;
+  onMarkAsRead: (id: number) => void;
+  onMarkCommentAsRead: (id: number) => void;
+}) {
+  const { items, comments, loading } = useGitHubRepoData(repoOwner, repoName);
+
+  // タブでアイテムをフィルター
+  const filteredItems = useMemo(() => {
+    switch (activeTab) {
+      case "issues":
+        return items.filter((i) => i.itemType === "issue");
+      case "prs":
+        return items.filter((i) => i.itemType === "pull_request" && !i.isReviewRequested);
+      case "reviews":
+        return items.filter((i) => i.itemType === "pull_request" && i.isReviewRequested);
+      default:
+        return items;
+    }
+  }, [items, activeTab]);
+
+  // コメントを Item に紐づけるマップ
+  const commentsByItem = useMemo(() => {
+    const map = new Map<string, GitHubComment[]>();
+    for (const comment of comments) {
+      const key = `${comment.repoOwner}/${comment.repoName}#${comment.itemNumber}`;
+      const existing = map.get(key) ?? [];
+      existing.push(comment);
+      map.set(key, existing);
+    }
+    return map;
+  }, [comments]);
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {["s1", "s2", "s3"].map((id) => (
+          <Skeleton key={id} className="h-12 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  if (filteredItems.length === 0) {
+    return <p className="py-2 text-center text-sm text-muted-foreground">No items.</p>;
+  }
+
+  return (
+    <>
+      {filteredItems.map((item) => {
+        const key = `${item.repoOwner}/${item.repoName}#${item.number}`;
+        const itemComments = commentsByItem.get(key) ?? [];
+        return (
+          <GitHubItemCard
+            key={item.id}
+            item={item}
+            comments={itemComments}
+            onMarkAsRead={onMarkAsRead}
+            onMarkCommentAsRead={onMarkCommentAsRead}
+          />
+        );
+      })}
+    </>
   );
 }
 

@@ -7,6 +7,8 @@
 import {
   AlertTriangle,
   Calendar,
+  Check,
+  ChevronsUpDown,
   FileText,
   Github,
   Info,
@@ -18,12 +20,13 @@ import {
   Terminal,
   Wand2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -35,6 +38,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useConfig } from "@/hooks/use-config";
+import { useSlackChannels } from "@/hooks/use-slack-channels";
+import { cn } from "@/lib/utils";
 
 export function IntegrationsPanel() {
   const {
@@ -46,8 +51,21 @@ export function IntegrationsPanel() {
     updateSlackKeywords,
     updateAiProcessingLogExtractConfig,
   } = useConfig();
+  const { channels: slackChannels } = useSlackChannels();
   const [newKeyword, setNewKeyword] = useState("");
   const [newExcludePattern, setNewExcludePattern] = useState("");
+  const [channelPopoverOpen, setChannelPopoverOpen] = useState(false);
+  const [channelSearch, setChannelSearch] = useState("");
+  const channelSearchRef = useRef<HTMLInputElement>(null);
+
+  // Popover が開いたら検索にフォーカス
+  useEffect(() => {
+    if (channelPopoverOpen) {
+      const timer = setTimeout(() => channelSearchRef.current?.focus(), 50);
+      return () => clearTimeout(timer);
+    }
+    setChannelSearch("");
+  }, [channelPopoverOpen]);
 
   if (loading) {
     return (
@@ -257,6 +275,93 @@ export function IntegrationsPanel() {
                       {pattern} ×
                     </Badge>
                   ))}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  {/* チャンネル選択 Popover */}
+                  <Popover open={channelPopoverOpen} onOpenChange={setChannelPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-7 justify-between px-2 text-xs font-normal"
+                        disabled={updating}
+                      >
+                        <span className="text-muted-foreground">チャンネルを選択...</span>
+                        <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      className="w-64 p-0 data-[state=closed]:pointer-events-none"
+                      align="start"
+                      collisionPadding={8}
+                      sideOffset={4}
+                      onOpenAutoFocus={(e) => e.preventDefault()}
+                    >
+                      <div className="p-2">
+                        <Input
+                          ref={channelSearchRef}
+                          value={channelSearch}
+                          onChange={(e) => setChannelSearch(e.target.value)}
+                          placeholder="検索..."
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                      <div className="max-h-52 overflow-y-auto p-1">
+                        {(() => {
+                          const excludeSet = new Set(integrations.slack.excludeChannels ?? []);
+                          const channelsWithName = slackChannels.filter(
+                            (c) => c.channelName != null,
+                          );
+                          const filtered = channelSearch
+                            ? channelsWithName.filter((c) =>
+                                c.channelName!.toLowerCase().includes(channelSearch.toLowerCase()),
+                              )
+                            : channelsWithName;
+                          if (filtered.length === 0) {
+                            return (
+                              <p className="px-3 py-2 text-center text-sm text-muted-foreground">
+                                {channelSearch ? "見つかりません" : "チャンネルがありません"}
+                              </p>
+                            );
+                          }
+                          return filtered.map((ch) => {
+                            const isSelected = excludeSet.has(ch.channelName!);
+                            return (
+                              <button
+                                key={ch.channelId}
+                                type="button"
+                                className={cn(
+                                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent",
+                                  isSelected && "bg-accent",
+                                )}
+                                onClick={() => {
+                                  const current = integrations.slack.excludeChannels ?? [];
+                                  if (isSelected) {
+                                    updateSlackKeywords({
+                                      excludeChannels: current.filter((p) => p !== ch.channelName),
+                                    });
+                                  } else {
+                                    updateSlackKeywords({
+                                      excludeChannels: [...current, ch.channelName!],
+                                    });
+                                  }
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "h-3 w-3 shrink-0",
+                                    isSelected ? "opacity-100" : "opacity-0",
+                                  )}
+                                />
+                                <span className="truncate">#{ch.channelName}</span>
+                              </button>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                  {/* glob パターン手入力 */}
                   <div className="flex gap-1">
                     <Input
                       placeholder="rss-*, *-bot..."
@@ -273,13 +378,13 @@ export function IntegrationsPanel() {
                           setNewExcludePattern("");
                         }
                       }}
-                      className="h-6 w-28 text-xs"
+                      className="h-7 w-28 text-xs"
                       disabled={updating}
                     />
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-6 px-2"
+                      className="h-7 px-2"
                       onClick={() => {
                         const current = integrations.slack.excludeChannels ?? [];
                         if (

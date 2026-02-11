@@ -11,6 +11,8 @@ import consola from "consola";
 import { eq } from "drizzle-orm";
 import { getDateString } from "../utils/date.js";
 import { extractIcon, extractPageTitle, type NotionClient, serializeProperties } from "./client.js";
+import { fetchAndSavePageContent } from "./content-fetcher.js";
+import { enqueueNotionJob } from "./queue.js";
 
 // Notion SDK の型定義に query メソッドが含まれていないため、独自の型を定義
 interface QueryDatabaseParams {
@@ -60,6 +62,11 @@ export async function processNotionJob(
         throw new Error("databaseId is required for fetch_database_items");
       }
       return fetchDatabaseItems(db, client, job.databaseId, job.cursor ?? undefined);
+    case "fetch_page_content":
+      if (!job.pageId) {
+        throw new Error("pageId is required for fetch_page_content");
+      }
+      return fetchPageContent(db, client, job.pageId);
     default:
       throw new Error(`Unknown job type: ${job.jobType}`);
   }
@@ -81,18 +88,25 @@ async function fetchRecentPages(
   });
 
   let saved = 0;
+  let allUnchanged = true;
 
   for (const result of response.results) {
     if (result.object !== "page") continue;
     const page = result as PageObjectResponse;
 
-    const savedCount = await savePage(db, page);
-    saved += savedCount;
+    const saveResult = await savePage(db, page);
+    if (saveResult !== "unchanged") {
+      allUnchanged = false;
+      saved++;
+    }
   }
+
+  // 全アイテムが unchanged の場合、これ以降のページには更新がないと判断
+  const hasMore = response.has_more && !allUnchanged;
 
   return {
     saved,
-    nextCursor: response.has_more ? (response.next_cursor ?? undefined) : undefined,
+    nextCursor: hasMore ? (response.next_cursor ?? undefined) : undefined,
   };
 }
 
@@ -130,13 +144,17 @@ async function fetchDatabaseItems(
   });
 
   let saved = 0;
+  let allUnchanged = true;
 
   for (const result of response.results) {
     if (result.object !== "page") continue;
     const page = result as PageObjectResponse;
 
-    const savedCount = await savePage(db, page, databaseId);
-    saved += savedCount;
+    const saveResult = await savePage(db, page, databaseId);
+    if (saveResult !== "unchanged") {
+      allUnchanged = false;
+      saved++;
+    }
   }
 
   // 最終同期日時を更新
@@ -146,11 +164,16 @@ async function fetchDatabaseItems(
     .where(eq(notionDatabases.databaseId, databaseId))
     .run();
 
+  // 全アイテムが unchanged の場合、これ以降のページには更新がないと判断
+  const hasMore = response.has_more && !allUnchanged;
+
   return {
     saved,
-    nextCursor: response.has_more ? (response.next_cursor ?? undefined) : undefined,
+    nextCursor: hasMore ? (response.next_cursor ?? undefined) : undefined,
   };
 }
+
+type SavePageResult = "created" | "updated" | "unchanged";
 
 /**
  * ページを DB に保存
@@ -159,7 +182,7 @@ async function savePage(
   db: AdasDatabase,
   page: PageObjectResponse,
   databaseId?: string,
-): Promise<number> {
+): Promise<SavePageResult> {
   const now = new Date().toISOString();
   const title = extractPageTitle(page);
   const icon = extractIcon(page);
@@ -207,9 +230,13 @@ async function savePage(
         })
         .where(eq(notionItems.id, existing.id))
         .run();
-      return 1;
+
+      // コンテンツ取得ジョブをキューに追加
+      enqueueNotionJob(db, { jobType: "fetch_page_content", pageId: page.id });
+
+      return "updated";
     }
-    return 0;
+    return "unchanged";
   }
 
   // 新規作成
@@ -235,7 +262,10 @@ async function savePage(
     })
     .run();
 
-  return 1;
+  // コンテンツ取得ジョブをキューに追加
+  enqueueNotionJob(db, { jobType: "fetch_page_content", pageId: page.id });
+
+  return "created";
 }
 
 /**
@@ -287,4 +317,16 @@ function saveDatabase(db: AdasDatabase, dbInfo: DatabaseInfo) {
       })
       .run();
   }
+}
+
+/**
+ * ページコンテンツを取得
+ */
+async function fetchPageContent(
+  db: AdasDatabase,
+  client: NotionClient,
+  pageId: string,
+): Promise<FetchResult> {
+  const result = await fetchAndSavePageContent(db, client, pageId);
+  return { saved: result.saved ? 1 : 0 };
 }

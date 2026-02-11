@@ -2,11 +2,13 @@ import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
 import { count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import { enqueueTaskExtractIfEnabled } from "../../ai-job/auto-task-extract.js";
+import type { AdasConfig } from "../../config.js";
 import { suggestMemoTags } from "../../memo/tag-suggester.js";
 import { getTodayDateString } from "../../utils/date.js";
 import { findProjectFromContent } from "../../utils/project-lookup.js";
 
-export function createMemosRouter(db: AdasDatabase) {
+export function createMemosRouter(db: AdasDatabase, config?: AdasConfig) {
   const router = new Hono();
 
   /**
@@ -89,6 +91,10 @@ export function createMemosRouter(db: AdasDatabase) {
       .returning()
       .get();
 
+    if (config) {
+      enqueueTaskExtractIfEnabled(db, config, "memo", { date: result.date });
+    }
+
     return c.json(result, 201);
   });
 
@@ -139,6 +145,10 @@ export function createMemosRouter(db: AdasDatabase) {
       .where(eq(schema.memos.id, id))
       .returning()
       .get();
+
+    if (config) {
+      enqueueTaskExtractIfEnabled(db, config, "memo", { date: result.date });
+    }
 
     return c.json(result);
   });

@@ -4,7 +4,7 @@
 
 import type { AdasDatabase } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 
 export function createGitHubCommentsRouter(db: AdasDatabase) {
@@ -19,7 +19,7 @@ export function createGitHubCommentsRouter(db: AdasDatabase) {
    * - repoName: string (optional, filters by repo name)
    * - itemNumber: number (optional, filters by issue/PR number)
    * - unread: true | false (optional, filters by read status)
-   * - limit: number (optional, defaults to 100)
+   * - limit: number (optional, defaults to 1000)
    */
   router.get("/", (c) => {
     const type = c.req.query("type") as "issue_comment" | "review_comment" | "review" | undefined;
@@ -29,7 +29,7 @@ export function createGitHubCommentsRouter(db: AdasDatabase) {
     const unreadStr = c.req.query("unread");
     const limitStr = c.req.query("limit");
 
-    const limit = limitStr ? Number.parseInt(limitStr, 10) : 100;
+    const limit = limitStr ? Number.parseInt(limitStr, 10) : 1000;
 
     // Build conditions
     const conditions = [];
@@ -72,15 +72,30 @@ export function createGitHubCommentsRouter(db: AdasDatabase) {
 
     const comments = query.all();
 
-    // totalCount を取得
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-    const totalResult = db
-      .select({ count: count() })
-      .from(schema.githubComments)
-      .where(whereClause)
-      .get();
+    return c.json(comments);
+  });
 
-    return c.json({ data: comments, totalCount: totalResult?.count ?? 0 });
+  /**
+   * GET /api/github-comments/summary
+   *
+   * Returns repository-level comment summary
+   */
+  router.get("/summary", (c) => {
+    const repositories = db
+      .select({
+        repoOwner: schema.githubComments.repoOwner,
+        repoName: schema.githubComments.repoName,
+        commentCount: sql<number>`COUNT(*)`.as("commentCount"),
+        unreadCount:
+          sql<number>`SUM(CASE WHEN ${schema.githubComments.isRead} = 0 THEN 1 ELSE 0 END)`.as(
+            "unreadCount",
+          ),
+      })
+      .from(schema.githubComments)
+      .groupBy(schema.githubComments.repoOwner, schema.githubComments.repoName)
+      .all();
+
+    return c.json({ repositories });
   });
 
   /**

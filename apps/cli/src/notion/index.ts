@@ -2,7 +2,9 @@
  * Notion Module Exports
  */
 
+export { blocksToMarkdown } from "./blocks-to-markdown.js";
 export { createNotionClient, type NotionClient } from "./client.js";
+export { fetchAndSavePageContent } from "./content-fetcher.js";
 export { processNotionJob } from "./fetcher.js";
 export {
   cleanupOldNotionJobs,

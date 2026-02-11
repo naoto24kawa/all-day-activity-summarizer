@@ -15,7 +15,7 @@ import { getTodayDateString } from "../utils/date.js";
 const SCHEDULED_MINUTE = 30;
 
 // 抽出対象のソースタイプ
-const SOURCE_TYPES = ["slack", "github", "claude-code", "memo"] as const;
+const SOURCE_TYPES = ["slack", "github", "claude-code", "memo", "notion"] as const;
 
 /**
  * 用語抽出スケジューラーを開始

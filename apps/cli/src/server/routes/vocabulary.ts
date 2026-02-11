@@ -194,6 +194,24 @@ export function createVocabularyRouter(db: AdasDatabase, _config?: AdasConfig) {
     });
   });
 
+  // Notionアイテムから用語抽出
+  router.post("/extract/notion", async (c) => {
+    const body = await c.req.json<{ date?: string; limit?: number }>();
+    const date = body.date ?? getTodayDateString();
+
+    const jobId = enqueueJob(db, "vocabulary-extract", {
+      sourceType: "notion",
+      date,
+      limit: body.limit ?? 50,
+    });
+
+    return c.json({
+      success: true,
+      jobId,
+      message: "用語抽出ジョブをキューに追加しました",
+    });
+  });
+
   // メモから用語抽出
   router.post("/extract/memo", async (c) => {
     const body = await c.req.json<{ date?: string; limit?: number }>();
@@ -220,7 +238,7 @@ export function createVocabularyRouter(db: AdasDatabase, _config?: AdasConfig) {
     const jobIds: number[] = [];
 
     // 各ソースのジョブをキューに追加
-    for (const sourceType of ["slack", "github", "claude-code", "memo"] as const) {
+    for (const sourceType of ["slack", "github", "claude-code", "memo", "notion"] as const) {
       const jobId = enqueueJob(db, "vocabulary-extract", { sourceType, date });
       jobIds.push(jobId);
     }

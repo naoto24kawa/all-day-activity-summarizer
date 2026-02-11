@@ -7,7 +7,9 @@
 import type { AdasDatabase } from "@repo/db";
 import type { SlackClient } from "@repo/slack-api";
 import consola from "consola";
+import { enqueueTaskExtractIfEnabled } from "../ai-job/auto-task-extract.js";
 import type { AdasConfig } from "../config.js";
+import { getTodayDateString } from "../utils/date.js";
 import { processSlackJob } from "./fetcher.js";
 import {
   cleanupOldSlackJobs,
@@ -64,6 +66,9 @@ export function startSlackWorker(
                 excludePatterns,
               );
               markSlackJobCompleted(db, job.id, lastTs);
+              enqueueTaskExtractIfEnabled(db, config, "slack", {
+                date: getTodayDateString(),
+              });
               consola.debug(`[Slack] Job ${job.id} (${job.jobType}) completed`);
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);

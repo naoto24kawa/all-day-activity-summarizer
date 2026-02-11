@@ -5,7 +5,7 @@
 import type { AdasDatabase, NewSlackMessage } from "@repo/db";
 import { schema } from "@repo/db";
 import type { SlackMessagePriority, SlackPriorityCounts } from "@repo/types";
-import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { enqueueJob } from "../../ai-job/queue.js";
 import { insertMessageIfNotExists } from "../../slack/fetcher.js";
@@ -49,7 +49,8 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
    * - priority: high | medium | low (optional, filters by priority)
    * - projectId: number (optional, filters by project)
    * - noProject: true (optional, filters messages without project)
-   * - limit: number (optional, defaults to 100)
+   * - channelId: string (optional, filters by channel)
+   * - limit: number (optional, defaults to 1000)
    */
   router.get("/", (c) => {
     const type = c.req.query("type") as "mention" | "channel" | "dm" | undefined;
@@ -57,9 +58,10 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
     const priority = c.req.query("priority") as SlackMessagePriority | undefined;
     const projectIdStr = c.req.query("projectId");
     const noProject = c.req.query("noProject") === "true";
+    const channelId = c.req.query("channelId");
     const limitStr = c.req.query("limit");
 
-    const limit = limitStr ? Number.parseInt(limitStr, 10) : 100;
+    const limit = limitStr ? Number.parseInt(limitStr, 10) : 1000;
 
     // Build conditions
     const conditions = [];
@@ -87,6 +89,11 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
       conditions.push(isNull(schema.slackMessages.projectId));
     }
 
+    // Channel filtering
+    if (channelId) {
+      conditions.push(eq(schema.slackMessages.channelId, channelId));
+    }
+
     // Execute query
     let query = db
       .select()
@@ -100,19 +107,45 @@ export function createSlackMessagesRouter(db: AdasDatabase) {
 
     const messages = query.all();
 
-    // totalCount を取得
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-    const totalResult = db
-      .select({ count: count() })
-      .from(schema.slackMessages)
-      .where(whereClause)
-      .get();
-
     // effectiveProjectId を計算して付加
     const channelProjectMap = getChannelProjectMap(db);
     const messagesWithEffective = addEffectiveProjectId(messages, channelProjectMap);
 
-    return c.json({ data: messagesWithEffective, totalCount: totalResult?.count ?? 0 });
+    return c.json(messagesWithEffective);
+  });
+
+  /**
+   * GET /api/slack-messages/summary
+   *
+   * Returns channel-level summary with message counts
+   */
+  router.get("/summary", (c) => {
+    const channels = db
+      .select({
+        channelId: schema.slackMessages.channelId,
+        channelName: sql<string | null>`MAX(${schema.slackMessages.channelName})`.as("channelName"),
+        messageCount: sql<number>`COUNT(*)`.as("messageCount"),
+        unreadCount:
+          sql<number>`SUM(CASE WHEN ${schema.slackMessages.isRead} = 0 THEN 1 ELSE 0 END)`.as(
+            "unreadCount",
+          ),
+        latestMessageTs: sql<string | null>`MAX(${schema.slackMessages.messageTs})`.as(
+          "latestMessageTs",
+        ),
+      })
+      .from(schema.slackMessages)
+      .groupBy(schema.slackMessages.channelId)
+      .all();
+
+    // slackChannels テーブルから projectId を取得
+    const channelProjectMap = getChannelProjectMap(db);
+
+    const result = channels.map((ch) => ({
+      ...ch,
+      projectId: channelProjectMap.get(ch.channelId) ?? null,
+    }));
+
+    return c.json({ channels: result });
   });
 
   /**

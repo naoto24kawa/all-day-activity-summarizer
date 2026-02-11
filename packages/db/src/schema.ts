@@ -443,7 +443,7 @@ export const vocabularySuggestions = sqliteTable("vocabulary_suggestions", {
   category: text("category"), // カテゴリ
   reason: text("reason"), // 提案理由
   sourceType: text("source_type", {
-    enum: ["interpret", "feedback", "slack", "github", "claude-code", "memo"],
+    enum: ["interpret", "feedback", "slack", "github", "claude-code", "memo", "notion"],
   }).notNull(), // 抽出元
   sourceId: integer("source_id"), // source に応じた ID
   confidence: real("confidence"), // AI確信度 (0-1)
