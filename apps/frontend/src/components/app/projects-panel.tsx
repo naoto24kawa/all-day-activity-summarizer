@@ -4,19 +4,23 @@
  * プロジェクト管理パネル
  */
 
-import type { Project, ProjectStats, ScanGitReposResponse } from "@repo/types";
+import type { GitHubRepoInfo, Project, ProjectStats, ScanGitReposResponse } from "@repo/types";
 import {
+  Check,
+  ChevronsUpDown,
   FolderGit2,
   FolderKanban,
   Github,
+  Loader2,
   Pencil,
+  PenLine,
   Plus,
   Search,
   Settings,
   Trash2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,11 +34,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useProjects, useProjectsConfig } from "@/hooks/use-projects";
+import { fetchAdasApi } from "@/lib/adas-api";
 import { cn } from "@/lib/utils";
 
 interface ProjectsPanelProps {
@@ -382,6 +388,7 @@ interface RepoInput {
   githubOwner: string;
   githubRepo: string;
   localPath: string;
+  manualInput?: boolean;
 }
 
 function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogProps) {
@@ -389,6 +396,38 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
   const [repositories, setRepositories] = useState<RepoInput[]>([]);
   const [isActive, setIsActive] = useState(project?.isActive ?? true);
   const [submitting, setSubmitting] = useState(false);
+
+  // GitHub リポジトリ一覧
+  const [githubRepos, setGithubRepos] = useState<GitHubRepoInfo[]>([]);
+  const [githubReposLoading, setGithubReposLoading] = useState(false);
+  const [githubReposFetched, setGithubReposFetched] = useState(false);
+
+  // リポジトリ一覧を取得 (ダイアログオープン時に1回のみ)
+  useEffect(() => {
+    if (!open || githubReposFetched) return;
+
+    let cancelled = false;
+    const fetchRepos = async () => {
+      setGithubReposLoading(true);
+      try {
+        const repos = await fetchAdasApi<GitHubRepoInfo[]>("/api/github-repos");
+        if (!cancelled) {
+          setGithubRepos(repos);
+        }
+      } catch {
+        // 取得失敗時は手動入力にフォールバック
+      } finally {
+        if (!cancelled) {
+          setGithubReposLoading(false);
+          setGithubReposFetched(true);
+        }
+      }
+    };
+    fetchRepos();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, githubReposFetched]);
 
   // プロジェクトが変わったらフォームをリセット
   useEffect(() => {
@@ -401,6 +440,7 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
             githubOwner: r.githubOwner,
             githubRepo: r.githubRepo,
             localPath: r.localPath ?? "",
+            manualInput: false,
           })),
         );
       } else if (project?.githubOwner && project?.githubRepo) {
@@ -410,17 +450,25 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
             githubOwner: project.githubOwner,
             githubRepo: project.githubRepo,
             localPath: project.path ?? "",
+            manualInput: false,
           },
         ]);
       } else {
         setRepositories([]);
       }
       setIsActive(project?.isActive ?? true);
+    } else {
+      // ダイアログが閉じたらフェッチ状態をリセット
+      setGithubReposFetched(false);
+      setGithubRepos([]);
     }
   }, [open, project]);
 
   const addRepository = () => {
-    setRepositories([...repositories, { githubOwner: "", githubRepo: "", localPath: "" }]);
+    setRepositories([
+      ...repositories,
+      { githubOwner: "", githubRepo: "", localPath: "", manualInput: false },
+    ]);
   };
 
   const removeRepository = (index: number) => {
@@ -436,6 +484,26 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
     const current = updated[index];
     if (current) {
       updated[index] = { ...current, [field]: value };
+      setRepositories(updated);
+    }
+  };
+
+  const selectRepository = (index: number, repo: GitHubRepoInfo) => {
+    const updated = [...repositories];
+    updated[index] = {
+      githubOwner: repo.owner,
+      githubRepo: repo.name,
+      localPath: updated[index]?.localPath ?? "",
+      manualInput: false,
+    };
+    setRepositories(updated);
+  };
+
+  const toggleManualInput = (index: number) => {
+    const updated = [...repositories];
+    const current = updated[index];
+    if (current) {
+      updated[index] = { ...current, manualInput: !current.manualInput };
       setRepositories(updated);
     }
   };
@@ -481,6 +549,7 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
   }, [open, name, submitting, handleSubmit]);
 
   const isEditing = !!project;
+  const hasGithubRepos = githubRepos.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -527,33 +596,84 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
               <div className="space-y-3">
                 {repositories.map((repo, index) => (
                   <div key={`repo-${index}`} className="space-y-2 rounded-md border p-3">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={repo.githubOwner}
-                        onChange={(e) => updateRepository(index, "githubOwner", e.target.value)}
-                        placeholder="owner"
-                        disabled={submitting}
-                        className="flex-1"
-                      />
-                      <span className="text-muted-foreground">/</span>
-                      <Input
-                        value={repo.githubRepo}
-                        onChange={(e) => updateRepository(index, "githubRepo", e.target.value)}
-                        placeholder="repo"
-                        disabled={submitting}
-                        className="flex-1"
-                      />
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => removeRepository(index)}
-                        disabled={submitting}
-                        className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    {/* プルダウン or 手動入力 */}
+                    {hasGithubRepos && !repo.manualInput ? (
+                      <div className="flex items-center gap-2">
+                        <RepoCombobox
+                          repos={githubRepos}
+                          loading={githubReposLoading}
+                          value={
+                            repo.githubOwner && repo.githubRepo
+                              ? `${repo.githubOwner}/${repo.githubRepo}`
+                              : ""
+                          }
+                          onSelect={(r) => selectRepository(index, r)}
+                          disabled={submitting}
+                        />
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => toggleManualInput(index)}
+                          disabled={submitting}
+                          title="手動入力に切替"
+                          className="h-8 w-8 shrink-0"
+                        >
+                          <PenLine className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => removeRepository(index)}
+                          disabled={submitting}
+                          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={repo.githubOwner}
+                          onChange={(e) => updateRepository(index, "githubOwner", e.target.value)}
+                          placeholder="owner"
+                          disabled={submitting}
+                          className="flex-1"
+                        />
+                        <span className="text-muted-foreground">/</span>
+                        <Input
+                          value={repo.githubRepo}
+                          onChange={(e) => updateRepository(index, "githubRepo", e.target.value)}
+                          placeholder="repo"
+                          disabled={submitting}
+                          className="flex-1"
+                        />
+                        {hasGithubRepos && (
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => toggleManualInput(index)}
+                            disabled={submitting}
+                            title="プルダウンに切替"
+                            className="h-8 w-8 shrink-0"
+                          >
+                            <ChevronsUpDown className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => removeRepository(index)}
+                          disabled={submitting}
+                          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                     <Input
                       value={repo.localPath}
                       onChange={(e) => updateRepository(index, "localPath", e.target.value)}
@@ -589,6 +709,122 @@ function ProjectDialog({ open, onOpenChange, project, onSubmit }: ProjectDialogP
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** リポジトリ選択コンボボックス */
+interface RepoComboboxProps {
+  repos: GitHubRepoInfo[];
+  loading: boolean;
+  value: string;
+  onSelect: (repo: GitHubRepoInfo) => void;
+  disabled?: boolean;
+}
+
+function RepoCombobox({ repos, loading, value, onSelect, disabled }: RepoComboboxProps) {
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Popover が開いたら検索にフォーカス
+  useEffect(() => {
+    if (popoverOpen) {
+      // Radix がアニメーション完了後にフォーカスを設定するため少し遅延
+      const timer = setTimeout(() => searchInputRef.current?.focus(), 50);
+      return () => clearTimeout(timer);
+    }
+    setSearch("");
+  }, [popoverOpen]);
+
+  const filtered = search
+    ? repos.filter(
+        (r) =>
+          r.fullName.toLowerCase().includes(search.toLowerCase()) ||
+          (r.description && r.description.toLowerCase().includes(search.toLowerCase())),
+      )
+    : repos;
+
+  return (
+    <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-0 flex-1 justify-between font-normal"
+          disabled={disabled || loading}
+        >
+          <span className="truncate">
+            {loading ? (
+              <span className="flex items-center gap-1.5">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                読込中...
+              </span>
+            ) : value ? (
+              value
+            ) : (
+              <span className="text-muted-foreground">リポジトリを選択...</span>
+            )}
+          </span>
+          <ChevronsUpDown className="ml-1 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="start">
+        <div className="p-2">
+          <Input
+            ref={searchInputRef}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="検索..."
+            className="h-8"
+          />
+        </div>
+        <ScrollArea className="max-h-60">
+          {filtered.length === 0 ? (
+            <p className="px-3 py-2 text-center text-sm text-muted-foreground">
+              {search ? "見つかりません" : "リポジトリがありません"}
+            </p>
+          ) : (
+            <div className="p-1">
+              {filtered.map((repo) => (
+                <button
+                  key={repo.fullName}
+                  type="button"
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent",
+                    value === repo.fullName && "bg-accent",
+                  )}
+                  onClick={() => {
+                    onSelect(repo);
+                    setPopoverOpen(false);
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      "h-4 w-4 shrink-0",
+                      value === repo.fullName ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                  <div className="w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <Github className="h-3 w-3 shrink-0" />
+                      <span className="truncate font-medium">{repo.fullName}</span>
+                      {repo.isPrivate && (
+                        <Badge variant="outline" className="h-4 px-1 text-[10px]">
+                          Private
+                        </Badge>
+                      )}
+                    </div>
+                    {repo.description && (
+                      <p className="truncate text-xs text-muted-foreground">{repo.description}</p>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
   );
 }
 

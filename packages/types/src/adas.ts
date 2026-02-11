@@ -1,3 +1,13 @@
+/** GitHub リポジトリ情報 */
+export interface GitHubRepoInfo {
+  owner: string;
+  name: string;
+  fullName: string; // "owner/repo"
+  description: string | null;
+  isPrivate: boolean;
+  updatedAt: string;
+}
+
 /** 音声ソースタイプ */
 export type AudioSourceType = "mic" | "system";
 
@@ -1761,7 +1771,7 @@ export interface BadgesData {
     };
   };
   learnings: { dueForReview: number };
-  slack: { unread: number };
+  slack: { priorityCount: number };
   github: { unread: number };
 }
 

@@ -22,18 +22,18 @@ export interface TabBadges {
   tasks: number; // pending タスク数 (後方互換性のため残す)
   taskBadges: TaskBadges; // タスクの詳細バッジ
   learnings: number; // 復習期限の学び数
-  slack: number; // 未読 Slack メッセージ数
+  slack: number; // Priority Messages 数 (high + medium)
   github: number; // 未読 GitHub アイテム数
 }
 
 export type GroupBadges = Record<TabGroupId, number>;
 
-interface SlackUnreadCount {
+interface SlackPriorityCounts {
   total: number;
-  mention: number;
-  channel: number;
-  dm: number;
-  keyword: number;
+  high: number;
+  medium: number;
+  low: number;
+  unassigned: number;
 }
 
 interface GitHubUnreadCount {
@@ -68,7 +68,7 @@ export function useTabBadges(date?: string) {
         acceptedLow: data.tasks.acceptedByPriority.low,
       },
       learnings: data.learnings.dueForReview,
-      slack: data.slack.unread,
+      slack: data.slack.priorityCount,
       github: data.github.unread,
     }));
   }, []);
@@ -83,11 +83,11 @@ export function useTabBadges(date?: string) {
       const params = new URLSearchParams();
       if (date) params.set("date", date);
 
-      const [taskStats, learningsStats, slackUnread, githubUnread] = await Promise.all([
+      const [taskStats, learningsStats, slackPriority, githubUnread] = await Promise.all([
         fetchAdasApi<TaskStats>(`/api/tasks/stats?${params}`),
         fetchAdasApi<LearningsStats>("/api/learnings/stats"),
-        fetchAdasApi<SlackUnreadCount>(`/api/slack-messages/unread-count?${params}`).catch(
-          () => ({ total: 0 }) as SlackUnreadCount,
+        fetchAdasApi<SlackPriorityCounts>("/api/slack-messages/priority-counts").catch(
+          () => ({ high: 0, medium: 0 }) as SlackPriorityCounts,
         ),
         fetchAdasApi<GitHubUnreadCount>(`/api/github-items/unread-count?${params}`).catch(
           () => ({ total: 0 }) as GitHubUnreadCount,
@@ -103,7 +103,7 @@ export function useTabBadges(date?: string) {
           acceptedLow: taskStats.acceptedByPriority.low,
         },
         learnings: learningsStats.dueForReview,
-        slack: slackUnread.total,
+        slack: slackPriority.high + slackPriority.medium,
         github: githubUnread.total,
       });
     } catch {

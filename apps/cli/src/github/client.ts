@@ -479,6 +479,47 @@ export async function getItemState(
 }
 
 /**
+ * List repositories accessible to the authenticated user
+ */
+export async function listRepositories(limit = 100): Promise<
+  Array<{
+    owner: string;
+    name: string;
+    fullName: string;
+    description: string | null;
+    isPrivate: boolean;
+    updatedAt: string;
+  }>
+> {
+  const result = await rateLimitedExecGh<
+    Array<{
+      owner: { login: string };
+      name: string;
+      nameWithOwner: string;
+      description: string | null;
+      isPrivate: boolean;
+      updatedAt: string;
+    }>
+  >([
+    "repo",
+    "list",
+    "--json",
+    "owner,name,nameWithOwner,description,isPrivate,updatedAt",
+    "--limit",
+    String(limit),
+  ]);
+
+  return result.map((r) => ({
+    owner: r.owner.login,
+    name: r.name,
+    fullName: r.nameWithOwner,
+    description: r.description,
+    isPrivate: r.isPrivate,
+    updatedAt: r.updatedAt,
+  }));
+}
+
+/**
  * Create Issue request
  */
 export interface CreateIssueRequest {

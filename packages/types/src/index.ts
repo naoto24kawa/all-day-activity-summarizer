@@ -86,6 +86,7 @@ export type {
   GitHubComment,
   GitHubCommentsUnreadCounts,
   GitHubItem,
+  GitHubRepoInfo,
   GitHubUnreadCounts,
   GitRepoScanResult,
   GmailMessage,

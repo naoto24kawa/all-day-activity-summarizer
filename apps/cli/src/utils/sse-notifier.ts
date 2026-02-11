@@ -116,13 +116,21 @@ export class SSENotifier {
       .get();
     const learningsDue = learningsResult?.count ?? 0;
 
-    // Slack: 未読メッセージのカウント
+    // Slack: 優先度付き未読メッセージのカウント (high + medium)
     const slackResult = db
       .select({ count: count() })
       .from(schema.slackMessages)
-      .where(eq(schema.slackMessages.isRead, false))
+      .where(
+        and(
+          eq(schema.slackMessages.isRead, false),
+          or(
+            eq(schema.slackMessages.priority, "high"),
+            eq(schema.slackMessages.priority, "medium"),
+          ),
+        ),
+      )
       .get();
-    const slackUnread = slackResult?.count ?? 0;
+    const slackPriorityCount = slackResult?.count ?? 0;
 
     // GitHub: 未読アイテムのカウント
     const githubResult = db
@@ -135,7 +143,7 @@ export class SSENotifier {
     return {
       tasks: { pending: tasksPending, acceptedByPriority },
       learnings: { dueForReview: learningsDue },
-      slack: { unread: slackUnread },
+      slack: { priorityCount: slackPriorityCount },
       github: { unread: githubUnread },
     };
   }

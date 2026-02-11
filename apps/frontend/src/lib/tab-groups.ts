@@ -70,7 +70,7 @@ export const TAB_GROUPS: TabGroupConfig[] = [
     label: "Feeds",
     icon: MessageSquare,
     tabs: [
-      { id: "slack", label: "Slack", icon: MessageSquare },
+      { id: "slack", label: "Slack", icon: MessageSquare, badgeKey: "slack" },
       { id: "github", label: "GitHub", icon: Github },
       { id: "notion", label: "Notion", icon: NotebookPen },
       { id: "claude", label: "Claude", icon: Terminal },
