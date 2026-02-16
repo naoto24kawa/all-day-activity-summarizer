@@ -17,12 +17,15 @@ export function createSummarizeRouter() {
 
       const model = body.model ?? "sonnet";
 
-      // LLM Provider を取得 (設定で claude/lmstudio を切り替え)
+      // LLM Provider を取得 (設定で claude/gemini/lmstudio を切り替え)
       const provider = getLLMProviderForProcess("summarize", model);
       const providerInfo = getProviderInfo("summarize");
 
+      const modelInfo = providerInfo.model
+        ? `, gemini-model: ${providerInfo.model}`
+        : `, claude-model: ${model}`;
       consola.info(
-        `[worker/summarize] Running LLM (model: ${model}, provider: ${providerInfo.provider})...`,
+        `[worker/summarize] Running LLM (provider: ${providerInfo.provider}${modelInfo})...`,
       );
 
       const inputSize = body.prompt.length;

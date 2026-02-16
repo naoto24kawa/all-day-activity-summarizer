@@ -124,12 +124,13 @@ ${speakerInfo}${contextInfo}${feedbackSection}
 文字起こしテキスト:
 ${text}`;
 
-  // LLM Provider を取得 (設定で claude/lmstudio を切り替え)
+  // LLM Provider を取得 (設定で claude/gemini/lmstudio を切り替え)
   const provider = getLLMProviderForProcess("interpret", INTERPRET_MODEL);
   const providerInfo = getProviderInfo("interpret");
 
+  const modelInfo = providerInfo.model ? `${providerInfo.model}` : INTERPRET_MODEL;
   consola.info(
-    `[worker/interpret] Interpreting (${text.length} chars, provider: ${providerInfo.provider})...`,
+    `[worker/interpret] Interpreting (${text.length} chars, provider: ${providerInfo.provider}, model: ${modelInfo})...`,
   );
 
   const result = await provider.generate(prompt, {

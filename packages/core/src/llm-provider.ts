@@ -7,8 +7,9 @@
 
 import consola from "consola";
 import { type RunClaudeOptions, runClaude } from "./claude-runner.js";
+import { type RunGeminiOptions, runGemini } from "./gemini-runner.js";
 
-export type LLMProviderType = "claude" | "lmstudio";
+export type LLMProviderType = "claude" | "gemini" | "lmstudio";
 
 export interface LLMProviderConfig {
   provider: LLMProviderType;
@@ -19,6 +20,8 @@ export interface LLMProviderConfig {
   };
   /** Claude のモデル指定 (haiku, sonnet, opus-4 など) */
   claudeModel?: string;
+  /** Gemini のモデル指定 (gemini-1.5-pro, gemini-1.5-flash など) */
+  geminiModel?: string;
 }
 
 export interface GenerateOptions {
@@ -59,6 +62,30 @@ class ClaudeProvider implements LLMProvider {
     };
 
     return runClaude(prompt, claudeOptions);
+  }
+}
+
+/**
+ * Gemini Provider - Gemini CLI を使用
+ */
+class GeminiProvider implements LLMProvider {
+  readonly name = "gemini";
+  private model?: string;
+
+  constructor(model?: string) {
+    this.model = model;
+  }
+
+  async generate(prompt: string, options?: GenerateOptions): Promise<string> {
+    const geminiOptions: RunGeminiOptions = {
+      model: options?.model || this.model,
+      systemPrompt: options?.systemPrompt,
+      cwd: options?.cwd,
+      temperature: options?.temperature,
+      maxTokens: options?.maxTokens,
+    };
+
+    return runGemini(prompt, geminiOptions);
   }
 }
 
@@ -147,17 +174,20 @@ export function createLLMProvider(config: LLMProviderConfig): LLMProvider {
   if (config.provider === "lmstudio" && config.lmstudio) {
     return new LMStudioProvider(config.lmstudio);
   }
+  if (config.provider === "gemini") {
+    return new GeminiProvider(config.geminiModel);
+  }
   return new ClaudeProvider();
 }
 
 /**
  * フォールバック付き LLM Provider
- * LM Studio が失敗した場合に Claude にフォールバック
+ * プライマリプロバイダーが失敗した場合に Claude にフォールバック
  */
 export function createLLMProviderWithFallback(config: LLMProviderConfig): LLMProvider {
   const primary = createLLMProvider(config);
 
-  if (config.provider === "lmstudio") {
+  if (config.provider === "lmstudio" || config.provider === "gemini") {
     const fallback = new ClaudeProvider();
 
     return {

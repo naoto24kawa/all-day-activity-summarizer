@@ -1,7 +1,6 @@
 {
   "schema": "https://github.com/google-gemini/gemini-cli/blob/main/schemas/settings.schema.json",
-  "mcpServers": {
-  },
+  "mcpServers": {},
   "general": {
     "vimMode": false,
     "disableAutoUpdate": false,
@@ -15,7 +14,9 @@
     "sessionRetention": {
       "enabled": false,
       "minRetention": "1d"
-    }
+    },
+    "enableAutoUpdate": true,
+    "enableAutoUpdateNotification": true
   },
   "output": {
     "format": "text"
@@ -42,7 +43,8 @@
     "customWittyPhrases": [],
     "accessibility": {
       "disableLoadingPhrases": false,
-      "screenReader": false
+      "screenReader": false,
+      "enableLoadingPhrases": true
     }
   },
   "ide": {

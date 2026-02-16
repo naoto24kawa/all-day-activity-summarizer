@@ -58,6 +58,7 @@ bun run cli -- serve    # ターミナル2: API サーバー
 |-------------|------|
 | [セットアップガイド](docs/setup.md) | インストール、設定、トークン取得、トラブルシューティング |
 | [CLI リファレンス](docs/cli.md) | 各コマンドの使い方 |
+| [AI プロバイダー設定](docs/ai-providers.md) | Gemini / Claude / LM Studio の切り替えと負荷分散 |
 | [外部サービス統合](docs/integrations.md) | Slack / GitHub / Claude Code 連携 |
 | [アーキテクチャ](docs/architecture.md) | モノレポ構造、DB スキーマ |
 

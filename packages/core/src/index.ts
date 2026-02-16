@@ -4,6 +4,8 @@ export { default as consola } from "consola";
 export type { RunClaudeOptions } from "./claude-runner.js";
 export { getPromptFilePath, runClaude } from "./claude-runner.js";
 export { getDateString, getTodayDateString } from "./date.js";
+export type { RunGeminiOptions } from "./gemini-runner.js";
+export { runGemini } from "./gemini-runner.js";
 export type {
   GenerateOptions,
   LLMProvider,

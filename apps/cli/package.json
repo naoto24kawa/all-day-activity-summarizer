@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.6",
+    "@inquirer/prompts": "^8.2.0",
     "@notionhq/client": "^5.9.0",
     "@repo/claude-history": "workspace:*",
     "@repo/core": "workspace:*",

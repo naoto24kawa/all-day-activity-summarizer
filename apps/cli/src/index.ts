@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { registerImprovePromptCommand } from "./commands/improve-prompt.js";
 import { registerInterpretCommand } from "./commands/interpret.js";
+import { registerProviderCommand } from "./commands/provider.js";
 import { registerServeCommand } from "./commands/serve.js";
 import { registerServersCommand } from "./commands/servers.js";
 import { registerSetupCommand } from "./commands/setup.js";
@@ -28,5 +29,6 @@ registerWorkerCommand(program);
 registerInterpretCommand(program);
 registerImprovePromptCommand(program);
 registerVocabCommand(program);
+registerProviderCommand(program);
 
 program.parse();

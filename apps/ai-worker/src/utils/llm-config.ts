@@ -35,7 +35,10 @@ interface AIProviderConfig {
     model: string;
     timeout: number;
   };
-  providers: Record<ProcessType, "claude" | "lmstudio">;
+  gemini?: {
+    model?: string;
+  };
+  providers: Record<ProcessType, "claude" | "gemini" | "lmstudio">;
   enableFallback: boolean;
 }
 
@@ -51,16 +54,19 @@ const defaultAIProviderConfig: AIProviderConfig = {
     model: "",
     timeout: 300000,
   },
+  gemini: {
+    model: "gemini-1.5-flash",
+  },
   providers: {
-    summarize: "claude",
-    suggestTags: "claude",
-    evaluate: "claude",
-    interpret: "claude",
-    checkCompletion: "claude",
-    analyzeProfile: "claude",
-    extractLearnings: "claude",
-    taskExtract: "claude",
-    slackPriority: "claude",
+    summarize: "gemini",
+    suggestTags: "gemini",
+    evaluate: "gemini",
+    interpret: "gemini",
+    checkCompletion: "gemini",
+    analyzeProfile: "gemini",
+    extractLearnings: "gemini",
+    taskExtract: "gemini",
+    slackPriority: "gemini",
     generateReadings: "lmstudio",
   },
   enableFallback: true,
@@ -94,6 +100,10 @@ export function loadAIProviderConfig(): AIProviderConfig {
         ...defaultAIProviderConfig.lmstudio,
         ...parsed.aiProvider?.lmstudio,
       },
+      gemini: {
+        ...defaultAIProviderConfig.gemini,
+        ...parsed.aiProvider?.gemini,
+      },
       providers: {
         ...defaultAIProviderConfig.providers,
         ...parsed.aiProvider?.providers,
@@ -115,6 +125,16 @@ export function clearConfigCache(): void {
 }
 
 /**
+ * 処理タイプごとの Gemini モデルマッピング
+ * Claude のモデル使用状況に合わせて設定
+ */
+const GEMINI_MODEL_BY_PROCESS: Partial<Record<ProcessType, string>> = {
+  summarize: "gemini-1.5-pro", // sonnet 相当
+  extractLearnings: "gemini-1.5-pro", // sonnet 相当
+  // その他は flash (haiku 相当) をデフォルト使用
+};
+
+/**
  * 指定された処理タイプ用の LLM Provider を取得
  *
  * @param processType 処理の種類
@@ -128,13 +148,20 @@ export function getLLMProviderForProcess(
   const config = loadAIProviderConfig();
   const providerType = config.providers[processType];
 
+  // Gemini 使用時は処理タイプに応じたモデルを選択
+  const geminiModel =
+    providerType === "gemini"
+      ? (GEMINI_MODEL_BY_PROCESS[processType] ?? config.gemini?.model)
+      : config.gemini?.model;
+
   const llmConfig: LLMProviderConfig = {
     provider: providerType,
     lmstudio: config.lmstudio,
     claudeModel,
+    geminiModel,
   };
 
-  if (config.enableFallback && providerType === "lmstudio") {
+  if (config.enableFallback && (providerType === "lmstudio" || providerType === "gemini")) {
     return createLLMProviderWithFallback(llmConfig);
   }
 
@@ -144,7 +171,11 @@ export function getLLMProviderForProcess(
 /**
  * 現在の設定情報を取得 (デバッグ/ログ用)
  */
-export function getProviderInfo(processType: ProcessType): { provider: string; url?: string } {
+export function getProviderInfo(processType: ProcessType): {
+  provider: string;
+  url?: string;
+  model?: string;
+} {
   const config = loadAIProviderConfig();
   const providerType = config.providers[processType];
 
@@ -152,6 +183,15 @@ export function getProviderInfo(processType: ProcessType): { provider: string; u
     return {
       provider: config.enableFallback ? "lmstudio->claude" : "lmstudio",
       url: config.lmstudio.url,
+    };
+  }
+
+  if (providerType === "gemini") {
+    const model =
+      GEMINI_MODEL_BY_PROCESS[processType] ?? config.gemini?.model ?? "gemini-1.5-flash";
+    return {
+      provider: config.enableFallback ? "gemini->claude" : "gemini",
+      model,
     };
   }
 
