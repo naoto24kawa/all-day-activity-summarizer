@@ -20,6 +20,7 @@ const sessions = new Map<
 >();
 
 Bun.serve({
+  hostname: "127.0.0.1",
   port: PORT,
   idleTimeout: 0, // MCP ツール呼び出しが長時間になるためタイムアウト無効
   fetch: async (req) => {
@@ -68,6 +69,7 @@ Bun.serve({
       if (req.method === "POST" && !sessionId) {
         const server = createServer();
         const transport = new WebStandardStreamableHTTPServerTransport({
+          maxRequestBodySize: 1_048_576,
           sessionIdGenerator: () => crypto.randomUUID(),
           onsessioninitialized: (id) => {
             sessions.set(id, { transport, server });

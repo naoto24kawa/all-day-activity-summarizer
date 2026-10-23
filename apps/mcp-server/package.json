@@ -5,10 +5,11 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "start": "bun run src/index.ts"
+    "start": "bun run src/index.ts",
+    "test": "playwright test --config tests/playwright.config.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@repo/types": "workspace:*",
     "zod": "^3.24.0"
   }

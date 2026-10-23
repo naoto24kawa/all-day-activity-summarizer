@@ -13,10 +13,13 @@ import { registerSlackTools } from "./tools/slack.js";
 import { registerTaskTools } from "./tools/tasks.js";
 
 export function createServer(): McpServer {
-  const server = new McpServer({
-    name: "adas",
-    version: "0.1.0",
-  });
+  const server = new McpServer(
+    {
+      name: "adas",
+      version: "0.1.0",
+    },
+    { maxToolInputElements: 10_000 },
+  );
 
   // ツール登録
   registerTaskTools(server);
